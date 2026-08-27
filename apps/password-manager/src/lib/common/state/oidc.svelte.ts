@@ -1,4 +1,4 @@
-import { nativeFetch } from "@aicacia/native-fetch";
+
 import { OidcClient } from "@aicacia/oidc-client";
 import { isTauri } from "@tauri-apps/api/core";
 import { env } from "$env/dynamic/public";
@@ -7,12 +7,10 @@ import { getLidpApiUrl } from "./lidpClient.svelte";
 
 const CLIENT_ID = isTauri() ? "password-manager-desktop" : "password-manager-web";
 
-const oidcClient = $derived.by(() => {
-    const authority = getLidpApiUrl();
-
-    return new OidcClient({
+const oidcClient = $derived.by(() =>
+     new OidcClient({
         clientConfig: {
-            authority,
+            authority: getLidpApiUrl(),
             redirectUri: `${env.PUBLIC_URL}/callback`,
             clientId: CLIENT_ID,
             responseType: "code",
@@ -35,10 +33,9 @@ const oidcClient = $derived.by(() => {
                     refreshTokenExpiry: 604800,
                 },
             },
-            fetch: authority?.startsWith("lidp:") ? nativeFetch : fetch,
-            disableNativeRequests: true,
-        });
-});
+            disableNativeRequests: false,
+        })
+);
 
 export function getOidcClient() {
     return oidcClient;

@@ -9,10 +9,10 @@
 </script>
 
 <script lang="ts">
-	import { m } from "$lib/paraglide/messages";
 	import type { ClientRegistration } from "@aicacia/lidp-client";
+	import type { OidcUserInfo } from "@aicacia/oidc-client";
+	import { m } from "$lib/paraglide/messages";
 	import Avatar from "../../../lib/common/components/Avatar.svelte";
-    import type { OidcUserInfo } from "@aicacia/oidc-client";
 
 	let { userInfo, client, disabled, onAllow, onDeny }: ClientProps = $props();
 
@@ -88,11 +88,13 @@
 
 <div class="mt-4 flex flex-row justify-center gap-4">
 	<button
+		type="button"
 		class="btn secondary"
 		disabled={disabled || loading}
 		onclick={onDenyInternal}>{m.authorize_button_deny()}</button
 	>
 	<button
+		type="button"
 		class="btn primary"
 		disabled={disabled || loading}
 		onclick={onAllowInternal}>{m.authorize_button_allow()}</button

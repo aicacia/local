@@ -8,12 +8,17 @@ let remoteUrl = $state(getLidpApiUrl() ?? "");
 
 async function signIn(authority: string): Promise<void> {
     error = null;
+    const currentAuthority = getLidpApiUrl();
     setLidpApiUrl(authority);
 
     try {
         await getOidcClient().signin();
     } catch (cause) {
         error = cause instanceof Error ? cause.message : String(cause);
+    } finally {
+      if (currentAuthority) {
+        setLidpApiUrl(currentAuthority);
+      }
     }
 }
 

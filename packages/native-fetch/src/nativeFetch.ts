@@ -7,6 +7,10 @@ export type NativeFetchInit = RequestInit & {
     timeout?: number;
 };
 
+export type CreateNativeFetchOptions = {
+    requestBaseUrl?: string | URL;
+};
+
 export type HandleNativeFetchCallbackOptions = {
     channelName?: string;
 };
@@ -49,106 +53,202 @@ async function bodyInitToString(
     return new Response(body).text();
 }
 
-function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
-    if (!headers) {
-        return {};
+function mergeHeaders(
+    requestHeaders: HeadersInit | undefined,
+    initHeaders: HeadersInit | undefined,
+): Record<string, string> {
+    const headers = new Headers(requestHeaders);
+    if (initHeaders) {
+        const nextHeaders = new Headers(initHeaders);
+        for (const [key, value] of nextHeaders.entries()) {
+            headers.set(key, value);
+        }
     }
-    return Object.fromEntries(new Headers(headers));
+    return Object.fromEntries(headers);
 }
 
-export function nativeFetch(
+function inputLooksLikeHost(input: string): boolean {
+    return /^(localhost|(\d{1,3}\.){3}\d{1,3}|[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+)(:\d+)?([/?#]|$)/.test(
+        input,
+    );
+}
+
+function toBaseUrl(baseUrl: string | URL): URL {
+    return new URL(baseUrl instanceof URL ? baseUrl.href : baseUrl);
+}
+
+function isSameOrigin(left: URL, right: URL): boolean {
+    return left.origin === right.origin;
+}
+
+function resolveRequestUrl(input: string | URL | Request, baseUrl: URL): URL {
+    if (input instanceof URL) {
+        return new URL(input.href);
+    }
+    if (input instanceof Request) {
+        return new URL(input.url, baseUrl);
+    }
+    try {
+        return new URL(input);
+    } catch {
+        if (input.startsWith("//")) {
+            return new URL(`https:${input}`);
+        }
+        if (inputLooksLikeHost(input)) {
+            return new URL(`https://${input}`);
+        }
+        return new URL(input, baseUrl);
+    }
+}
+
+export function toNativeRequestUrl(
+    nativeUri: string | URL,
+    input: string | URL | Request,
+    requestBaseUrl: string | URL,
+): URL {
+    const nativeBaseUrl = toBaseUrl(nativeUri);
+    const baseUrl = toBaseUrl(requestBaseUrl);
+    const requestUrl = resolveRequestUrl(input, baseUrl);
+    const nativeRequestUrl = new URL(nativeBaseUrl.href);
+    const pathname = isSameOrigin(requestUrl, nativeBaseUrl)
+        ? nativeBaseUrl.pathname || "/"
+        : requestUrl.pathname || "/";
+
+    nativeRequestUrl.pathname = pathname;
+    nativeRequestUrl.search = requestUrl.search;
+    nativeRequestUrl.hash = requestUrl.hash;
+
+    return nativeRequestUrl;
+}
+
+async function requestBodyToString(request: Request): Promise<string | null> {
+    if (!request.body) {
+        return null;
+    }
+    return request.clone().text();
+}
+
+export type NativeFetch = (
     input: URL | RequestInfo,
     init?: NativeFetchInit,
-): Promise<Response>;
-export function nativeFetch(
+) => Promise<Response>;
+
+type NativeFetchImplementation = (
     input: string | URL | Request,
     init?: NativeFetchInit,
-): Promise<Response>;
+) => Promise<Response>;
 
 /**
  * Opens a native protocol URL and waits for the native app to respond
  * by opening a callback URL with the response data.
  */
-export async function nativeFetch(
-    input: string | URL | RequestInfo | Request,
-    init?: NativeFetchInit,
-) {
-    const originUrl = window.location.origin;
-    const url = new URL(
-        input instanceof Request ? input.url : input.toString(),
-    );
-    const state = generateState();
-    const callbackUrl = init?.callbackUrl ?? `${originUrl}/native-callback`;
-    const timeout = init?.timeout;
-    const channelName = init?.channelName ?? NATIVE_FETCH_CHANNEL_NAME;
-    const body = await bodyInitToString(init?.body);
+export function createNativeFetch(
+    nativeUri: string | URL,
+    options: CreateNativeFetchOptions = {},
+): NativeFetch {
+    const requestBaseUrl =
+        options.requestBaseUrl ??
+        (typeof window !== "undefined"
+            ? window.location.origin
+            : "http://localhost");
 
-    const native: NativeRequestJSON = {
-        url: url.href,
-        headers: headersToRecord(init?.headers),
-        method: init?.method ?? "GET",
-        body,
-        state,
-        callbackUrl,
-    };
-    url.searchParams.set("native", JSON.stringify(native));
+    const implementation: NativeFetchImplementation = async (
+        input,
+        init,
+    ): Promise<Response> => {
+        const request = input instanceof Request ? input : undefined;
+        const baseUrl = toBaseUrl(requestBaseUrl);
+        const requestUrl = resolveRequestUrl(input, baseUrl);
+        const url = toNativeRequestUrl(nativeUri, requestUrl, baseUrl);
+        const originUrl =
+            typeof window !== "undefined"
+                ? window.location.origin
+                : "http://localhost";
+        const state = generateState();
+        const callbackUrl = init?.callbackUrl ?? `${originUrl}/native-callback`;
+        const timeout = init?.timeout;
+        const channelName = init?.channelName ?? NATIVE_FETCH_CHANNEL_NAME;
+        const body =
+            init?.body !== undefined
+                ? await bodyInitToString(init.body)
+                : request
+                  ? await requestBodyToString(request)
+                  : null;
 
-    return new Promise<Response>((resolve, reject) => {
-        let popupWindow: Window | null = null;
-        let timeoutId: ReturnType<typeof setTimeout> | null = null;
-        let responseChannel: BroadcastChannel | null = null;
-        let channelListener: ((event: MessageEvent) => void) | null = null;
-
-        function cleanup() {
-            if (timeoutId) {
-                clearTimeout(timeoutId);
-            }
-            if (responseChannel && channelListener) {
-                responseChannel.removeEventListener("message", channelListener);
-            }
-            if (responseChannel) {
-                responseChannel.close();
-            }
-            if (popupWindow && !popupWindow.closed) {
-                popupWindow.close();
-            }
-        }
-
-        if (timeout) {
-            timeoutId = setTimeout(() => {
-                cleanup();
-                reject(new Error(`Native fetch timeout after ${timeout}ms`));
-            }, timeout);
-        }
-
-        responseChannel = new BroadcastChannel(channelName);
-
-        channelListener = (event: MessageEvent) => {
-            if (event.data?.type !== NATIVE_FETCH_RESPONSE_EVENT) {
-                return;
-            }
-            const nativeResponse = event.data.data as
-                | NativeResponseJSON
-                | undefined;
-            if (nativeResponse?.state !== state) {
-                return;
-            }
-            cleanup();
-            resolve(
-                new Response(nativeResponse.body, {
-                    headers: nativeResponse.headers,
-                    status: nativeResponse.status,
-                    statusText: nativeResponse.statusText,
-                }),
-            );
+        const native: NativeRequestJSON = {
+            url: requestUrl.href,
+            headers: mergeHeaders(request?.headers, init?.headers),
+            method: init?.method ?? request?.method ?? "GET",
+            body,
+            state,
+            callbackUrl,
         };
+        url.searchParams.set("native", JSON.stringify(native));
 
-        responseChannel.addEventListener("message", channelListener);
+        return new Promise<Response>((resolve, reject) => {
+            let popupWindow: Window | null = null;
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
+            let responseChannel: BroadcastChannel | null = null;
+            let channelListener: ((event: MessageEvent) => void) | null = null;
 
-        popupWindow = openUrl(url, {
-            popup: true,
+            function cleanup() {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+                if (responseChannel && channelListener) {
+                    responseChannel.removeEventListener(
+                        "message",
+                        channelListener,
+                    );
+                }
+                if (responseChannel) {
+                    responseChannel.close();
+                }
+                if (popupWindow && !popupWindow.closed) {
+                    popupWindow.close();
+                }
+            }
+
+            if (timeout) {
+                timeoutId = setTimeout(() => {
+                    cleanup();
+                    reject(
+                        new Error(`Native fetch timeout after ${timeout}ms`),
+                    );
+                }, timeout);
+            }
+
+            responseChannel = new BroadcastChannel(channelName);
+
+            channelListener = (event: MessageEvent) => {
+                if (event.data?.type !== NATIVE_FETCH_RESPONSE_EVENT) {
+                    return;
+                }
+                const nativeResponse = event.data.data as
+                    | NativeResponseJSON
+                    | undefined;
+                if (nativeResponse?.state !== state) {
+                    return;
+                }
+                cleanup();
+                resolve(
+                    new Response(nativeResponse.body, {
+                        headers: nativeResponse.headers,
+                        status: nativeResponse.status,
+                        statusText: nativeResponse.statusText,
+                    }),
+                );
+            };
+
+            responseChannel.addEventListener("message", channelListener);
+
+            popupWindow = openUrl(url, {
+                popup: true,
+            });
         });
-    });
+    };
+
+    return implementation as NativeFetch;
 }
 
 /**

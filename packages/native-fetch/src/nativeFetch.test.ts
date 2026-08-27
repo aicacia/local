@@ -3,6 +3,7 @@ import { isNativeProtocol } from "./isNativeProtocol.js";
 import {
     handleNativeCallbackRequest,
     handleNativeCallbackRequestUrl,
+    toNativeRequestUrl,
 } from "./nativeFetch.js";
 
 test("isNativeProtocol treats custom schemes as native", () => {
@@ -96,4 +97,44 @@ test("handleNativeCallbackRequest maps handler errors to 500 responses", async (
     expect(response.statusText).toBe("boom");
     expect(response.body).toBe("boom");
     expect(response.state).toBe("err-state");
+});
+
+test("toNativeRequestUrl keeps the native app base URL for root-native requests", () => {
+    const url = toNativeRequestUrl(
+        "lidp://app",
+        "lidp://app/.well-known/openid-configuration",
+        "https://example.com",
+    );
+
+    expect(url.href).toBe("lidp://app/");
+});
+
+test("toNativeRequestUrl strips source origin and keeps path", () => {
+    const url = toNativeRequestUrl(
+        "app://api/native",
+        "https://test.com/hello",
+        "https://example.com",
+    );
+
+    expect(url.href).toBe("app://api/hello");
+});
+
+test("toNativeRequestUrl treats host-like inputs as absolute URLs", () => {
+    const url = toNativeRequestUrl(
+        "app://api/native",
+        "test.com/hello?x=1#ok",
+        "https://example.com/base",
+    );
+
+    expect(url.href).toBe("app://api/hello?x=1#ok");
+});
+
+test("toNativeRequestUrl resolves relative paths from configured base URL", () => {
+    const url = toNativeRequestUrl(
+        "app://api/native",
+        "/hello?x=1",
+        "https://example.com/base",
+    );
+
+    expect(url.href).toBe("app://api/hello?x=1");
 });

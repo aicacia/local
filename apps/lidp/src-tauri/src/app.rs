@@ -157,8 +157,13 @@ pub async fn request_handler(app_handle: AppHandle, request: Request) -> Respons
     let router_state = app_handle.state::<Mutex<Router>>();
     let mut router = router_state.lock().await;
 
+    log::debug!("handling request: {:?}", request);
+
     match router.call(request).await {
-        Ok(response) => response,
+        Ok(response) => {
+            log::debug!("request handled successfully: {:?}", response);
+            response
+        }
         Err(err) => {
             log::error!("error handling request: {err}");
             let mut response = format!("Internal Server Error: {err}").into_response();

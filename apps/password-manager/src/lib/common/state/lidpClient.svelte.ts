@@ -3,20 +3,15 @@ import {
     type ConfigurationParameters,
     DefaultApi,
 } from "@aicacia/lidp-client";
+import { createNativeFetch } from "@aicacia/native-fetch";
+import { createStorage } from "@aicacia/svelte-headless";
 import { goto } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
 import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
-import { createStorage } from "@aicacia/svelte-headless";
-
 import { getOidcClient } from "./oidc.svelte";
-import { isTauri } from "@tauri-apps/api/core";
-import { fetch as tauriFetch } from "tauri-plugin-fetch-api";
 
-const lidpApiUrl = createStorage<string | null>(
-    "lidp-api-url",
-    isTauri() ? "lidp://app" : null,
-);
+const lidpApiUrl = createStorage<string>("lidp-api-url", "lidp://app");
 let lidpApiIsNative = $derived.by(() => lidpApiUrl.item?.startsWith("lidp:"));
 
 export const defaultConfigurationParameters: ConfigurationParameters = {
@@ -41,10 +36,12 @@ export const defaultConfigurationParameters: ConfigurationParameters = {
         },
     ],
     get fetchApi() {
-        return lidpApiIsNative ? tauriFetch : fetch;
+        return lidpApiIsNative
+            ? createNativeFetch(lidpApiUrl.item ?? "lidp://app")
+            : fetch;
     },
     accessToken(_name, _scopes) {
-        return getOidcClient().getStoredTokenResponse().access_token;
+        return getOidcClient().getStoredTokenResponse()?.access_token ?? "";
     },
     get basePath() {
         return lidpApiUrl.item;

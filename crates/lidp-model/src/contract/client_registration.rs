@@ -19,6 +19,7 @@ use super::{ClientProfile, ClientType, GrantType, ResponseType, TokenEndpointAut
 )]
 pub struct ClientRegistration {
     /// Unique identifier for the application (assigned by the authorization server).
+    /// TODO: this should be a URI or UUID, not an i64
     pub application_id: i64,
 
     /// Unique identifier for the client application (assigned by the authorization server).

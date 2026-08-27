@@ -1,4 +1,4 @@
-import { nativeFetch } from "@aicacia/native-fetch";
+import { createNativeFetch } from "@aicacia/native-fetch";
 import { StorageClient } from "@aicacia/storage-client";
 import { createStorage } from "@aicacia/svelte-headless";
 
@@ -10,6 +10,7 @@ const storageBridgeConfig = createStorage<StorageBridgeConfig | null>(
     "storage-bridge-config",
     null,
 );
+const nativeFetch = createNativeFetch("lidp://app");
 
 const storageClient = $derived.by(
     () =>
@@ -29,7 +30,7 @@ export function getStorageBridgeUrl(): string | null {
 export async function loadStorageBridgeConfig(): Promise<StorageBridgeConfig | null> {
     try {
         // Get the bridge URL from the bridge-url endpoint
-        const bridgeUrlResponse = await nativeFetch("lidp://app/bridge-url");
+        const bridgeUrlResponse = await nativeFetch("/bridge-url");
         const bridgeUrlData = (await bridgeUrlResponse.json()) as {
             bridgeUrl: string;
         };
