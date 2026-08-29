@@ -77,11 +77,13 @@ fn server_cert_paths(data_dir: &Path, host: &str) -> (PathBuf, PathBuf, PathBuf)
 
 pub async fn ensure_storage_bridge_certificate(data_dir: &Path) -> io::Result<PathBuf> {
     let cert_path = bridge_cert_path(data_dir);
-    let ca = load_or_create_ca(data_dir).await?;
-    let ca_pem = ensure_ca_certificate_pem(data_dir, &ca).await?;
-    fs::write(&cert_path, ca_pem.as_bytes())?;
+    let (ca, is_new_ca) = load_or_create_ca(data_dir).await?;
+    let (_ca_pem, is_new_pem) = ensure_ca_certificate_pem(data_dir, &ca).await?;
     let _server_cert = load_or_create_server_cert(STORAGE_BRIDGE_HOST, data_dir, &ca).await?;
-    let _ = install_ca_to_user_trust_store(&cert_path);
+
+    if is_new_ca || is_new_pem {
+        let _ = install_ca_to_user_trust_store(&cert_path);
+    }
 
     Ok(cert_path)
 }
@@ -93,28 +95,31 @@ struct CertificateFiles {
     cert_pem: String,
 }
 
-async fn load_or_create_ca(data_dir: &Path) -> io::Result<KeyPair> {
+async fn load_or_create_ca(data_dir: &Path) -> io::Result<(KeyPair, bool)> {
     let key_path = ca_key_path(data_dir);
 
     if fs::exists(&key_path)? {
         log::debug!("Loading existing CA key from {:?}", key_path);
         let key = fs::read_to_string(&key_path)?;
-        return Ok(KeyPair::from_pem(&key).map_err(io::Error::other)?);
+        return Ok((KeyPair::from_pem(&key).map_err(io::Error::other)?, false));
     }
 
     let key = KeyPair::generate().map_err(io::Error::other)?;
     log::debug!("Generated new CA key and saving to {:?}", key_path);
     fs::write(&key_path, key.serialize_pem())?;
 
-    Ok(key)
+    Ok((key, true))
 }
 
-async fn ensure_ca_certificate_pem(data_dir: &Path, ca_key: &KeyPair) -> io::Result<String> {
+async fn ensure_ca_certificate_pem(
+    data_dir: &Path,
+    ca_key: &KeyPair,
+) -> io::Result<(String, bool)> {
     let ca_pem_path = bridge_cert_path(data_dir);
     let ca_der_path = ca_der_path(data_dir);
 
     if fs::exists(&ca_pem_path)? && fs::exists(&ca_der_path)? {
-        return fs::read_to_string(&ca_pem_path);
+        return Ok((fs::read_to_string(&ca_pem_path)?, false));
     }
 
     let ca_cert = generate_ca_certificate(ca_key)?;
@@ -122,7 +127,7 @@ async fn ensure_ca_certificate_pem(data_dir: &Path, ca_key: &KeyPair) -> io::Res
     let ca_der = ca_cert.der().to_vec();
     fs::write(&ca_pem_path, ca_pem.as_bytes())?;
     fs::write(&ca_der_path, &ca_der)?;
-    Ok(ca_pem)
+    Ok((ca_pem, true))
 }
 
 fn ca_der_path(data_dir: &Path) -> PathBuf {
@@ -457,6 +462,7 @@ impl StorageJwtVerifier {
 
 impl StorageBridge {
     pub async fn new(files_dir: PathBuf) -> Self {
+        let _ = tokio::fs::create_dir_all(&files_dir).await;
         let registry_path = files_dir.join("known-hosts.sqlite");
         let registry = Arc::new(
             libsql::Builder::new_local(registry_path.to_string_lossy().as_ref())
@@ -827,6 +833,35 @@ mod tests {
 
         assert!(bridge.is_host_known("trusted.example").await.unwrap());
         assert!(!bridge.is_host_known("unknown.example").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn ensure_storage_bridge_certificate_creates_and_reuses_files() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("storage-cert-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let cert_path = ensure_storage_bridge_certificate(&temp_dir).await.unwrap();
+        assert!(cert_path.exists());
+        assert!(ca_key_path(&temp_dir).exists());
+        assert!(ca_der_path(&temp_dir).exists());
+
+        let (server_cert, server_key, server_pem) =
+            server_cert_paths(&temp_dir, STORAGE_BRIDGE_HOST);
+        assert!(server_cert.exists());
+        assert!(server_key.exists());
+        assert!(server_pem.exists());
+
+        let pem_content_first = std::fs::read_to_string(&cert_path).unwrap();
+
+        // Second call should reuse the existing certs
+        let cert_path_second = ensure_storage_bridge_certificate(&temp_dir).await.unwrap();
+        assert_eq!(cert_path, cert_path_second);
+        let pem_content_second = std::fs::read_to_string(&cert_path_second).unwrap();
+        assert_eq!(pem_content_first, pem_content_second);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]

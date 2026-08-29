@@ -21,20 +21,14 @@ import { mapValues } from "../runtime.js";
 export interface AuthorizationCodeResponseOneOf {
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationCodeResponseOneOf
      */
     code: string;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationCodeResponseOneOf
      */
     iss?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationCodeResponseOneOf
      */
     state?: string | null;
 }
@@ -64,8 +58,18 @@ export function AuthorizationCodeResponseOneOfFromJSONTyped(
     }
     return {
         code: json["code"],
-        iss: json["iss"] == null ? undefined : json["iss"],
-        state: json["state"] == null ? undefined : json["state"],
+        iss:
+            json["iss"] === undefined
+                ? undefined
+                : json["iss"] === null
+                  ? null
+                  : json["iss"],
+        state:
+            json["state"] === undefined
+                ? undefined
+                : json["state"] === null
+                  ? null
+                  : json["state"],
     };
 }
 

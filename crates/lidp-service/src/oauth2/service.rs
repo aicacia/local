@@ -115,6 +115,7 @@ where
             ..request
         };
 
+        // TODO: we need to get or create the application first
         let client = self
             .client_repo
             .create_client(client)

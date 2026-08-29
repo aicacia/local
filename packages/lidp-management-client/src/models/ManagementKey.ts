@@ -29,68 +29,46 @@ import {
 export interface ManagementKey {
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     createdAt: number;
     /**
      *
-     * @type {string}
-     * @memberof ManagementKey
      */
     derivationPath: string;
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     entityId: number;
     /**
      *
-     * @type {EntityType}
-     * @memberof ManagementKey
      */
     entityType: EntityType;
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     expiresAt?: number | null;
     /**
      *
-     * @type {boolean}
-     * @memberof ManagementKey
      */
     hardened: boolean;
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     id: number;
     /**
      *
-     * @type {string}
-     * @memberof ManagementKey
      */
     name: string;
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     parentId?: number | null;
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     revokedAt?: number | null;
     /**
      *
-     * @type {number}
-     * @memberof ManagementKey
      */
     updatedAt: number;
 }
@@ -99,17 +77,43 @@ export interface ManagementKey {
  * Check if a given object implements the ManagementKey interface.
  */
 export function instanceOfManagementKey(value: object): value is ManagementKey {
-    if (!("createdAt" in value) || value["createdAt"] === undefined)
+    if (
+        (!("createdAt" in (value as Record<string, any>)) &&
+            !("created_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["createdAt"] === undefined &&
+            (value as Record<string, any>)["created_at"] === undefined)
+    )
         return false;
-    if (!("derivationPath" in value) || value["derivationPath"] === undefined)
+    if (
+        (!("derivationPath" in (value as Record<string, any>)) &&
+            !("derivation_path" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["derivationPath"] === undefined &&
+            (value as Record<string, any>)["derivation_path"] === undefined)
+    )
         return false;
-    if (!("entityId" in value) || value["entityId"] === undefined) return false;
-    if (!("entityType" in value) || value["entityType"] === undefined)
+    if (
+        (!("entityId" in (value as Record<string, any>)) &&
+            !("entity_id" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["entityId"] === undefined &&
+            (value as Record<string, any>)["entity_id"] === undefined)
+    )
+        return false;
+    if (
+        (!("entityType" in (value as Record<string, any>)) &&
+            !("entity_type" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["entityType"] === undefined &&
+            (value as Record<string, any>)["entity_type"] === undefined)
+    )
         return false;
     if (!("hardened" in value) || value["hardened"] === undefined) return false;
     if (!("id" in value) || value["id"] === undefined) return false;
     if (!("name" in value) || value["name"] === undefined) return false;
-    if (!("updatedAt" in value) || value["updatedAt"] === undefined)
+    if (
+        (!("updatedAt" in (value as Record<string, any>)) &&
+            !("updated_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["updatedAt"] === undefined &&
+            (value as Record<string, any>)["updated_at"] === undefined)
+    )
         return false;
     return true;
 }
@@ -130,12 +134,27 @@ export function ManagementKeyFromJSONTyped(
         derivationPath: json["derivation_path"],
         entityId: json["entity_id"],
         entityType: EntityTypeFromJSON(json["entity_type"]),
-        expiresAt: json["expires_at"] == null ? undefined : json["expires_at"],
+        expiresAt:
+            json["expires_at"] === undefined
+                ? undefined
+                : json["expires_at"] === null
+                  ? null
+                  : json["expires_at"],
         hardened: json["hardened"],
         id: json["id"],
         name: json["name"],
-        parentId: json["parent_id"] == null ? undefined : json["parent_id"],
-        revokedAt: json["revoked_at"] == null ? undefined : json["revoked_at"],
+        parentId:
+            json["parent_id"] === undefined
+                ? undefined
+                : json["parent_id"] === null
+                  ? null
+                  : json["parent_id"],
+        revokedAt:
+            json["revoked_at"] === undefined
+                ? undefined
+                : json["revoked_at"] === null
+                  ? null
+                  : json["revoked_at"],
         updatedAt: json["updated_at"],
     };
 }

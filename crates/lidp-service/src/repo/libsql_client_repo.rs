@@ -133,6 +133,23 @@ impl ClientRepo for LibSqlClientRepo {
                 let client_secret = client.client_secret.clone();
                 let client_name = client.client_name.clone();
 
+                let mut rows = transaction
+                    .query(
+                        "SELECT id FROM applications WHERE uri = ?",
+                        libsql::params![client.application_uri.clone()],
+                    )
+                    .await?;
+
+                let application_id: i64 = if let Some(row) = rows.next().await? {
+                    row.get(0)?
+                } else {
+                    return Err(RepoError::InvalidInput(format!(
+                        "application_uri not found: {:?}",
+                        client.application_uri
+                    ))
+                    .into_libsql());
+                };
+
                 let client_query = r#"
                 INSERT INTO clients (
                     application_id,
@@ -163,7 +180,7 @@ impl ClientRepo for LibSqlClientRepo {
                     .query(
                         client_query,
                         libsql::params![
-                            client.application_id,
+                            application_id,
                             client.client_id,
                             client_secret.clone(),
                             client.client_secret_expires_at,

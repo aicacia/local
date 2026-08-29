@@ -21,44 +21,30 @@ import { mapValues } from "../runtime.js";
 export interface UserConsentResponse {
     /**
      *
-     * @type {string}
-     * @memberof UserConsentResponse
      */
     clientId: string;
     /**
      *
-     * @type {number}
-     * @memberof UserConsentResponse
      */
     createdAt: number;
     /**
      *
-     * @type {number}
-     * @memberof UserConsentResponse
      */
     id: number;
     /**
      *
-     * @type {string}
-     * @memberof UserConsentResponse
      */
     redirectUri: string;
     /**
      *
-     * @type {string}
-     * @memberof UserConsentResponse
      */
     scope: string;
     /**
      *
-     * @type {number}
-     * @memberof UserConsentResponse
      */
     updatedAt: number;
     /**
      *
-     * @type {number}
-     * @memberof UserConsentResponse
      */
     userId: number;
 }
@@ -69,16 +55,43 @@ export interface UserConsentResponse {
 export function instanceOfUserConsentResponse(
     value: object,
 ): value is UserConsentResponse {
-    if (!("clientId" in value) || value["clientId"] === undefined) return false;
-    if (!("createdAt" in value) || value["createdAt"] === undefined)
+    if (
+        (!("clientId" in (value as Record<string, any>)) &&
+            !("client_id" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["clientId"] === undefined &&
+            (value as Record<string, any>)["client_id"] === undefined)
+    )
+        return false;
+    if (
+        (!("createdAt" in (value as Record<string, any>)) &&
+            !("created_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["createdAt"] === undefined &&
+            (value as Record<string, any>)["created_at"] === undefined)
+    )
         return false;
     if (!("id" in value) || value["id"] === undefined) return false;
-    if (!("redirectUri" in value) || value["redirectUri"] === undefined)
+    if (
+        (!("redirectUri" in (value as Record<string, any>)) &&
+            !("redirect_uri" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["redirectUri"] === undefined &&
+            (value as Record<string, any>)["redirect_uri"] === undefined)
+    )
         return false;
     if (!("scope" in value) || value["scope"] === undefined) return false;
-    if (!("updatedAt" in value) || value["updatedAt"] === undefined)
+    if (
+        (!("updatedAt" in (value as Record<string, any>)) &&
+            !("updated_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["updatedAt"] === undefined &&
+            (value as Record<string, any>)["updated_at"] === undefined)
+    )
         return false;
-    if (!("userId" in value) || value["userId"] === undefined) return false;
+    if (
+        (!("userId" in (value as Record<string, any>)) &&
+            !("user_id" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["userId"] === undefined &&
+            (value as Record<string, any>)["user_id"] === undefined)
+    )
+        return false;
     return true;
 }
 

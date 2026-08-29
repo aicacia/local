@@ -12,6 +12,12 @@
  * Do not edit the class manually.
  */
 
+import {
+    parseDate,
+    parseDateTime,
+    serializeDate,
+    serializeDateTime,
+} from "../runtime.js";
 import type { JwkPublicParametersOneOf } from "./JwkPublicParametersOneOf.js";
 import {
     instanceOfJwkPublicParametersOneOf,
@@ -67,7 +73,6 @@ export function JwkPublicParametersFromJSONTyped(
     if (instanceOfJwkPublicParametersOneOf2(json)) {
         return JwkPublicParametersOneOf2FromJSONTyped(json, true);
     }
-
     return {} as any;
 }
 
@@ -100,6 +105,5 @@ export function JwkPublicParametersToJSONTyped(
             value as JwkPublicParametersOneOf2,
         );
     }
-
     return {};
 }

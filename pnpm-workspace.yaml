@@ -5,6 +5,7 @@ packages:
   - "crates/iroh-client-wasm"
   - "crates/tauri-plugin-fetch-api"
 allowBuilds:
+  '@openapitools/openapi-generator-cli': true
   esbuild: true
 minimumReleaseAgeExclude:
   - '@aicacia/svelte-forms@0.1.1'

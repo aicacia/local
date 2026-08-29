@@ -12,7 +12,13 @@
  * Do not edit the class manually.
  */
 
-import { mapValues } from "../runtime.js";
+import {
+    mapValues,
+    parseDate,
+    parseDateTime,
+    serializeDate,
+    serializeDateTime,
+} from "../runtime.js";
 /**
  *
  * @export
@@ -21,122 +27,82 @@ import { mapValues } from "../runtime.js";
 export interface UserInfo {
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     birthdate?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     email?: string | null;
     /**
      *
-     * @type {boolean}
-     * @memberof UserInfo
      */
     emailVerified?: boolean | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     familyName?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     gender?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     givenName?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     locale?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     middleName?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     name?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     nickname?: string | null;
     /**
      *
-     * @type {Array<string>}
-     * @memberof UserInfo
      */
     permissions?: Array<string>;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     phoneNumber?: string | null;
     /**
      *
-     * @type {boolean}
-     * @memberof UserInfo
      */
     phoneNumberVerified?: boolean | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     picture?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     preferredUsername?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     profile?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     sub: string;
     /**
      *
-     * @type {Date}
-     * @memberof UserInfo
      */
     updatedAt: Date;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     website?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UserInfo
      */
     zoneinfo?: string | null;
 }
@@ -146,7 +112,12 @@ export interface UserInfo {
  */
 export function instanceOfUserInfo(value: object): value is UserInfo {
     if (!("sub" in value) || value["sub"] === undefined) return false;
-    if (!("updatedAt" in value) || value["updatedAt"] === undefined)
+    if (
+        (!("updatedAt" in (value as Record<string, any>)) &&
+            !("updated_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["updatedAt"] === undefined &&
+            (value as Record<string, any>)["updated_at"] === undefined)
+    )
         return false;
     return true;
 }
@@ -163,37 +134,115 @@ export function UserInfoFromJSONTyped(
         return json;
     }
     return {
-        birthdate: json["birthdate"] == null ? undefined : json["birthdate"],
-        email: json["email"] == null ? undefined : json["email"],
+        birthdate:
+            json["birthdate"] === undefined
+                ? undefined
+                : json["birthdate"] === null
+                  ? null
+                  : json["birthdate"],
+        email:
+            json["email"] === undefined
+                ? undefined
+                : json["email"] === null
+                  ? null
+                  : json["email"],
         emailVerified:
-            json["email_verified"] == null ? undefined : json["email_verified"],
+            json["email_verified"] === undefined
+                ? undefined
+                : json["email_verified"] === null
+                  ? null
+                  : json["email_verified"],
         familyName:
-            json["family_name"] == null ? undefined : json["family_name"],
-        gender: json["gender"] == null ? undefined : json["gender"],
-        givenName: json["given_name"] == null ? undefined : json["given_name"],
-        locale: json["locale"] == null ? undefined : json["locale"],
+            json["family_name"] === undefined
+                ? undefined
+                : json["family_name"] === null
+                  ? null
+                  : json["family_name"],
+        gender:
+            json["gender"] === undefined
+                ? undefined
+                : json["gender"] === null
+                  ? null
+                  : json["gender"],
+        givenName:
+            json["given_name"] === undefined
+                ? undefined
+                : json["given_name"] === null
+                  ? null
+                  : json["given_name"],
+        locale:
+            json["locale"] === undefined
+                ? undefined
+                : json["locale"] === null
+                  ? null
+                  : json["locale"],
         middleName:
-            json["middle_name"] == null ? undefined : json["middle_name"],
-        name: json["name"] == null ? undefined : json["name"],
-        nickname: json["nickname"] == null ? undefined : json["nickname"],
+            json["middle_name"] === undefined
+                ? undefined
+                : json["middle_name"] === null
+                  ? null
+                  : json["middle_name"],
+        name:
+            json["name"] === undefined
+                ? undefined
+                : json["name"] === null
+                  ? null
+                  : json["name"],
+        nickname:
+            json["nickname"] === undefined
+                ? undefined
+                : json["nickname"] === null
+                  ? null
+                  : json["nickname"],
         permissions:
             json["permissions"] == null ? undefined : json["permissions"],
         phoneNumber:
-            json["phone_number"] == null ? undefined : json["phone_number"],
+            json["phone_number"] === undefined
+                ? undefined
+                : json["phone_number"] === null
+                  ? null
+                  : json["phone_number"],
         phoneNumberVerified:
-            json["phone_number_verified"] == null
+            json["phone_number_verified"] === undefined
                 ? undefined
-                : json["phone_number_verified"],
-        picture: json["picture"] == null ? undefined : json["picture"],
+                : json["phone_number_verified"] === null
+                  ? null
+                  : json["phone_number_verified"],
+        picture:
+            json["picture"] === undefined
+                ? undefined
+                : json["picture"] === null
+                  ? null
+                  : json["picture"],
         preferredUsername:
-            json["preferred_username"] == null
+            json["preferred_username"] === undefined
                 ? undefined
-                : json["preferred_username"],
-        profile: json["profile"] == null ? undefined : json["profile"],
+                : json["preferred_username"] === null
+                  ? null
+                  : json["preferred_username"],
+        profile:
+            json["profile"] === undefined
+                ? undefined
+                : json["profile"] === null
+                  ? null
+                  : json["profile"],
         sub: json["sub"],
-        updatedAt: new Date(json["updated_at"]),
-        website: json["website"] == null ? undefined : json["website"],
-        zoneinfo: json["zoneinfo"] == null ? undefined : json["zoneinfo"],
+        updatedAt:
+            json["updated_at"] == null
+                ? json["updated_at"]
+                : parseDateTime(json["updated_at"]),
+        website:
+            json["website"] === undefined
+                ? undefined
+                : json["website"] === null
+                  ? null
+                  : json["website"],
+        zoneinfo:
+            json["zoneinfo"] === undefined
+                ? undefined
+                : json["zoneinfo"] === null
+                  ? null
+                  : json["zoneinfo"],
     };
 }
 
@@ -227,7 +276,10 @@ export function UserInfoToJSONTyped(
         preferred_username: value["preferredUsername"],
         profile: value["profile"],
         sub: value["sub"],
-        updated_at: value["updatedAt"].toISOString(),
+        updated_at:
+            value["updatedAt"] == null
+                ? value["updatedAt"]
+                : serializeDateTime(value["updatedAt"]),
         website: value["website"],
         zoneinfo: value["zoneinfo"],
     };

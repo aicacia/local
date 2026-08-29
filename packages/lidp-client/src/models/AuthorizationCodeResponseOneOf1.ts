@@ -29,26 +29,18 @@ import {
 export interface AuthorizationCodeResponseOneOf1 {
     /**
      *
-     * @type {ErrorCode}
-     * @memberof AuthorizationCodeResponseOneOf1
      */
     error: ErrorCode;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationCodeResponseOneOf1
      */
     errorDescription?: string;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationCodeResponseOneOf1
      */
     errorUri?: string;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationCodeResponseOneOf1
      */
     state: string;
 }

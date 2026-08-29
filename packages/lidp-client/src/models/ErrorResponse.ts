@@ -30,20 +30,14 @@ import {
 export interface ErrorResponse {
     /**
      *
-     * @type {ErrorCode}
-     * @memberof ErrorResponse
      */
     error: ErrorCode;
     /**
      *
-     * @type {string}
-     * @memberof ErrorResponse
      */
     errorDescription?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof ErrorResponse
      */
     errorUri?: string | null;
 }
@@ -70,10 +64,17 @@ export function ErrorResponseFromJSONTyped(
     return {
         error: ErrorCodeFromJSON(json["error"]),
         errorDescription:
-            json["error_description"] == null
+            json["error_description"] === undefined
                 ? undefined
-                : json["error_description"],
-        errorUri: json["error_uri"] == null ? undefined : json["error_uri"],
+                : json["error_description"] === null
+                  ? null
+                  : json["error_description"],
+        errorUri:
+            json["error_uri"] === undefined
+                ? undefined
+                : json["error_uri"] === null
+                  ? null
+                  : json["error_uri"],
     };
 }
 

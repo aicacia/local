@@ -5,6 +5,13 @@ use std::{
 };
 
 pub fn install_ca_to_user_trust_store(ca_pem_path: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    {
+        let _ = ca_pem_path;
+        return Ok(());
+    }
+
+    #[cfg(not(test))]
     match install_ca_to_user_trust_store_impl(ca_pem_path) {
         Ok(()) => {
             log::info!("installed storage bridge CA into the operating system trust store");

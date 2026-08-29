@@ -21,20 +21,14 @@ import { mapValues } from "../runtime.js";
 export interface UpdateApplicationRequest {
     /**
      *
-     * @type {string}
-     * @memberof UpdateApplicationRequest
      */
     description?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UpdateApplicationRequest
      */
     name?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof UpdateApplicationRequest
      */
     uri?: string | null;
 }
@@ -63,9 +57,23 @@ export function UpdateApplicationRequestFromJSONTyped(
     }
     return {
         description:
-            json["description"] == null ? undefined : json["description"],
-        name: json["name"] == null ? undefined : json["name"],
-        uri: json["uri"] == null ? undefined : json["uri"],
+            json["description"] === undefined
+                ? undefined
+                : json["description"] === null
+                  ? null
+                  : json["description"],
+        name:
+            json["name"] === undefined
+                ? undefined
+                : json["name"] === null
+                  ? null
+                  : json["name"],
+        uri:
+            json["uri"] === undefined
+                ? undefined
+                : json["uri"] === null
+                  ? null
+                  : json["uri"],
     };
 }
 

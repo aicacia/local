@@ -29,8 +29,6 @@ import {
 export interface Jwks {
     /**
      *
-     * @type {Array<JwkPublic>}
-     * @memberof Jwks
      */
     keys: Array<JwkPublic>;
 }

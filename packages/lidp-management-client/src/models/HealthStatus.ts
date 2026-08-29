@@ -12,6 +12,12 @@
  * Do not edit the class manually.
  */
 
+import {
+    parseDate,
+    parseDateTime,
+    serializeDate,
+    serializeDateTime,
+} from "../runtime.js";
 import type { HealthStatusOneOf } from "./HealthStatusOneOf.js";
 import {
     instanceOfHealthStatusOneOf,
@@ -44,7 +50,9 @@ export function HealthStatusFromJSONTyped(
     if (instanceOfHealthStatusOneOf(json)) {
         return HealthStatusOneOfFromJSONTyped(json, true);
     }
-
+    if (typeof json === "string" && json === "healthy") {
+        return json;
+    }
     return {} as any;
 }
 
@@ -65,6 +73,8 @@ export function HealthStatusToJSONTyped(
     if (instanceOfHealthStatusOneOf(value)) {
         return HealthStatusOneOfToJSON(value as HealthStatusOneOf);
     }
-
+    if (typeof value === "string" && value === "healthy") {
+        return value;
+    }
     return {};
 }

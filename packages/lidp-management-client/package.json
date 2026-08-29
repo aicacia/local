@@ -39,7 +39,7 @@
         "format:fix": "biome format --write .",
         "preCommit": "pnpm run lint:fix && pnpm run coverage",
         "postopenapi": "pnpm format:fix",
-        "openapi": "rm -rf src && openapi-generator-cli generate -i https://unified.localhost:1337/lidp-management/openapi.json -g typescript-fetch -o src --type-mappings=DateTime=Date --additional-properties=supportsES6=true,typescriptThreePlus=true,withInterfaces=true,useSingleRequestParameter=true,importFileExtension=.js",
+        "openapi": "rm -rf src && pnpm openapi-generator-cli generate -i https://unified.localhost:1337/lidp-management/openapi.json -g typescript-fetch -o src --type-mappings=DateTime=Date --global-property=apiDocs=false,modelDocs=false --additional-properties=supportsES6=true,typescriptThreePlus=true,withInterfaces=true,useSingleRequestParameter=true,importFileExtension=.js",
         "prepare": "husky"
     },
     "husky": {
@@ -51,6 +51,7 @@
         "eventemitter3": "^5.0.4"
     },
     "devDependencies": {
+        "@openapitools/openapi-generator-cli": "^2.41.0",
         "@biomejs/biome": "^2.5.3",
         "@types/benchmark": "^2.1.5",
         "@vitest/coverage-v8": "^4.1.10",

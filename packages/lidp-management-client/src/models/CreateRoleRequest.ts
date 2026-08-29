@@ -21,14 +21,10 @@ import { mapValues } from "../runtime.js";
 export interface CreateRoleRequest {
     /**
      *
-     * @type {string}
-     * @memberof CreateRoleRequest
      */
     description?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof CreateRoleRequest
      */
     name: string;
 }
@@ -56,7 +52,11 @@ export function CreateRoleRequestFromJSONTyped(
     }
     return {
         description:
-            json["description"] == null ? undefined : json["description"],
+            json["description"] === undefined
+                ? undefined
+                : json["description"] === null
+                  ? null
+                  : json["description"],
         name: json["name"],
     };
 }

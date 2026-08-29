@@ -21,38 +21,26 @@ import { mapValues } from "../runtime.js";
 export interface DeviceAuthorization {
     /**
      *
-     * @type {string}
-     * @memberof DeviceAuthorization
      */
     deviceCode?: string | null;
     /**
      *
-     * @type {number}
-     * @memberof DeviceAuthorization
      */
     expiresIn?: number | null;
     /**
      *
-     * @type {number}
-     * @memberof DeviceAuthorization
      */
     interval?: number | null;
     /**
      *
-     * @type {string}
-     * @memberof DeviceAuthorization
      */
     userCode?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof DeviceAuthorization
      */
     verificationUri?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof DeviceAuthorization
      */
     verificationUriComplete?: string | null;
 }
@@ -79,18 +67,41 @@ export function DeviceAuthorizationFromJSONTyped(
     }
     return {
         deviceCode:
-            json["device_code"] == null ? undefined : json["device_code"],
-        expiresIn: json["expires_in"] == null ? undefined : json["expires_in"],
-        interval: json["interval"] == null ? undefined : json["interval"],
-        userCode: json["user_code"] == null ? undefined : json["user_code"],
+            json["device_code"] === undefined
+                ? undefined
+                : json["device_code"] === null
+                  ? null
+                  : json["device_code"],
+        expiresIn:
+            json["expires_in"] === undefined
+                ? undefined
+                : json["expires_in"] === null
+                  ? null
+                  : json["expires_in"],
+        interval:
+            json["interval"] === undefined
+                ? undefined
+                : json["interval"] === null
+                  ? null
+                  : json["interval"],
+        userCode:
+            json["user_code"] === undefined
+                ? undefined
+                : json["user_code"] === null
+                  ? null
+                  : json["user_code"],
         verificationUri:
-            json["verification_uri"] == null
+            json["verification_uri"] === undefined
                 ? undefined
-                : json["verification_uri"],
+                : json["verification_uri"] === null
+                  ? null
+                  : json["verification_uri"],
         verificationUriComplete:
-            json["verification_uri_complete"] == null
+            json["verification_uri_complete"] === undefined
                 ? undefined
-                : json["verification_uri_complete"],
+                : json["verification_uri_complete"] === null
+                  ? null
+                  : json["verification_uri_complete"],
     };
 }
 

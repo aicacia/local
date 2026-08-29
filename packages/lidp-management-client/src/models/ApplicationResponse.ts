@@ -21,38 +21,26 @@ import { mapValues } from "../runtime.js";
 export interface ApplicationResponse {
     /**
      *
-     * @type {number}
-     * @memberof ApplicationResponse
      */
     createdAt: number;
     /**
      *
-     * @type {string}
-     * @memberof ApplicationResponse
      */
     description?: string | null;
     /**
      *
-     * @type {number}
-     * @memberof ApplicationResponse
      */
     id: number;
     /**
      *
-     * @type {string}
-     * @memberof ApplicationResponse
      */
     name: string;
     /**
      *
-     * @type {number}
-     * @memberof ApplicationResponse
      */
     updatedAt: number;
     /**
      *
-     * @type {string}
-     * @memberof ApplicationResponse
      */
     uri: string;
 }
@@ -63,11 +51,21 @@ export interface ApplicationResponse {
 export function instanceOfApplicationResponse(
     value: object,
 ): value is ApplicationResponse {
-    if (!("createdAt" in value) || value["createdAt"] === undefined)
+    if (
+        (!("createdAt" in (value as Record<string, any>)) &&
+            !("created_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["createdAt"] === undefined &&
+            (value as Record<string, any>)["created_at"] === undefined)
+    )
         return false;
     if (!("id" in value) || value["id"] === undefined) return false;
     if (!("name" in value) || value["name"] === undefined) return false;
-    if (!("updatedAt" in value) || value["updatedAt"] === undefined)
+    if (
+        (!("updatedAt" in (value as Record<string, any>)) &&
+            !("updated_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["updatedAt"] === undefined &&
+            (value as Record<string, any>)["updated_at"] === undefined)
+    )
         return false;
     if (!("uri" in value) || value["uri"] === undefined) return false;
     return true;
@@ -87,7 +85,11 @@ export function ApplicationResponseFromJSONTyped(
     return {
         createdAt: json["created_at"],
         description:
-            json["description"] == null ? undefined : json["description"],
+            json["description"] === undefined
+                ? undefined
+                : json["description"] === null
+                  ? null
+                  : json["description"],
         id: json["id"],
         name: json["name"],
         updatedAt: json["updated_at"],

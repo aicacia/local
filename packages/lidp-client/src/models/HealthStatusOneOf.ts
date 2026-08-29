@@ -21,8 +21,6 @@ import { mapValues } from "../runtime.js";
 export interface HealthStatusOneOf {
     /**
      *
-     * @type {string}
-     * @memberof HealthStatusOneOf
      */
     unhealthy: string;
 }

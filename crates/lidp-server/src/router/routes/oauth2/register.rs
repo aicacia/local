@@ -9,7 +9,12 @@ use crate::router::{RouterState, middleware::StandardAuthorization};
 #[utoipa::path(
     post,
     path = "/oauth2/register",
-    request_body = ClientRegistration,
+    request_body(
+        content(
+            (ClientRegistration = "application/json"),
+            (ClientRegistration = "application/x-www-form-urlencoded")
+        )
+    ),
     responses((status = 201, description = "Register client", body = ClientRegistration)),
     security(
         ("authorization" = [])
@@ -67,7 +72,12 @@ pub(crate) async fn delete_register(
     params(
         ("client_id" = String, Path, description = "Client ID")
     ),
-    request_body = ClientRegistration,
+    request_body(
+        content(
+            (ClientRegistration = "application/json"),
+            (ClientRegistration = "application/x-www-form-urlencoded")
+        )
+    ),
     responses((status = 200, description = "Update client", body = ClientRegistration)),
     security(
         ("authorization" = [])

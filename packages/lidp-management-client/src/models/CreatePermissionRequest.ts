@@ -21,14 +21,10 @@ import { mapValues } from "../runtime.js";
 export interface CreatePermissionRequest {
     /**
      *
-     * @type {string}
-     * @memberof CreatePermissionRequest
      */
     description?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof CreatePermissionRequest
      */
     name: string;
 }
@@ -58,7 +54,11 @@ export function CreatePermissionRequestFromJSONTyped(
     }
     return {
         description:
-            json["description"] == null ? undefined : json["description"],
+            json["description"] === undefined
+                ? undefined
+                : json["description"] === null
+                  ? null
+                  : json["description"],
         name: json["name"],
     };
 }

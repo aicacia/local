@@ -21,20 +21,14 @@ import { mapValues } from "../runtime.js";
 export interface ApproveForUserRequest {
     /**
      *
-     * @type {string}
-     * @memberof ApproveForUserRequest
      */
     clientId: string;
     /**
      *
-     * @type {string}
-     * @memberof ApproveForUserRequest
      */
     redirectUri: string;
     /**
      *
-     * @type {string}
-     * @memberof ApproveForUserRequest
      */
     scope: string;
 }
@@ -45,8 +39,19 @@ export interface ApproveForUserRequest {
 export function instanceOfApproveForUserRequest(
     value: object,
 ): value is ApproveForUserRequest {
-    if (!("clientId" in value) || value["clientId"] === undefined) return false;
-    if (!("redirectUri" in value) || value["redirectUri"] === undefined)
+    if (
+        (!("clientId" in (value as Record<string, any>)) &&
+            !("client_id" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["clientId"] === undefined &&
+            (value as Record<string, any>)["client_id"] === undefined)
+    )
+        return false;
+    if (
+        (!("redirectUri" in (value as Record<string, any>)) &&
+            !("redirect_uri" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["redirectUri"] === undefined &&
+            (value as Record<string, any>)["redirect_uri"] === undefined)
+    )
         return false;
     if (!("scope" in value) || value["scope"] === undefined) return false;
     return true;

@@ -21,20 +21,14 @@ import { mapValues } from "../runtime.js";
 export interface JwkPublicParametersOneOf2 {
     /**
      *
-     * @type {string}
-     * @memberof JwkPublicParametersOneOf2
      */
     crv: string;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublicParametersOneOf2
      */
     kty: JwkPublicParametersOneOf2KtyEnum;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublicParametersOneOf2
      */
     x: string;
 }
@@ -56,6 +50,8 @@ export function instanceOfJwkPublicParametersOneOf2(
 ): value is JwkPublicParametersOneOf2 {
     if (!("crv" in value) || value["crv"] === undefined) return false;
     if (!("kty" in value) || value["kty"] === undefined) return false;
+    if (value["kty"] !== "Opk") return false;
+
     if (!("x" in value) || value["x"] === undefined) return false;
     return true;
 }

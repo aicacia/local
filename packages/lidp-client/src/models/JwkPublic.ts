@@ -36,56 +36,38 @@ import {
 export interface JwkPublic {
     /**
      *
-     * @type {string}
-     * @memberof JwkPublic
      */
     e: string;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublic
      */
     kty: JwkPublicKtyEnum;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublic
      */
     n: string;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublic
      */
     crv: string;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublic
      */
     x: string;
     /**
      *
-     * @type {string}
-     * @memberof JwkPublic
      */
     y: string;
     /**
      * Algorithm intended for use
-     * @type {JwsAlgorithm}
-     * @memberof JwkPublic
      */
     alg: JwsAlgorithm;
     /**
      * Key ID
-     * @type {number}
-     * @memberof JwkPublic
      */
     kid: number;
     /**
      * Key use (sig, enc)
-     * @type {KeyUse}
-     * @memberof JwkPublic
      */
     use: KeyUse;
 }
@@ -105,6 +87,8 @@ export type JwkPublicKtyEnum =
 export function instanceOfJwkPublic(value: object): value is JwkPublic {
     if (!("e" in value) || value["e"] === undefined) return false;
     if (!("kty" in value) || value["kty"] === undefined) return false;
+    if (value["kty"] !== "Opk") return false;
+
     if (!("n" in value) || value["n"] === undefined) return false;
     if (!("crv" in value) || value["crv"] === undefined) return false;
     if (!("x" in value) || value["x"] === undefined) return false;

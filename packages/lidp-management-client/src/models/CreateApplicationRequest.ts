@@ -21,20 +21,14 @@ import { mapValues } from "../runtime.js";
 export interface CreateApplicationRequest {
     /**
      *
-     * @type {string}
-     * @memberof CreateApplicationRequest
      */
     description?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof CreateApplicationRequest
      */
     name: string;
     /**
      *
-     * @type {string}
-     * @memberof CreateApplicationRequest
      */
     uri: string;
 }
@@ -65,7 +59,11 @@ export function CreateApplicationRequestFromJSONTyped(
     }
     return {
         description:
-            json["description"] == null ? undefined : json["description"],
+            json["description"] === undefined
+                ? undefined
+                : json["description"] === null
+                  ? null
+                  : json["description"],
         name: json["name"],
         uri: json["uri"],
     };

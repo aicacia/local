@@ -43,87 +43,59 @@ import {
 export interface AuthorizationRequest {
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     clientId: string;
     /**
      * PKCE parameters (RFC 7636) for public clients and enhanced security
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     codeChallenge?: string | null;
     /**
      * The method used to derive the code challenge (e.g., "S256" or "plain").
      * only required if `code_challenge` is present. "S256" is strongly recommended in OAuth 2.1 for better security.
-     * @type {CodeChallengeMethod}
-     * @memberof AuthorizationRequest
      */
     codeChallengeMethod?: CodeChallengeMethod | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     idTokenHint?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     loginHint?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     nonce?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     prompt?: string | null;
     /**
      * redirect URI is optional if the client has only one registered redirect URI
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     redirectUri?: string | null;
     /**
      * Audience parameter (RFC 8707) to specify the intended recipients of the token.
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     resource?: string | null;
     /**
      *
-     * @type {ResponseMode}
-     * @memberof AuthorizationRequest
      */
     responseMode?: ResponseMode | null;
     /**
      *
-     * @type {ResponseType}
-     * @memberof AuthorizationRequest
      */
     responseType: ResponseType;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     scope?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     state?: string | null;
     /**
      *
-     * @type {string}
-     * @memberof AuthorizationRequest
      */
     uiLocales?: string | null;
 }
@@ -134,8 +106,19 @@ export interface AuthorizationRequest {
 export function instanceOfAuthorizationRequest(
     value: object,
 ): value is AuthorizationRequest {
-    if (!("clientId" in value) || value["clientId"] === undefined) return false;
-    if (!("responseType" in value) || value["responseType"] === undefined)
+    if (
+        (!("clientId" in (value as Record<string, any>)) &&
+            !("client_id" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["clientId"] === undefined &&
+            (value as Record<string, any>)["client_id"] === undefined)
+    )
+        return false;
+    if (
+        (!("responseType" in (value as Record<string, any>)) &&
+            !("response_type" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["responseType"] === undefined &&
+            (value as Record<string, any>)["response_type"] === undefined)
+    )
         return false;
     return true;
 }
@@ -154,27 +137,78 @@ export function AuthorizationRequestFromJSONTyped(
     return {
         clientId: json["client_id"],
         codeChallenge:
-            json["code_challenge"] == null ? undefined : json["code_challenge"],
+            json["code_challenge"] === undefined
+                ? undefined
+                : json["code_challenge"] === null
+                  ? null
+                  : json["code_challenge"],
         codeChallengeMethod:
-            json["code_challenge_method"] == null
+            json["code_challenge_method"] === undefined
                 ? undefined
-                : CodeChallengeMethodFromJSON(json["code_challenge_method"]),
+                : json["code_challenge_method"] === null
+                  ? null
+                  : CodeChallengeMethodFromJSON(json["code_challenge_method"]),
         idTokenHint:
-            json["id_token_hint"] == null ? undefined : json["id_token_hint"],
-        loginHint: json["login_hint"] == null ? undefined : json["login_hint"],
-        nonce: json["nonce"] == null ? undefined : json["nonce"],
-        prompt: json["prompt"] == null ? undefined : json["prompt"],
-        redirectUri:
-            json["redirect_uri"] == null ? undefined : json["redirect_uri"],
-        resource: json["resource"] == null ? undefined : json["resource"],
-        responseMode:
-            json["response_mode"] == null
+            json["id_token_hint"] === undefined
                 ? undefined
-                : ResponseModeFromJSON(json["response_mode"]),
+                : json["id_token_hint"] === null
+                  ? null
+                  : json["id_token_hint"],
+        loginHint:
+            json["login_hint"] === undefined
+                ? undefined
+                : json["login_hint"] === null
+                  ? null
+                  : json["login_hint"],
+        nonce:
+            json["nonce"] === undefined
+                ? undefined
+                : json["nonce"] === null
+                  ? null
+                  : json["nonce"],
+        prompt:
+            json["prompt"] === undefined
+                ? undefined
+                : json["prompt"] === null
+                  ? null
+                  : json["prompt"],
+        redirectUri:
+            json["redirect_uri"] === undefined
+                ? undefined
+                : json["redirect_uri"] === null
+                  ? null
+                  : json["redirect_uri"],
+        resource:
+            json["resource"] === undefined
+                ? undefined
+                : json["resource"] === null
+                  ? null
+                  : json["resource"],
+        responseMode:
+            json["response_mode"] === undefined
+                ? undefined
+                : json["response_mode"] === null
+                  ? null
+                  : ResponseModeFromJSON(json["response_mode"]),
         responseType: ResponseTypeFromJSON(json["response_type"]),
-        scope: json["scope"] == null ? undefined : json["scope"],
-        state: json["state"] == null ? undefined : json["state"],
-        uiLocales: json["ui_locales"] == null ? undefined : json["ui_locales"],
+        scope:
+            json["scope"] === undefined
+                ? undefined
+                : json["scope"] === null
+                  ? null
+                  : json["scope"],
+        state:
+            json["state"] === undefined
+                ? undefined
+                : json["state"] === null
+                  ? null
+                  : json["state"],
+        uiLocales:
+            json["ui_locales"] === undefined
+                ? undefined
+                : json["ui_locales"] === null
+                  ? null
+                  : json["ui_locales"],
     };
 }
 

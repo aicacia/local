@@ -68,7 +68,8 @@ pub struct Client {
 impl From<Client> for ClientRegistration {
     fn from(val: Client) -> Self {
         ClientRegistration {
-            application_id: val.application_id,
+            // The URI of the application associated with the client.
+            application_uri: None,
             client_id: Some(val.client_id),
             client_secret: Some(val.client_secret),
             client_id_issued_at: val.client_id_issued_at.map(|dt| dt.timestamp()),

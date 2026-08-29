@@ -13,195 +13,386 @@
  */
 
 import * as runtime from "../runtime.js";
-import type {
-    ApplicationResponse,
-    ClientRegistration,
-    CreateApplicationRequest,
-    CreatePermissionRequest,
-    CreateRoleRequest,
-    HealthResponse,
-    JwkPublic,
-    ManagementKey,
-    PermissionResponse,
-    RoleResponse,
-    UpdateApplicationRequest,
-    UserApplicationRoleResponse,
-    UserConsentResponse,
-    UserInfo,
-    VersionResponse,
-} from "../models/index.js";
 import {
+    type ApplicationResponse,
     ApplicationResponseFromJSON,
     ApplicationResponseToJSON,
+} from "../models/ApplicationResponse.js";
+import {
+    type ClientRegistration,
     ClientRegistrationFromJSON,
     ClientRegistrationToJSON,
+} from "../models/ClientRegistration.js";
+import {
+    type CreateApplicationRequest,
     CreateApplicationRequestFromJSON,
     CreateApplicationRequestToJSON,
+} from "../models/CreateApplicationRequest.js";
+import {
+    type CreatePermissionRequest,
     CreatePermissionRequestFromJSON,
     CreatePermissionRequestToJSON,
+} from "../models/CreatePermissionRequest.js";
+import {
+    type CreateRoleRequest,
     CreateRoleRequestFromJSON,
     CreateRoleRequestToJSON,
+} from "../models/CreateRoleRequest.js";
+import {
+    type HealthResponse,
     HealthResponseFromJSON,
     HealthResponseToJSON,
+} from "../models/HealthResponse.js";
+import {
+    type JwkPublic,
     JwkPublicFromJSON,
     JwkPublicToJSON,
+} from "../models/JwkPublic.js";
+import {
+    type ManagementKey,
     ManagementKeyFromJSON,
     ManagementKeyToJSON,
+} from "../models/ManagementKey.js";
+import {
+    type PermissionResponse,
     PermissionResponseFromJSON,
     PermissionResponseToJSON,
+} from "../models/PermissionResponse.js";
+import {
+    type RoleResponse,
     RoleResponseFromJSON,
     RoleResponseToJSON,
+} from "../models/RoleResponse.js";
+import {
+    type UpdateApplicationRequest,
     UpdateApplicationRequestFromJSON,
     UpdateApplicationRequestToJSON,
+} from "../models/UpdateApplicationRequest.js";
+import {
+    type UserApplicationRoleResponse,
     UserApplicationRoleResponseFromJSON,
     UserApplicationRoleResponseToJSON,
+} from "../models/UserApplicationRoleResponse.js";
+import {
+    type UserConsentResponse,
     UserConsentResponseFromJSON,
     UserConsentResponseToJSON,
+} from "../models/UserConsentResponse.js";
+import {
+    type UserInfo,
     UserInfoFromJSON,
     UserInfoToJSON,
+} from "../models/UserInfo.js";
+import {
+    type VersionResponse,
     VersionResponseFromJSON,
     VersionResponseToJSON,
-} from "../models/index.js";
+} from "../models/VersionResponse.js";
 
 export interface AssignPermissionToRoleRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * Role ID
+     */
     roleId: number;
+    /**
+     * Permission ID
+     */
     permissionId: number;
 }
 
 export interface AssignRoleToUserRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * User ID
+     */
     userId: number;
+    /**
+     * Role ID
+     */
     roleId: number;
 }
 
 export interface CreateApplicationOperationRequest {
+    /**
+     *
+     */
     createApplicationRequest: CreateApplicationRequest;
 }
 
 export interface CreateClientRequest {
+    /**
+     *
+     */
     clientRegistration: ClientRegistration;
 }
 
 export interface CreatePermissionOperationRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     *
+     */
     createPermissionRequest: CreatePermissionRequest;
 }
 
 export interface CreateRoleOperationRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     *
+     */
     createRoleRequest: CreateRoleRequest;
 }
 
 export interface DeleteApplicationRequest {
+    /**
+     * Application ID (URI)
+     */
     applicationId: number;
 }
 
 export interface DeleteClientRequest {
+    /**
+     * Client ID
+     */
     clientId: string;
 }
 
 export interface DeletePermissionRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * Permission ID
+     */
     permissionId: number;
 }
 
 export interface DeleteRoleRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * Role ID
+     */
     roleId: number;
 }
 
 export interface GetApplicationRequest {
+    /**
+     * Application ID (URI)
+     */
     applicationId: number;
 }
 
 export interface GetClientRequest {
+    /**
+     * Client ID
+     */
     clientId: string;
 }
 
 export interface GetKeyJwkRequest {
+    /**
+     * Key ID
+     */
     keyId: number;
 }
 
 export interface GetUserRequest {
+    /**
+     * User ID
+     */
     userId: number;
 }
 
 export interface ListApplicationsRequest {
+    /**
+     *
+     */
     offset: number;
+    /**
+     *
+     */
     limit: number;
 }
 
 export interface ListClientKeysRequest {
+    /**
+     * Client ID
+     */
     clientId: string;
 }
 
 export interface ListClientsRequest {
+    /**
+     *
+     */
     offset: number;
+    /**
+     *
+     */
     limit: number;
 }
 
 export interface ListPermissionsRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     *
+     */
     offset: number;
+    /**
+     *
+     */
     limit: number;
 }
 
 export interface ListRolePermissionsRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * Role ID
+     */
     roleId: number;
 }
 
 export interface ListRolesRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     *
+     */
     offset: number;
+    /**
+     *
+     */
     limit: number;
 }
 
 export interface ListUserConsentsRequest {
+    /**
+     * User ID
+     */
     userId: number;
+    /**
+     *
+     */
     offset: number;
+    /**
+     *
+     */
     limit: number;
 }
 
 export interface ListUserRolesRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * User ID
+     */
     userId: number;
 }
 
 export interface ListUserRolesAcrossApplicationsRequest {
+    /**
+     * User ID
+     */
     userId: number;
 }
 
 export interface ListUsersRequest {
+    /**
+     *
+     */
     offset: number;
+    /**
+     *
+     */
     limit: number;
 }
 
 export interface RevokePermissionFromRoleRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * Role ID
+     */
     roleId: number;
+    /**
+     * Permission ID
+     */
     permissionId: number;
 }
 
 export interface RevokeRoleFromUserRequest {
+    /**
+     * Application ID
+     */
     applicationId: number;
+    /**
+     * User ID
+     */
     userId: number;
+    /**
+     * Role ID
+     */
     roleId: number;
 }
 
 export interface RevokeUserConsentRequest {
+    /**
+     * User ID
+     */
     userId: number;
+    /**
+     * Consent ID
+     */
     consentId: number;
 }
 
 export interface UpdateApplicationOperationRequest {
+    /**
+     * Application ID (URI)
+     */
     applicationId: number;
+    /**
+     *
+     */
     updateApplicationRequest: UpdateApplicationRequest;
 }
 
 export interface UpdateClientRequest {
+    /**
+     * Client ID
+     */
     clientId: string;
+    /**
+     *
+     */
     clientRegistration: ClientRegistration;
 }
 
@@ -212,6 +403,18 @@ export interface UpdateClientRequest {
  * @interface DefaultApiInterface
  */
 export interface DefaultApiInterface {
+    /**
+     * Creates request options for assignPermissionToRole without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} roleId Role ID
+     * @param {number} permissionId Permission ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    assignPermissionToRoleRequestOpts(
+        requestParameters: AssignPermissionToRoleRequest,
+    ): Promise<runtime.RequestOpts>;
+
     /**
      *
      * @param {number} applicationId Application ID
@@ -232,6 +435,18 @@ export interface DefaultApiInterface {
         requestParameters: AssignPermissionToRoleRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for assignRoleToUser without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} userId User ID
+     * @param {number} roleId Role ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    assignRoleToUserRequestOpts(
+        requestParameters: AssignRoleToUserRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -255,6 +470,16 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for createApplication without sending the request
+     * @param {CreateApplicationRequest} createApplicationRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createApplicationRequestOpts(
+        requestParameters: CreateApplicationOperationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {CreateApplicationRequest} createApplicationRequest
      * @param {*} [options] Override http request option.
@@ -274,6 +499,16 @@ export interface DefaultApiInterface {
     ): Promise<ApplicationResponse>;
 
     /**
+     * Creates request options for createClient without sending the request
+     * @param {ClientRegistration} clientRegistration
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createClientRequestOpts(
+        requestParameters: CreateClientRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {ClientRegistration} clientRegistration
      * @param {*} [options] Override http request option.
@@ -291,6 +526,17 @@ export interface DefaultApiInterface {
         requestParameters: CreateClientRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration>;
+
+    /**
+     * Creates request options for createPermission without sending the request
+     * @param {number} applicationId Application ID
+     * @param {CreatePermissionRequest} createPermissionRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createPermissionRequestOpts(
+        requestParameters: CreatePermissionOperationRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -313,6 +559,17 @@ export interface DefaultApiInterface {
     ): Promise<PermissionResponse>;
 
     /**
+     * Creates request options for createRole without sending the request
+     * @param {number} applicationId Application ID
+     * @param {CreateRoleRequest} createRoleRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createRoleRequestOpts(
+        requestParameters: CreateRoleOperationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} applicationId Application ID
      * @param {CreateRoleRequest} createRoleRequest
@@ -331,6 +588,16 @@ export interface DefaultApiInterface {
         requestParameters: CreateRoleOperationRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<RoleResponse>;
+
+    /**
+     * Creates request options for deleteApplication without sending the request
+     * @param {number} applicationId Application ID (URI)
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    deleteApplicationRequestOpts(
+        requestParameters: DeleteApplicationRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -352,6 +619,16 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for deleteClient without sending the request
+     * @param {string} clientId Client ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    deleteClientRequestOpts(
+        requestParameters: DeleteClientRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {string} clientId Client ID
      * @param {*} [options] Override http request option.
@@ -369,6 +646,17 @@ export interface DefaultApiInterface {
         requestParameters: DeleteClientRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for deletePermission without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} permissionId Permission ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    deletePermissionRequestOpts(
+        requestParameters: DeletePermissionRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -391,6 +679,17 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for deleteRole without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} roleId Role ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    deleteRoleRequestOpts(
+        requestParameters: DeleteRoleRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} applicationId Application ID
      * @param {number} roleId Role ID
@@ -409,6 +708,16 @@ export interface DefaultApiInterface {
         requestParameters: DeleteRoleRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for getApplication without sending the request
+     * @param {number} applicationId Application ID (URI)
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    getApplicationRequestOpts(
+        requestParameters: GetApplicationRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -430,6 +739,16 @@ export interface DefaultApiInterface {
     ): Promise<ApplicationResponse>;
 
     /**
+     * Creates request options for getClient without sending the request
+     * @param {string} clientId Client ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    getClientRequestOpts(
+        requestParameters: GetClientRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {string} clientId Client ID
      * @param {*} [options] Override http request option.
@@ -447,6 +766,16 @@ export interface DefaultApiInterface {
         requestParameters: GetClientRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration>;
+
+    /**
+     * Creates request options for getKeyJwk without sending the request
+     * @param {number} keyId Key ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    getKeyJwkRequestOpts(
+        requestParameters: GetKeyJwkRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -468,6 +797,16 @@ export interface DefaultApiInterface {
     ): Promise<JwkPublic>;
 
     /**
+     * Creates request options for getUser without sending the request
+     * @param {number} userId User ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    getUserRequestOpts(
+        requestParameters: GetUserRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} userId User ID
      * @param {*} [options] Override http request option.
@@ -487,6 +826,13 @@ export interface DefaultApiInterface {
     ): Promise<UserInfo>;
 
     /**
+     * Creates request options for health without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    healthRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {*} [options] Override http request option.
      * @throws {RequiredError}
@@ -501,6 +847,17 @@ export interface DefaultApiInterface {
     health(
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<HealthResponse>;
+
+    /**
+     * Creates request options for listApplications without sending the request
+     * @param {number} offset
+     * @param {number} limit
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listApplicationsRequestOpts(
+        requestParameters: ListApplicationsRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -523,6 +880,16 @@ export interface DefaultApiInterface {
     ): Promise<Array<ApplicationResponse>>;
 
     /**
+     * Creates request options for listClientKeys without sending the request
+     * @param {string} clientId Client ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listClientKeysRequestOpts(
+        requestParameters: ListClientKeysRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {string} clientId Client ID
      * @param {*} [options] Override http request option.
@@ -540,6 +907,17 @@ export interface DefaultApiInterface {
         requestParameters: ListClientKeysRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<Array<ManagementKey>>;
+
+    /**
+     * Creates request options for listClients without sending the request
+     * @param {number} offset
+     * @param {number} limit
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listClientsRequestOpts(
+        requestParameters: ListClientsRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -560,6 +938,18 @@ export interface DefaultApiInterface {
         requestParameters: ListClientsRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<Array<ClientRegistration>>;
+
+    /**
+     * Creates request options for listPermissions without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} offset
+     * @param {number} limit
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listPermissionsRequestOpts(
+        requestParameters: ListPermissionsRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -583,6 +973,17 @@ export interface DefaultApiInterface {
     ): Promise<Array<PermissionResponse>>;
 
     /**
+     * Creates request options for listRolePermissions without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} roleId Role ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listRolePermissionsRequestOpts(
+        requestParameters: ListRolePermissionsRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} applicationId Application ID
      * @param {number} roleId Role ID
@@ -601,6 +1002,18 @@ export interface DefaultApiInterface {
         requestParameters: ListRolePermissionsRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<Array<PermissionResponse>>;
+
+    /**
+     * Creates request options for listRoles without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} offset
+     * @param {number} limit
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listRolesRequestOpts(
+        requestParameters: ListRolesRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -624,6 +1037,18 @@ export interface DefaultApiInterface {
     ): Promise<Array<RoleResponse>>;
 
     /**
+     * Creates request options for listUserConsents without sending the request
+     * @param {number} userId User ID
+     * @param {number} offset
+     * @param {number} limit
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listUserConsentsRequestOpts(
+        requestParameters: ListUserConsentsRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} userId User ID
      * @param {number} offset
@@ -643,6 +1068,17 @@ export interface DefaultApiInterface {
         requestParameters: ListUserConsentsRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<Array<UserConsentResponse>>;
+
+    /**
+     * Creates request options for listUserRoles without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} userId User ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listUserRolesRequestOpts(
+        requestParameters: ListUserRolesRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -665,6 +1101,16 @@ export interface DefaultApiInterface {
     ): Promise<Array<RoleResponse>>;
 
     /**
+     * Creates request options for listUserRolesAcrossApplications without sending the request
+     * @param {number} userId User ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listUserRolesAcrossApplicationsRequestOpts(
+        requestParameters: ListUserRolesAcrossApplicationsRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} userId User ID
      * @param {*} [options] Override http request option.
@@ -682,6 +1128,17 @@ export interface DefaultApiInterface {
         requestParameters: ListUserRolesAcrossApplicationsRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<Array<UserApplicationRoleResponse>>;
+
+    /**
+     * Creates request options for listUsers without sending the request
+     * @param {number} offset
+     * @param {number} limit
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listUsersRequestOpts(
+        requestParameters: ListUsersRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -704,6 +1161,13 @@ export interface DefaultApiInterface {
     ): Promise<Array<UserInfo>>;
 
     /**
+     * Creates request options for openapiJson without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    openapiJsonRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {*} [options] Override http request option.
      * @throws {RequiredError}
@@ -718,6 +1182,18 @@ export interface DefaultApiInterface {
     openapiJson(
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for revokePermissionFromRole without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} roleId Role ID
+     * @param {number} permissionId Permission ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    revokePermissionFromRoleRequestOpts(
+        requestParameters: RevokePermissionFromRoleRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -741,6 +1217,18 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for revokeRoleFromUser without sending the request
+     * @param {number} applicationId Application ID
+     * @param {number} userId User ID
+     * @param {number} roleId Role ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    revokeRoleFromUserRequestOpts(
+        requestParameters: RevokeRoleFromUserRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} applicationId Application ID
      * @param {number} userId User ID
@@ -760,6 +1248,17 @@ export interface DefaultApiInterface {
         requestParameters: RevokeRoleFromUserRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for revokeUserConsent without sending the request
+     * @param {number} userId User ID
+     * @param {number} consentId Consent ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    revokeUserConsentRequestOpts(
+        requestParameters: RevokeUserConsentRequest,
+    ): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -782,6 +1281,17 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for updateApplication without sending the request
+     * @param {number} applicationId Application ID (URI)
+     * @param {UpdateApplicationRequest} updateApplicationRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    updateApplicationRequestOpts(
+        requestParameters: UpdateApplicationOperationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {number} applicationId Application ID (URI)
      * @param {UpdateApplicationRequest} updateApplicationRequest
@@ -802,6 +1312,17 @@ export interface DefaultApiInterface {
     ): Promise<ApplicationResponse>;
 
     /**
+     * Creates request options for updateClient without sending the request
+     * @param {string} clientId Client ID
+     * @param {ClientRegistration} clientRegistration
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    updateClientRequestOpts(
+        requestParameters: UpdateClientRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
      *
      * @param {string} clientId Client ID
      * @param {ClientRegistration} clientRegistration
@@ -820,6 +1341,13 @@ export interface DefaultApiInterface {
         requestParameters: UpdateClientRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration>;
+
+    /**
+     * Creates request options for version without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    versionRequestOpts(): Promise<runtime.RequestOpts>;
 
     /**
      *
@@ -843,11 +1371,11 @@ export interface DefaultApiInterface {
  */
 export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     /**
+     * Creates request options for assignPermissionToRole without sending the request
      */
-    async assignPermissionToRoleRaw(
+    async assignPermissionToRoleRequestOpts(
         requestParameters: AssignPermissionToRoleRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -884,27 +1412,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/roles/{role_id}/permissions/{permission_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"role_id"}}`,
+            "{role_id}",
             encodeURIComponent(String(requestParameters["roleId"])),
         );
         urlPath = urlPath.replace(
-            `{${"permission_id"}}`,
+            "{permission_id}",
             encodeURIComponent(String(requestParameters["permissionId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "POST",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async assignPermissionToRoleRaw(
+        requestParameters: AssignPermissionToRoleRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.assignPermissionToRoleRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -919,11 +1455,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for assignRoleToUser without sending the request
      */
-    async assignRoleToUserRaw(
+    async assignRoleToUserRequestOpts(
         requestParameters: AssignRoleToUserRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -960,27 +1496,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/users/{user_id}/roles/{role_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
         urlPath = urlPath.replace(
-            `{${"role_id"}}`,
+            "{role_id}",
             encodeURIComponent(String(requestParameters["roleId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "POST",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async assignRoleToUserRaw(
+        requestParameters: AssignRoleToUserRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.assignRoleToUserRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -995,11 +1539,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for createApplication without sending the request
      */
-    async createApplicationRaw(
+    async createApplicationRequestOpts(
         requestParameters: CreateApplicationOperationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<ApplicationResponse>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["createApplicationRequest"] == null) {
             throw new runtime.RequiredError(
                 "createApplicationRequest",
@@ -1024,18 +1568,26 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications`;
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "POST",
-                headers: headerParameters,
-                query: queryParameters,
-                body: CreateApplicationRequestToJSON(
-                    requestParameters["createApplicationRequest"],
-                ),
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: CreateApplicationRequestToJSON(
+                requestParameters["createApplicationRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async createApplicationRaw(
+        requestParameters: CreateApplicationOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<ApplicationResponse>> {
+        const requestOptions =
+            await this.createApplicationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             ApplicationResponseFromJSON(jsonValue),
@@ -1056,11 +1608,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for createClient without sending the request
      */
-    async createClientRaw(
+    async createClientRequestOpts(
         requestParameters: CreateClientRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<ClientRegistration>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["clientRegistration"] == null) {
             throw new runtime.RequiredError(
                 "clientRegistration",
@@ -1085,18 +1637,26 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/clients`;
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "POST",
-                headers: headerParameters,
-                query: queryParameters,
-                body: ClientRegistrationToJSON(
-                    requestParameters["clientRegistration"],
-                ),
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: ClientRegistrationToJSON(
+                requestParameters["clientRegistration"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async createClientRaw(
+        requestParameters: CreateClientRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<ClientRegistration>> {
+        const requestOptions =
+            await this.createClientRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             ClientRegistrationFromJSON(jsonValue),
@@ -1117,11 +1677,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for createPermission without sending the request
      */
-    async createPermissionRaw(
+    async createPermissionRequestOpts(
         requestParameters: CreatePermissionOperationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<PermissionResponse>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -1153,22 +1713,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/permissions`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "POST",
-                headers: headerParameters,
-                query: queryParameters,
-                body: CreatePermissionRequestToJSON(
-                    requestParameters["createPermissionRequest"],
-                ),
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: CreatePermissionRequestToJSON(
+                requestParameters["createPermissionRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async createPermissionRaw(
+        requestParameters: CreatePermissionOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<PermissionResponse>> {
+        const requestOptions =
+            await this.createPermissionRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             PermissionResponseFromJSON(jsonValue),
@@ -1189,11 +1757,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for createRole without sending the request
      */
-    async createRoleRaw(
+    async createRoleRequestOpts(
         requestParameters: CreateRoleOperationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<RoleResponse>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -1225,22 +1793,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/roles`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "POST",
-                headers: headerParameters,
-                query: queryParameters,
-                body: CreateRoleRequestToJSON(
-                    requestParameters["createRoleRequest"],
-                ),
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: CreateRoleRequestToJSON(
+                requestParameters["createRoleRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async createRoleRaw(
+        requestParameters: CreateRoleOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<RoleResponse>> {
+        const requestOptions =
+            await this.createRoleRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             RoleResponseFromJSON(jsonValue),
@@ -1261,11 +1837,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for deleteApplication without sending the request
      */
-    async deleteApplicationRaw(
+    async deleteApplicationRequestOpts(
         requestParameters: DeleteApplicationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -1288,19 +1864,27 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async deleteApplicationRaw(
+        requestParameters: DeleteApplicationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.deleteApplicationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -1315,11 +1899,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for deleteClient without sending the request
      */
-    async deleteClientRaw(
+    async deleteClientRequestOpts(
         requestParameters: DeleteClientRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["clientId"] == null) {
             throw new runtime.RequiredError(
                 "clientId",
@@ -1342,19 +1926,27 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/clients/{client_id}`;
         urlPath = urlPath.replace(
-            `{${"client_id"}}`,
+            "{client_id}",
             encodeURIComponent(String(requestParameters["clientId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async deleteClientRaw(
+        requestParameters: DeleteClientRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.deleteClientRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -1369,11 +1961,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for deletePermission without sending the request
      */
-    async deletePermissionRaw(
+    async deletePermissionRequestOpts(
         requestParameters: DeletePermissionRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -1403,23 +1995,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/permissions/{permission_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"permission_id"}}`,
+            "{permission_id}",
             encodeURIComponent(String(requestParameters["permissionId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async deletePermissionRaw(
+        requestParameters: DeletePermissionRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.deletePermissionRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -1434,11 +2034,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for deleteRole without sending the request
      */
-    async deleteRoleRaw(
+    async deleteRoleRequestOpts(
         requestParameters: DeleteRoleRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -1468,23 +2068,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/roles/{role_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"role_id"}}`,
+            "{role_id}",
             encodeURIComponent(String(requestParameters["roleId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async deleteRoleRaw(
+        requestParameters: DeleteRoleRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.deleteRoleRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -1499,11 +2107,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for getApplication without sending the request
      */
-    async getApplicationRaw(
+    async getApplicationRequestOpts(
         requestParameters: GetApplicationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<ApplicationResponse>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -1526,19 +2134,27 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async getApplicationRaw(
+        requestParameters: GetApplicationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<ApplicationResponse>> {
+        const requestOptions =
+            await this.getApplicationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             ApplicationResponseFromJSON(jsonValue),
@@ -1559,11 +2175,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for getClient without sending the request
      */
-    async getClientRaw(
+    async getClientRequestOpts(
         requestParameters: GetClientRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<ClientRegistration>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["clientId"] == null) {
             throw new runtime.RequiredError(
                 "clientId",
@@ -1586,19 +2202,27 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/clients/{client_id}`;
         urlPath = urlPath.replace(
-            `{${"client_id"}}`,
+            "{client_id}",
             encodeURIComponent(String(requestParameters["clientId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async getClientRaw(
+        requestParameters: GetClientRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<ClientRegistration>> {
+        const requestOptions =
+            await this.getClientRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             ClientRegistrationFromJSON(jsonValue),
@@ -1619,11 +2243,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for getKeyJwk without sending the request
      */
-    async getKeyJwkRaw(
+    async getKeyJwkRequestOpts(
         requestParameters: GetKeyJwkRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<JwkPublic>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["keyId"] == null) {
             throw new runtime.RequiredError(
                 "keyId",
@@ -1646,19 +2270,27 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/keys/{key_id}/jwk`;
         urlPath = urlPath.replace(
-            `{${"key_id"}}`,
+            "{key_id}",
             encodeURIComponent(String(requestParameters["keyId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async getKeyJwkRaw(
+        requestParameters: GetKeyJwkRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<JwkPublic>> {
+        const requestOptions =
+            await this.getKeyJwkRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             JwkPublicFromJSON(jsonValue),
@@ -1679,11 +2311,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for getUser without sending the request
      */
-    async getUserRaw(
+    async getUserRequestOpts(
         requestParameters: GetUserRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<UserInfo>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["userId"] == null) {
             throw new runtime.RequiredError(
                 "userId",
@@ -1706,19 +2338,26 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/users/{user_id}`;
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async getUserRaw(
+        requestParameters: GetUserRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<UserInfo>> {
+        const requestOptions = await this.getUserRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             UserInfoFromJSON(jsonValue),
@@ -1739,25 +2378,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for health without sending the request
      */
-    async healthRaw(
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<HealthResponse>> {
+    async healthRequestOpts(): Promise<runtime.RequestOpts> {
         const queryParameters: any = {};
 
         const headerParameters: runtime.HTTPHeaders = {};
 
         let urlPath = `/health`;
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async healthRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<HealthResponse>> {
+        const requestOptions = await this.healthRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             HealthResponseFromJSON(jsonValue),
@@ -1774,11 +2418,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listApplications without sending the request
      */
-    async listApplicationsRaw(
+    async listApplicationsRequestOpts(
         requestParameters: ListApplicationsRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<ApplicationResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["offset"] == null) {
             throw new runtime.RequiredError(
                 "offset",
@@ -1808,23 +2452,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications`;
         urlPath = urlPath.replace(
-            `{${"offset"}}`,
+            "{offset}",
             encodeURIComponent(String(requestParameters["offset"])),
         );
         urlPath = urlPath.replace(
-            `{${"limit"}}`,
+            "{limit}",
             encodeURIComponent(String(requestParameters["limit"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listApplicationsRaw(
+        requestParameters: ListApplicationsRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<ApplicationResponse>>> {
+        const requestOptions =
+            await this.listApplicationsRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(ApplicationResponseFromJSON),
@@ -1845,11 +2497,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listClientKeys without sending the request
      */
-    async listClientKeysRaw(
+    async listClientKeysRequestOpts(
         requestParameters: ListClientKeysRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<ManagementKey>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["clientId"] == null) {
             throw new runtime.RequiredError(
                 "clientId",
@@ -1872,19 +2524,27 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/clients/{client_id}/keys`;
         urlPath = urlPath.replace(
-            `{${"client_id"}}`,
+            "{client_id}",
             encodeURIComponent(String(requestParameters["clientId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listClientKeysRaw(
+        requestParameters: ListClientKeysRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<ManagementKey>>> {
+        const requestOptions =
+            await this.listClientKeysRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(ManagementKeyFromJSON),
@@ -1905,11 +2565,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listClients without sending the request
      */
-    async listClientsRaw(
+    async listClientsRequestOpts(
         requestParameters: ListClientsRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<ClientRegistration>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["offset"] == null) {
             throw new runtime.RequiredError(
                 "offset",
@@ -1939,23 +2599,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/clients`;
         urlPath = urlPath.replace(
-            `{${"offset"}}`,
+            "{offset}",
             encodeURIComponent(String(requestParameters["offset"])),
         );
         urlPath = urlPath.replace(
-            `{${"limit"}}`,
+            "{limit}",
             encodeURIComponent(String(requestParameters["limit"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listClientsRaw(
+        requestParameters: ListClientsRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<ClientRegistration>>> {
+        const requestOptions =
+            await this.listClientsRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(ClientRegistrationFromJSON),
@@ -1976,11 +2644,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listPermissions without sending the request
      */
-    async listPermissionsRaw(
+    async listPermissionsRequestOpts(
         requestParameters: ListPermissionsRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<PermissionResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2017,27 +2685,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/permissions`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"offset"}}`,
+            "{offset}",
             encodeURIComponent(String(requestParameters["offset"])),
         );
         urlPath = urlPath.replace(
-            `{${"limit"}}`,
+            "{limit}",
             encodeURIComponent(String(requestParameters["limit"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listPermissionsRaw(
+        requestParameters: ListPermissionsRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<PermissionResponse>>> {
+        const requestOptions =
+            await this.listPermissionsRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(PermissionResponseFromJSON),
@@ -2058,11 +2734,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listRolePermissions without sending the request
      */
-    async listRolePermissionsRaw(
+    async listRolePermissionsRequestOpts(
         requestParameters: ListRolePermissionsRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<PermissionResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2092,23 +2768,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/roles/{role_id}/permissions`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"role_id"}}`,
+            "{role_id}",
             encodeURIComponent(String(requestParameters["roleId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listRolePermissionsRaw(
+        requestParameters: ListRolePermissionsRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<PermissionResponse>>> {
+        const requestOptions =
+            await this.listRolePermissionsRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(PermissionResponseFromJSON),
@@ -2129,11 +2813,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listRoles without sending the request
      */
-    async listRolesRaw(
+    async listRolesRequestOpts(
         requestParameters: ListRolesRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<RoleResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2170,27 +2854,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/roles`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"offset"}}`,
+            "{offset}",
             encodeURIComponent(String(requestParameters["offset"])),
         );
         urlPath = urlPath.replace(
-            `{${"limit"}}`,
+            "{limit}",
             encodeURIComponent(String(requestParameters["limit"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listRolesRaw(
+        requestParameters: ListRolesRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<RoleResponse>>> {
+        const requestOptions =
+            await this.listRolesRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(RoleResponseFromJSON),
@@ -2211,11 +2903,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listUserConsents without sending the request
      */
-    async listUserConsentsRaw(
+    async listUserConsentsRequestOpts(
         requestParameters: ListUserConsentsRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<UserConsentResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["userId"] == null) {
             throw new runtime.RequiredError(
                 "userId",
@@ -2252,27 +2944,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/users/{user_id}/consents`;
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
         urlPath = urlPath.replace(
-            `{${"offset"}}`,
+            "{offset}",
             encodeURIComponent(String(requestParameters["offset"])),
         );
         urlPath = urlPath.replace(
-            `{${"limit"}}`,
+            "{limit}",
             encodeURIComponent(String(requestParameters["limit"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listUserConsentsRaw(
+        requestParameters: ListUserConsentsRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<UserConsentResponse>>> {
+        const requestOptions =
+            await this.listUserConsentsRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(UserConsentResponseFromJSON),
@@ -2293,11 +2993,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listUserRoles without sending the request
      */
-    async listUserRolesRaw(
+    async listUserRolesRequestOpts(
         requestParameters: ListUserRolesRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<RoleResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2327,23 +3027,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/users/{user_id}/roles`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listUserRolesRaw(
+        requestParameters: ListUserRolesRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<RoleResponse>>> {
+        const requestOptions =
+            await this.listUserRolesRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(RoleResponseFromJSON),
@@ -2364,11 +3072,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listUserRolesAcrossApplications without sending the request
      */
-    async listUserRolesAcrossApplicationsRaw(
+    async listUserRolesAcrossApplicationsRequestOpts(
         requestParameters: ListUserRolesAcrossApplicationsRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<UserApplicationRoleResponse>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["userId"] == null) {
             throw new runtime.RequiredError(
                 "userId",
@@ -2391,19 +3099,29 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/users/{user_id}/roles`;
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listUserRolesAcrossApplicationsRaw(
+        requestParameters: ListUserRolesAcrossApplicationsRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<UserApplicationRoleResponse>>> {
+        const requestOptions =
+            await this.listUserRolesAcrossApplicationsRequestOpts(
+                requestParameters,
+            );
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(UserApplicationRoleResponseFromJSON),
@@ -2424,11 +3142,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listUsers without sending the request
      */
-    async listUsersRaw(
+    async listUsersRequestOpts(
         requestParameters: ListUsersRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<Array<UserInfo>>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["offset"] == null) {
             throw new runtime.RequiredError(
                 "offset",
@@ -2458,23 +3176,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/users`;
         urlPath = urlPath.replace(
-            `{${"offset"}}`,
+            "{offset}",
             encodeURIComponent(String(requestParameters["offset"])),
         );
         urlPath = urlPath.replace(
-            `{${"limit"}}`,
+            "{limit}",
             encodeURIComponent(String(requestParameters["limit"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listUsersRaw(
+        requestParameters: ListUsersRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<UserInfo>>> {
+        const requestOptions =
+            await this.listUsersRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             jsonValue.map(UserInfoFromJSON),
@@ -2495,25 +3221,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for openapiJson without sending the request
      */
-    async openapiJsonRaw(
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    async openapiJsonRequestOpts(): Promise<runtime.RequestOpts> {
         const queryParameters: any = {};
 
         const headerParameters: runtime.HTTPHeaders = {};
 
         let urlPath = `/openapi.json`;
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async openapiJsonRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions = await this.openapiJsonRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -2527,11 +3258,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for revokePermissionFromRole without sending the request
      */
-    async revokePermissionFromRoleRaw(
+    async revokePermissionFromRoleRequestOpts(
         requestParameters: RevokePermissionFromRoleRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2568,27 +3299,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/roles/{role_id}/permissions/{permission_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"role_id"}}`,
+            "{role_id}",
             encodeURIComponent(String(requestParameters["roleId"])),
         );
         urlPath = urlPath.replace(
-            `{${"permission_id"}}`,
+            "{permission_id}",
             encodeURIComponent(String(requestParameters["permissionId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async revokePermissionFromRoleRaw(
+        requestParameters: RevokePermissionFromRoleRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.revokePermissionFromRoleRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -2606,11 +3345,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for revokeRoleFromUser without sending the request
      */
-    async revokeRoleFromUserRaw(
+    async revokeRoleFromUserRequestOpts(
         requestParameters: RevokeRoleFromUserRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2647,27 +3386,35 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}/users/{user_id}/roles/{role_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
         urlPath = urlPath.replace(
-            `{${"role_id"}}`,
+            "{role_id}",
             encodeURIComponent(String(requestParameters["roleId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async revokeRoleFromUserRaw(
+        requestParameters: RevokeRoleFromUserRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.revokeRoleFromUserRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -2682,11 +3429,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for revokeUserConsent without sending the request
      */
-    async revokeUserConsentRaw(
+    async revokeUserConsentRequestOpts(
         requestParameters: RevokeUserConsentRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<void>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["userId"] == null) {
             throw new runtime.RequiredError(
                 "userId",
@@ -2716,23 +3463,31 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/users/{user_id}/consents/{consent_id}`;
         urlPath = urlPath.replace(
-            `{${"user_id"}}`,
+            "{user_id}",
             encodeURIComponent(String(requestParameters["userId"])),
         );
         urlPath = urlPath.replace(
-            `{${"consent_id"}}`,
+            "{consent_id}",
             encodeURIComponent(String(requestParameters["consentId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "DELETE",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async revokeUserConsentRaw(
+        requestParameters: RevokeUserConsentRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.revokeUserConsentRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.VoidApiResponse(response);
     }
@@ -2747,11 +3502,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for updateApplication without sending the request
      */
-    async updateApplicationRaw(
+    async updateApplicationRequestOpts(
         requestParameters: UpdateApplicationOperationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<ApplicationResponse>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["applicationId"] == null) {
             throw new runtime.RequiredError(
                 "applicationId",
@@ -2783,22 +3538,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/applications/{application_id}`;
         urlPath = urlPath.replace(
-            `{${"application_id"}}`,
+            "{application_id}",
             encodeURIComponent(String(requestParameters["applicationId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "PUT",
-                headers: headerParameters,
-                query: queryParameters,
-                body: UpdateApplicationRequestToJSON(
-                    requestParameters["updateApplicationRequest"],
-                ),
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "PUT",
+            headers: headerParameters,
+            query: queryParameters,
+            body: UpdateApplicationRequestToJSON(
+                requestParameters["updateApplicationRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async updateApplicationRaw(
+        requestParameters: UpdateApplicationOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<ApplicationResponse>> {
+        const requestOptions =
+            await this.updateApplicationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             ApplicationResponseFromJSON(jsonValue),
@@ -2819,11 +3582,11 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for updateClient without sending the request
      */
-    async updateClientRaw(
+    async updateClientRequestOpts(
         requestParameters: UpdateClientRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<ClientRegistration>> {
+    ): Promise<runtime.RequestOpts> {
         if (requestParameters["clientId"] == null) {
             throw new runtime.RequiredError(
                 "clientId",
@@ -2855,22 +3618,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
 
         let urlPath = `/clients/{client_id}`;
         urlPath = urlPath.replace(
-            `{${"client_id"}}`,
+            "{client_id}",
             encodeURIComponent(String(requestParameters["clientId"])),
         );
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "PUT",
-                headers: headerParameters,
-                query: queryParameters,
-                body: ClientRegistrationToJSON(
-                    requestParameters["clientRegistration"],
-                ),
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "PUT",
+            headers: headerParameters,
+            query: queryParameters,
+            body: ClientRegistrationToJSON(
+                requestParameters["clientRegistration"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async updateClientRaw(
+        requestParameters: UpdateClientRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<ClientRegistration>> {
+        const requestOptions =
+            await this.updateClientRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             ClientRegistrationFromJSON(jsonValue),
@@ -2891,25 +3662,30 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for version without sending the request
      */
-    async versionRaw(
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<VersionResponse>> {
+    async versionRequestOpts(): Promise<runtime.RequestOpts> {
         const queryParameters: any = {};
 
         const headerParameters: runtime.HTTPHeaders = {};
 
         let urlPath = `/version`;
 
-        const response = await this.request(
-            {
-                path: urlPath,
-                method: "GET",
-                headers: headerParameters,
-                query: queryParameters,
-            },
-            initOverrides,
-        );
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async versionRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<VersionResponse>> {
+        const requestOptions = await this.versionRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
 
         return new runtime.JSONApiResponse(response, (jsonValue) =>
             VersionResponseFromJSON(jsonValue),

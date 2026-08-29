@@ -57,129 +57,87 @@ import {
 export interface ClientRegistration {
     /**
      *
-     * @type {Array<GrantType>}
-     * @memberof ClientRegistration
      */
     allowedGrantTypes?: Array<GrantType>;
     /**
      *
-     * @type {Array<string>}
-     * @memberof ClientRegistration
      */
     allowedScopes?: Array<string>;
     /**
      * Unique identifier for the application (assigned by the authorization server).
-     * @type {number}
-     * @memberof ClientRegistration
      */
-    applicationId: number;
+    applicationUri?: string | null;
     /**
      * Unique identifier for the client application (assigned by the authorization server).
-     * @type {string}
-     * @memberof ClientRegistration
      */
     clientId?: string | null;
     /**
      * Time at which the client identifier was issued (Unix timestamp).
-     * @type {number}
-     * @memberof ClientRegistration
      */
     clientIdIssuedAt?: number | null;
     /**
      * Human-readable name of the client application.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     clientName: string;
     /**
      * Optional or required depending on registration type (Public vs Confidential).
-     * @type {string}
-     * @memberof ClientRegistration
      */
     clientSecret?: string | null;
     /**
      * Time at which the client secret will expire (0 or None for no expiration).
-     * @type {number}
-     * @memberof ClientRegistration
      */
     clientSecretExpiresAt?: number | null;
     /**
      *
-     * @type {ClientType}
-     * @memberof ClientRegistration
      */
     clientType?: ClientType;
     /**
      * URL of the home page of the client.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     clientUri?: string | null;
     /**
      * Array of email addresses for people responsible for this client.
-     * @type {Array<string>}
-     * @memberof ClientRegistration
      */
     contacts?: Array<string>;
     /**
      * URL that references a logo for the client application.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     logoUri?: string | null;
     /**
      * URL for the application's privacy policy.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     policyUri?: string | null;
     /**
      *
-     * @type {ClientProfile}
-     * @memberof ClientRegistration
      */
     profile: ClientProfile;
     /**
      *
-     * @type {Array<string>}
-     * @memberof ClientRegistration
      */
     redirectUris?: Array<string>;
     /**
      * Standard OAuth 2.0 response types (e.g., `["code"]`, `["token"]`).
-     * @type {Array<ResponseType>}
-     * @memberof ClientRegistration
      */
     responseTypes?: Array<ResponseType>;
     /**
      * A unique identifier string assigned by the software issuer.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     softwareId?: string | null;
     /**
      * A digitally signed JWT assertion containing verifiable client metadata.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     softwareStatement?: string | null;
     /**
      * A version identifier string string assigned by the software issuer.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     softwareVersion?: string | null;
     /**
      * Requested authentication method for the token endpoint
      * (e.g., `client_secret_basic`, `client_secret_post`, `private_key_jwt`).
-     * @type {TokenEndpointAuthMethod}
-     * @memberof ClientRegistration
      */
     tokenEndpointAuthMethod: TokenEndpointAuthMethod;
     /**
      * URL for the application's terms of service.
-     * @type {string}
-     * @memberof ClientRegistration
      */
     tosUri?: string | null;
 }
@@ -190,14 +148,23 @@ export interface ClientRegistration {
 export function instanceOfClientRegistration(
     value: object,
 ): value is ClientRegistration {
-    if (!("applicationId" in value) || value["applicationId"] === undefined)
-        return false;
-    if (!("clientName" in value) || value["clientName"] === undefined)
+    if (
+        (!("clientName" in (value as Record<string, any>)) &&
+            !("client_name" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["clientName"] === undefined &&
+            (value as Record<string, any>)["client_name"] === undefined)
+    )
         return false;
     if (!("profile" in value) || value["profile"] === undefined) return false;
     if (
-        !("tokenEndpointAuthMethod" in value) ||
-        value["tokenEndpointAuthMethod"] === undefined
+        (!("tokenEndpointAuthMethod" in (value as Record<string, any>)) &&
+            !(
+                "token_endpoint_auth_method" in (value as Record<string, any>)
+            )) ||
+        ((value as Record<string, any>)["tokenEndpointAuthMethod"] ===
+            undefined &&
+            (value as Record<string, any>)["token_endpoint_auth_method"] ===
+                undefined)
     )
         return false;
     return true;
@@ -223,27 +190,60 @@ export function ClientRegistrationFromJSONTyped(
                   ),
         allowedScopes:
             json["allowed_scopes"] == null ? undefined : json["allowed_scopes"],
-        applicationId: json["application_id"],
-        clientId: json["client_id"] == null ? undefined : json["client_id"],
-        clientIdIssuedAt:
-            json["client_id_issued_at"] == null
+        applicationUri:
+            json["application_uri"] === undefined
                 ? undefined
-                : json["client_id_issued_at"],
+                : json["application_uri"] === null
+                  ? null
+                  : json["application_uri"],
+        clientId:
+            json["client_id"] === undefined
+                ? undefined
+                : json["client_id"] === null
+                  ? null
+                  : json["client_id"],
+        clientIdIssuedAt:
+            json["client_id_issued_at"] === undefined
+                ? undefined
+                : json["client_id_issued_at"] === null
+                  ? null
+                  : json["client_id_issued_at"],
         clientName: json["client_name"],
         clientSecret:
-            json["client_secret"] == null ? undefined : json["client_secret"],
-        clientSecretExpiresAt:
-            json["client_secret_expires_at"] == null
+            json["client_secret"] === undefined
                 ? undefined
-                : json["client_secret_expires_at"],
+                : json["client_secret"] === null
+                  ? null
+                  : json["client_secret"],
+        clientSecretExpiresAt:
+            json["client_secret_expires_at"] === undefined
+                ? undefined
+                : json["client_secret_expires_at"] === null
+                  ? null
+                  : json["client_secret_expires_at"],
         clientType:
             json["client_type"] == null
                 ? undefined
                 : ClientTypeFromJSON(json["client_type"]),
-        clientUri: json["client_uri"] == null ? undefined : json["client_uri"],
+        clientUri:
+            json["client_uri"] === undefined
+                ? undefined
+                : json["client_uri"] === null
+                  ? null
+                  : json["client_uri"],
         contacts: json["contacts"] == null ? undefined : json["contacts"],
-        logoUri: json["logo_uri"] == null ? undefined : json["logo_uri"],
-        policyUri: json["policy_uri"] == null ? undefined : json["policy_uri"],
+        logoUri:
+            json["logo_uri"] === undefined
+                ? undefined
+                : json["logo_uri"] === null
+                  ? null
+                  : json["logo_uri"],
+        policyUri:
+            json["policy_uri"] === undefined
+                ? undefined
+                : json["policy_uri"] === null
+                  ? null
+                  : json["policy_uri"],
         profile: ClientProfileFromJSON(json["profile"]),
         redirectUris:
             json["redirect_uris"] == null ? undefined : json["redirect_uris"],
@@ -254,19 +254,32 @@ export function ClientRegistrationFromJSONTyped(
                       ResponseTypeFromJSON,
                   ),
         softwareId:
-            json["software_id"] == null ? undefined : json["software_id"],
+            json["software_id"] === undefined
+                ? undefined
+                : json["software_id"] === null
+                  ? null
+                  : json["software_id"],
         softwareStatement:
-            json["software_statement"] == null
+            json["software_statement"] === undefined
                 ? undefined
-                : json["software_statement"],
+                : json["software_statement"] === null
+                  ? null
+                  : json["software_statement"],
         softwareVersion:
-            json["software_version"] == null
+            json["software_version"] === undefined
                 ? undefined
-                : json["software_version"],
+                : json["software_version"] === null
+                  ? null
+                  : json["software_version"],
         tokenEndpointAuthMethod: TokenEndpointAuthMethodFromJSON(
             json["token_endpoint_auth_method"],
         ),
-        tosUri: json["tos_uri"] == null ? undefined : json["tos_uri"],
+        tosUri:
+            json["tos_uri"] === undefined
+                ? undefined
+                : json["tos_uri"] === null
+                  ? null
+                  : json["tos_uri"],
     };
 }
 
@@ -290,7 +303,7 @@ export function ClientRegistrationToJSONTyped(
                       GrantTypeToJSON,
                   ),
         allowed_scopes: value["allowedScopes"],
-        application_id: value["applicationId"],
+        application_uri: value["applicationUri"],
         client_id: value["clientId"],
         client_id_issued_at: value["clientIdIssuedAt"],
         client_name: value["clientName"],

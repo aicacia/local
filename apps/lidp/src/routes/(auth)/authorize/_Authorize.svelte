@@ -7,9 +7,11 @@
 </script>
 
 <script lang="ts">
-    import type {
-        AuthorizationRequest,
-        ClientRegistration,
+    import {
+        FetchError,
+        ResponseError,
+        type AuthorizationRequest,
+        type ClientRegistration,
     } from "@aicacia/lidp-client";
     import type { OidcUserInfo } from "@aicacia/oidc-client";
     import { LoaderCircle } from "@lucide/svelte";
@@ -27,8 +29,6 @@
         $props();
 
     type CandidateClientRegistration = Partial<ClientRegistration> & {
-        // TODO: change this to a uri
-        applicationId?: number;
         grantTypes?: NonNullable<ClientRegistration["allowedGrantTypes"]>;
         scope?: string;
     };
@@ -46,21 +46,6 @@
         );
     }
 
-    function asNumber(value: unknown): number | undefined {
-        if (typeof value === "number" && Number.isFinite(value)) {
-            return value;
-        }
-        if (typeof value === "string") {
-            const trimmed = value.trim();
-            if (trimmed.length === 0) {
-                return undefined;
-            }
-            const parsed = Number(trimmed);
-            return Number.isFinite(parsed) ? parsed : undefined;
-        }
-        return undefined;
-    }
-
     function normalizeRegistration(
         value: unknown,
     ): CandidateClientRegistration | undefined {
@@ -69,8 +54,8 @@
         }
         const record = value as Record<string, unknown>;
         return {
-            applicationId: asNumber(
-                record.applicationId ?? record.application_id,
+            applicationUri: asString(
+                record.applicationUri ?? record.application_uri,
             ),
             clientId: asString(record.clientId ?? record.client_id),
             clientName: asString(record.clientName ?? record.client_name),
@@ -260,7 +245,7 @@
             return;
         }
         if (
-            registrationCandidate.applicationId === undefined ||
+            !registrationCandidate.applicationUri ||
             !registrationCandidate.clientName ||
             !registrationCandidate.profile ||
             !registrationCandidate.tokenEndpointAuthMethod
@@ -289,7 +274,7 @@
             splitScope(authorizationRequest.scope ?? "");
 
         const payload: ClientRegistration = {
-            applicationId: registrationCandidate.applicationId,
+            applicationUri: registrationCandidate.applicationUri,
             clientId: registrationCandidate.clientId ?? effectiveClientId,
             clientName: registrationCandidate.clientName,
             profile: registrationCandidate.profile,

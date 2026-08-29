@@ -12,7 +12,13 @@
  * Do not edit the class manually.
  */
 
-import { mapValues } from "../runtime.js";
+import {
+    mapValues,
+    parseDate,
+    parseDateTime,
+    serializeDate,
+    serializeDateTime,
+} from "../runtime.js";
 /**
  *
  * @export
@@ -21,20 +27,14 @@ import { mapValues } from "../runtime.js";
 export interface VersionResponse {
     /**
      *
-     * @type {Date}
-     * @memberof VersionResponse
      */
     build: Date;
     /**
      *
-     * @type {string}
-     * @memberof VersionResponse
      */
     name: string;
     /**
      *
-     * @type {string}
-     * @memberof VersionResponse
      */
     version: string;
 }
@@ -63,7 +63,10 @@ export function VersionResponseFromJSONTyped(
         return json;
     }
     return {
-        build: new Date(json["build"]),
+        build:
+            json["build"] == null
+                ? json["build"]
+                : parseDateTime(json["build"]),
         name: json["name"],
         version: json["version"],
     };
@@ -82,7 +85,10 @@ export function VersionResponseToJSONTyped(
     }
 
     return {
-        build: value["build"].toISOString(),
+        build:
+            value["build"] == null
+                ? value["build"]
+                : serializeDateTime(value["build"]),
         name: value["name"],
         version: value["version"],
     };

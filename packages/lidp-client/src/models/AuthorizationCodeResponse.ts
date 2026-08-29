@@ -12,6 +12,12 @@
  * Do not edit the class manually.
  */
 
+import {
+    parseDate,
+    parseDateTime,
+    serializeDate,
+    serializeDateTime,
+} from "../runtime.js";
 import type { AuthorizationCodeResponseOneOf } from "./AuthorizationCodeResponseOneOf.js";
 import {
     instanceOfAuthorizationCodeResponseOneOf,
@@ -58,7 +64,6 @@ export function AuthorizationCodeResponseFromJSONTyped(
     if (instanceOfAuthorizationCodeResponseOneOf1(json)) {
         return AuthorizationCodeResponseOneOf1FromJSONTyped(json, true);
     }
-
     return {} as any;
 }
 
@@ -86,6 +91,5 @@ export function AuthorizationCodeResponseToJSONTyped(
             value as AuthorizationCodeResponseOneOf1,
         );
     }
-
     return {};
 }

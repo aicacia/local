@@ -19,8 +19,8 @@ use super::{ClientProfile, ClientType, GrantType, ResponseType, TokenEndpointAut
 )]
 pub struct ClientRegistration {
     /// Unique identifier for the application (assigned by the authorization server).
-    /// TODO: this should be a URI or UUID, not an i64
-    pub application_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_uri: Option<String>,
 
     /// Unique identifier for the client application (assigned by the authorization server).
     #[serde(skip_serializing_if = "Option::is_none")]

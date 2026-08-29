@@ -29,8 +29,6 @@ import {
 export interface HealthResponse {
     /**
      *
-     * @type {HealthStatus}
-     * @memberof HealthResponse
      */
     database: HealthStatus;
 }

@@ -21,38 +21,26 @@ import { mapValues } from "../runtime.js";
 export interface RoleResponse {
     /**
      *
-     * @type {number}
-     * @memberof RoleResponse
      */
     applicationId: number;
     /**
      *
-     * @type {number}
-     * @memberof RoleResponse
      */
     createdAt: number;
     /**
      *
-     * @type {string}
-     * @memberof RoleResponse
      */
     description?: string | null;
     /**
      *
-     * @type {number}
-     * @memberof RoleResponse
      */
     id: number;
     /**
      *
-     * @type {string}
-     * @memberof RoleResponse
      */
     name: string;
     /**
      *
-     * @type {number}
-     * @memberof RoleResponse
      */
     updatedAt: number;
 }
@@ -61,13 +49,28 @@ export interface RoleResponse {
  * Check if a given object implements the RoleResponse interface.
  */
 export function instanceOfRoleResponse(value: object): value is RoleResponse {
-    if (!("applicationId" in value) || value["applicationId"] === undefined)
+    if (
+        (!("applicationId" in (value as Record<string, any>)) &&
+            !("application_id" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["applicationId"] === undefined &&
+            (value as Record<string, any>)["application_id"] === undefined)
+    )
         return false;
-    if (!("createdAt" in value) || value["createdAt"] === undefined)
+    if (
+        (!("createdAt" in (value as Record<string, any>)) &&
+            !("created_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["createdAt"] === undefined &&
+            (value as Record<string, any>)["created_at"] === undefined)
+    )
         return false;
     if (!("id" in value) || value["id"] === undefined) return false;
     if (!("name" in value) || value["name"] === undefined) return false;
-    if (!("updatedAt" in value) || value["updatedAt"] === undefined)
+    if (
+        (!("updatedAt" in (value as Record<string, any>)) &&
+            !("updated_at" in (value as Record<string, any>))) ||
+        ((value as Record<string, any>)["updatedAt"] === undefined &&
+            (value as Record<string, any>)["updated_at"] === undefined)
+    )
         return false;
     return true;
 }
@@ -87,7 +90,11 @@ export function RoleResponseFromJSONTyped(
         applicationId: json["application_id"],
         createdAt: json["created_at"],
         description:
-            json["description"] == null ? undefined : json["description"],
+            json["description"] === undefined
+                ? undefined
+                : json["description"] === null
+                  ? null
+                  : json["description"],
         id: json["id"],
         name: json["name"],
         updatedAt: json["updated_at"],

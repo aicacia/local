@@ -21,8 +21,6 @@ import { mapValues } from "../runtime.js";
 export interface IsAllowedForUserResponse {
     /**
      *
-     * @type {boolean}
-     * @memberof IsAllowedForUserResponse
      */
     allowed: boolean;
 }
