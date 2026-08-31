@@ -29,8 +29,8 @@ use lidp_model::{
 use crate::{
     oauth2::{Principal, UserPrincipal, decode_jwt, encode_jwt},
     repo::{
-        ClientRepo, KeyRepo, KeyService, OAuth2AuthorizationCodeRepo, OAuth2UserConsentRepo,
-        PrivateKeyRepo, UserRepo,
+        ApplicationRepo, ClientRepo, KeyRepo, KeyService, OAuth2AuthorizationCodeRepo,
+        OAuth2UserConsentRepo, PrivateKeyRepo, UserRepo,
     },
     util::{generate_random_string, verify_password},
 };
@@ -41,9 +41,10 @@ use super::{
     verify_code_challenge,
 };
 
-pub struct OAuth2Service<C, K, A, U, G> {
+pub struct OAuth2Service<A, C, AC, U, G, K> {
+    pub application_repo: A,
     pub client_repo: C,
-    pub authorization_code_repo: A,
+    pub authorization_code_repo: AC,
     pub user_repo: U,
     pub oauth2_user_consent_repo: G,
     pub key_service: Arc<KeyService<K>>,
@@ -70,24 +71,26 @@ pub struct UpdateUserInfoRequest {
     pub phone_number_verified: Option<bool>,
 }
 
-impl<C, K, A, U, G> OAuth2Service<C, K, A, U, G>
+impl<A, C, AC, U, G, K> OAuth2Service<A, C, AC, U, G, K>
 where
+    A: ApplicationRepo,
     C: ClientRepo,
-    K: KeyRepo,
-    A: OAuth2AuthorizationCodeRepo,
+    AC: OAuth2AuthorizationCodeRepo,
     U: UserRepo,
     G: OAuth2UserConsentRepo,
+    K: KeyRepo,
 {
     pub fn new(
+        application_repo: A,
         client_repo: C,
-        authorization_code_repo: A,
+        authorization_code_repo: AC,
         user_repo: U,
         oauth2_user_consent_repo: G,
         key_service: Arc<KeyService<K>>,
         oauth_config: OAuth2Config,
-        _key_namespace: String,
     ) -> Self {
         Self {
+            application_repo,
             client_repo,
             authorization_code_repo,
             user_repo,
@@ -115,7 +118,6 @@ where
             ..request
         };
 
-        // TODO: we need to get or create the application first
         let client = self
             .client_repo
             .create_client(client)

@@ -15,7 +15,10 @@ const oidcClient = $derived.by(() =>
             clientId: CLIENT_ID,
             responseType: "code",
             registration: {
-                applicationUri: 'password-manager.aicacia.com',
+              application: {
+                  name: 'Aicacia Password Manager',
+                  uri: 'password-manager.aicacia.com'
+                },
                 clientId: CLIENT_ID,
                 clientName: "Password Manager",
                 scope: "openid profile address offline email phone",

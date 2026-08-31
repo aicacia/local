@@ -31,6 +31,7 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
     ));
 
     let oauth2_service = Arc::new(OAuth2Service::new(
+        LibSqlApplicationRepo::new(database.clone()),
         LibSqlClientRepo::new(database.clone(), key_service.clone()),
         LibSqlOAuth2AuthorizationCodeRepo::new(database.clone()),
         LibSqlUserRepo::new(
@@ -41,7 +42,6 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
         LibSqlOAuth2UserConsentRepo::new(database.clone()),
         key_service,
         app_config.oauth2.clone(),
-        app_config.key_namespace.clone(),
     ));
 
     let lidp_router = lidp_server::openapi_router(

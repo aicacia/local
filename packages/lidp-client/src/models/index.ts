@@ -1,5 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
+export * from "./ApplicationRegistration.js";
 export * from "./ApproveForUserRequest.js";
 export * from "./AuthorizationCodeResponse.js";
 export * from "./AuthorizationCodeResponseOneOf.js";

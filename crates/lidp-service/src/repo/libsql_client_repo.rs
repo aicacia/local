@@ -136,18 +136,30 @@ impl ClientRepo for LibSqlClientRepo {
                 let mut rows = transaction
                     .query(
                         "SELECT id FROM applications WHERE uri = ?",
-                        libsql::params![client.application_uri.clone()],
+                        libsql::params![client.application.uri.clone()],
                     )
                     .await?;
 
                 let application_id: i64 = if let Some(row) = rows.next().await? {
                     row.get(0)?
                 } else {
-                    return Err(RepoError::InvalidInput(format!(
-                        "application_uri not found: {:?}",
-                        client.application_uri
-                    ))
-                    .into_libsql());
+                    let mut rows = transaction
+                        .query(
+                            "INSERT INTO applications (name, uri, description) VALUES (?, ?, ?) RETURNING id;",
+                            libsql::params![
+                                client.application.name.clone(),
+                                client.application.uri.clone(),
+                                client.application.description.clone(),
+                            ],
+                        )
+                        .await?;
+
+                    let row = rows
+                        .next()
+                        .await?
+                        .ok_or_else(|| libsql::Error::NullValue)?;
+
+                    row.get(0)?
                 };
 
                 let client_query = r#"

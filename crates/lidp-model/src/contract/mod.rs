@@ -1,3 +1,4 @@
+mod application_registration;
 mod approve_for_user_request;
 mod authorization_code_grant_request;
 mod authorization_code_response;
@@ -41,6 +42,7 @@ mod token_exchange_grant_request;
 mod token_request;
 mod user_info;
 
+pub use application_registration::ApplicationRegistration;
 pub use approve_for_user_request::ApproveForUserRequest;
 pub use authorization_code_grant_request::AuthorizationCodeGrantRequest;
 pub use authorization_code_response::AuthorizationCodeResponse;

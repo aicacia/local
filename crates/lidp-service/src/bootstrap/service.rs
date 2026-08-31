@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use lidp_model::{
     contract::{
-        ClientProfile, ClientRegistration, ClientType, EntityType, GrantType, ResponseType,
-        TokenEndpointAuthMethod,
+        ApplicationRegistration, ClientProfile, ClientRegistration, ClientType, EntityType,
+        GrantType, ResponseType, TokenEndpointAuthMethod,
     },
     model::{Application, Client, Key, User},
 };
@@ -21,7 +21,7 @@ use super::config::BootstrapConfig;
 use crate::{
     repo::{
         ApplicationRepo, ClientRepo, KeyRepo, KeyService, PermissionRepo, PrivateKeyRepo,
-        RepoError, RepoResult, RoleRepo, UserRepo,
+        RepoResult, RoleRepo, UserRepo,
     },
     util::generate_random_string,
 };
@@ -73,7 +73,7 @@ where
         if self.config.web {
             let lidp_web_client = self
                 .ensure_client(
-                    lidp_application.uri.clone(),
+                    &lidp_application,
                     "lidp-web".to_string(),
                     "Local IdP Web".to_string(),
                     self.config.lidp_url.clone(),
@@ -93,7 +93,7 @@ where
         if self.config.desktop {
             let lidp_desktop_client = self
                 .ensure_client(
-                    lidp_application.uri.clone(),
+                    &lidp_application,
                     "lidp-desktop".to_string(),
                     "Local IdP Desktop".to_string(),
                     "lidp://app".to_string(),
@@ -121,7 +121,7 @@ where
         if self.config.web {
             let lidp_management_web_client = self
                 .ensure_client(
-                    lidp_management_application.uri.clone(),
+                    &lidp_management_application,
                     "lidp-management-web".to_string(),
                     "Local IdP Management Web".to_string(),
                     self.config.lidp_management_url.clone(),
@@ -142,7 +142,7 @@ where
         if self.config.desktop {
             let lidp_management_desktop_client = self
                 .ensure_client(
-                    lidp_management_application.uri.clone(),
+                    &lidp_management_application,
                     "lidp-management-desktop".to_string(),
                     "Local IdP Management Desktop".to_string(),
                     "lidp-management://app".to_string(),
@@ -193,7 +193,7 @@ where
 
     async fn ensure_client(
         &self,
-        application_uri: String,
+        application: &Application,
         client_id: String,
         client_name: String,
         client_uri: String,
@@ -207,16 +207,6 @@ where
             "email".to_owned(),
             "phone".to_owned(),
         ];
-        let application = self
-            .application_repo
-            .find_by_uri(&application_uri)
-            .await?
-            .ok_or_else(|| {
-                RepoError::InvalidInput(format!(
-                    "Application with uri: {:?} not found",
-                    application_uri
-                ))
-            })?;
         let existing = self
             .client_repo
             .find_client_by_client_id(&client_id)
@@ -266,7 +256,11 @@ where
             }
         } else {
             let client = ClientRegistration {
-                application_uri: Some(application.uri),
+                application: ApplicationRegistration {
+                    name: Some(application.name.clone()),
+                    uri: application.uri.clone(),
+                    description: application.description.clone(),
+                },
                 client_id: Some(client_id),
                 client_secret: Some(generate_random_string::<32>()),
                 client_id_issued_at: None,

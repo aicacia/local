@@ -86,6 +86,7 @@ pub async fn run() -> io::Result<()> {
 
     let oauth2_config = app_config.oauth2.clone();
     let oauth2_service = Arc::new(OAuth2Service::new(
+        LibSqlApplicationRepo::new(database.clone()),
         LibSqlClientRepo::new(database.clone(), key_service.clone()),
         LibSqlOAuth2AuthorizationCodeRepo::new(database.clone()),
         LibSqlUserRepo::new(
@@ -96,7 +97,6 @@ pub async fn run() -> io::Result<()> {
         LibSqlOAuth2UserConsentRepo::new(database.clone()),
         key_service.clone(),
         oauth2_config,
-        app_config.key_namespace.clone(),
     ));
 
     let lidp_router_state = lidp_server::RouterState::new(

@@ -4,7 +4,7 @@ use libsql::Database;
 use lidp_service::{
     oauth2::OAuth2Service,
     repo::{
-        LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
         LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
     },
 };
@@ -16,11 +16,12 @@ pub struct RouterState {
     pub database: Arc<Database>,
     pub oauth2_service: Arc<
         OAuth2Service<
+            LibSqlApplicationRepo,
             LibSqlClientRepo,
-            LibSqlKeyRepo,
             LibSqlOAuth2AuthorizationCodeRepo,
             LibSqlUserRepo,
             LibSqlOAuth2UserConsentRepo,
+            LibSqlKeyRepo,
         >,
     >,
 }
@@ -32,11 +33,12 @@ impl RouterState {
         database: Arc<Database>,
         oauth2_service: Arc<
             OAuth2Service<
+                LibSqlApplicationRepo,
                 LibSqlClientRepo,
-                LibSqlKeyRepo,
                 LibSqlOAuth2AuthorizationCodeRepo,
                 LibSqlUserRepo,
                 LibSqlOAuth2UserConsentRepo,
+                LibSqlKeyRepo,
             >,
         >,
     ) -> Self {

@@ -5,7 +5,7 @@ use lidp_service::{
     management::ManagementService,
     oauth2::OAuth2Service,
     repo::{
-        LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
         LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
     },
 };
@@ -17,11 +17,12 @@ pub struct RouterState {
     pub(crate) management_service: Arc<ManagementService>,
     pub(crate) oauth2_service: Arc<
         OAuth2Service<
+            LibSqlApplicationRepo,
             LibSqlClientRepo,
-            LibSqlKeyRepo,
             LibSqlOAuth2AuthorizationCodeRepo,
             LibSqlUserRepo,
             LibSqlOAuth2UserConsentRepo,
+            LibSqlKeyRepo,
         >,
     >,
 }
@@ -33,11 +34,12 @@ impl RouterState {
         management_service: Arc<ManagementService>,
         oauth2_service: Arc<
             OAuth2Service<
+                LibSqlApplicationRepo,
                 LibSqlClientRepo,
-                LibSqlKeyRepo,
                 LibSqlOAuth2AuthorizationCodeRepo,
                 LibSqlUserRepo,
                 LibSqlOAuth2UserConsentRepo,
+                LibSqlKeyRepo,
             >,
         >,
     ) -> Self {

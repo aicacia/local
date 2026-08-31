@@ -1,5 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
+export * from "./ApplicationRegistration.js";
 export * from "./ApplicationResponse.js";
 export * from "./ClientProfile.js";
 export * from "./ClientRegistration.js";

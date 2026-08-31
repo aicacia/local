@@ -16,7 +16,10 @@ const oidcClient = $derived.by(
         clientId: CLIENT_ID,
         responseType: "code",
         registration: {
-          applicationUri: "lidp.aicacia.com",
+          application: {
+            name: "Local IdP",
+            uri: "lidp.aicacia.com",
+          },
           clientId: CLIENT_ID,
           clientName: "Local IdP",
           scope: "openid profile address offline email phone",

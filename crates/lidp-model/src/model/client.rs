@@ -4,7 +4,8 @@ use alloc::{string::String, vec::Vec};
 use chrono::{DateTime, Utc};
 
 use crate::contract::{
-    ClientProfile, ClientRegistration, ClientType, GrantType, ResponseType, TokenEndpointAuthMethod,
+    ApplicationRegistration, ClientProfile, ClientRegistration, ClientType, GrantType,
+    ResponseType, TokenEndpointAuthMethod,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -69,7 +70,11 @@ impl From<Client> for ClientRegistration {
     fn from(val: Client) -> Self {
         ClientRegistration {
             // The URI of the application associated with the client.
-            application_uri: None,
+            application: ApplicationRegistration {
+                name: Some(val.client_name.clone()),
+                uri: val.client_uri.clone(),
+                description: None,
+            },
             client_id: Some(val.client_id),
             client_secret: Some(val.client_secret),
             client_id_issued_at: val.client_id_issued_at.map(|dt| dt.timestamp()),

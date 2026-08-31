@@ -41,6 +41,13 @@ import {
     GrantTypeToJSON,
     GrantTypeToJSONTyped,
 } from "./GrantType.js";
+import type { ApplicationRegistration } from "./ApplicationRegistration.js";
+import {
+    ApplicationRegistrationFromJSON,
+    ApplicationRegistrationFromJSONTyped,
+    ApplicationRegistrationToJSON,
+    ApplicationRegistrationToJSONTyped,
+} from "./ApplicationRegistration.js";
 import type { ResponseType } from "./ResponseType.js";
 import {
     ResponseTypeFromJSON,
@@ -66,7 +73,7 @@ export interface ClientRegistration {
     /**
      * Unique identifier for the application (assigned by the authorization server).
      */
-    applicationUri?: string | null;
+    application: ApplicationRegistration;
     /**
      * Unique identifier for the client application (assigned by the authorization server).
      */
@@ -148,6 +155,8 @@ export interface ClientRegistration {
 export function instanceOfClientRegistration(
     value: object,
 ): value is ClientRegistration {
+    if (!("application" in value) || value["application"] === undefined)
+        return false;
     if (
         (!("clientName" in (value as Record<string, any>)) &&
             !("client_name" in (value as Record<string, any>))) ||
@@ -190,12 +199,7 @@ export function ClientRegistrationFromJSONTyped(
                   ),
         allowedScopes:
             json["allowed_scopes"] == null ? undefined : json["allowed_scopes"],
-        applicationUri:
-            json["application_uri"] === undefined
-                ? undefined
-                : json["application_uri"] === null
-                  ? null
-                  : json["application_uri"],
+        application: ApplicationRegistrationFromJSON(json["application"]),
         clientId:
             json["client_id"] === undefined
                 ? undefined
@@ -303,7 +307,7 @@ export function ClientRegistrationToJSONTyped(
                       GrantTypeToJSON,
                   ),
         allowed_scopes: value["allowedScopes"],
-        application_uri: value["applicationUri"],
+        application: ApplicationRegistrationToJSON(value["application"]),
         client_id: value["clientId"],
         client_id_issued_at: value["clientIdIssuedAt"],
         client_name: value["clientName"],

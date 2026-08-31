@@ -8,6 +8,8 @@ use alloc::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::contract::ApplicationRegistration;
+
 use super::{ClientProfile, ClientType, GrantType, ResponseType, TokenEndpointAuthMethod};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -19,8 +21,7 @@ use super::{ClientProfile, ClientType, GrantType, ResponseType, TokenEndpointAut
 )]
 pub struct ClientRegistration {
     /// Unique identifier for the application (assigned by the authorization server).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub application_uri: Option<String>,
+    pub application: ApplicationRegistration,
 
     /// Unique identifier for the client application (assigned by the authorization server).
     #[serde(skip_serializing_if = "Option::is_none")]

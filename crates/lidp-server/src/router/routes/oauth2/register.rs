@@ -25,7 +25,9 @@ pub(crate) async fn register(
     StandardAuthorization { .. }: StandardAuthorization,
     Json(body): Json<ClientRegistration>,
 ) -> Result<Json<ClientRegistration>, ErrorResponse> {
+    log::info!("Registering client: {:?}", body);
     let response = state.oauth2_service.register_client(body).await?;
+    log::info!("Registered client: {:?}", response);
     Ok(Json(response))
 }
 
