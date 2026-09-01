@@ -5,12 +5,6 @@
 
 	let callbackError = $state('');
 
-	function consume(..._values: unknown[]): void {}
-
-	$effect(() => {
-		consume(callbackError);
-	});
-
 	onMount(() => {
 		try {
 			handleNativeFetchCallback(page.url.searchParams);

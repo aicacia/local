@@ -24,6 +24,7 @@
         rejectAuthorizationRequest,
         resolveAuthorizationRequest,
     } from "./_utils";
+    import type { ApplicationRegistration } from "@aicacia/lidp-management-client";
 
     let { userInfo, authorizationRequest, registration }: AuthorizeProps =
         $props();
@@ -54,9 +55,7 @@
         }
         const record = value as Record<string, unknown>;
         return {
-            applicationUri: asString(
-                record.applicationUri ?? record.application_uri,
-            ),
+            application: record.application as ApplicationRegistration,
             clientId: asString(record.clientId ?? record.client_id),
             clientName: asString(record.clientName ?? record.client_name),
             profile: asString(record.profile) as ClientRegistration["profile"],
@@ -245,7 +244,7 @@
             return;
         }
         if (
-            !registrationCandidate.applicationUri ||
+            !registrationCandidate.application?.uri ||
             !registrationCandidate.clientName ||
             !registrationCandidate.profile ||
             !registrationCandidate.tokenEndpointAuthMethod
@@ -274,7 +273,7 @@
             splitScope(authorizationRequest.scope ?? "");
 
         const payload: ClientRegistration = {
-            applicationUri: registrationCandidate.applicationUri,
+            application: registrationCandidate.application,
             clientId: registrationCandidate.clientId ?? effectiveClientId,
             clientName: registrationCandidate.clientName,
             profile: registrationCandidate.profile,

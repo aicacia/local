@@ -7,8 +7,8 @@ export const load: PageLoad = async (event) => {
     await event.parent();
 
     try {
-        const oidcClient = getOidcClient();
-        await oidcClient.handleSigninCallback(event.url);
+      const oidcClient = getOidcClient();
+      await oidcClient.handleSigninCallback(event.url);
     } catch (e) {
         if (e instanceof Error) {
             notifications.add(e.message);

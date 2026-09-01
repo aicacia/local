@@ -463,19 +463,11 @@ export class OidcClient<
       !this.disableNativeRequests && isNativeProtocol(tokenEndpointUrl);
 
     if (isNative) {
-      for (const [key, value] of body.entries()) {
-        tokenEndpointUrl.searchParams.set(key, value);
-      }
-      if (headers.Authorization) {
-        tokenEndpointUrl.searchParams.set(
-          "authorization",
-          headers.Authorization,
-        );
-      }
       const response = await this.nativeFetch(tokenEndpointUrl, {
-        headers: {
-          "Content-Type": "application/json;charset=UTF-8",
-        },
+        method: "POST",
+        headers,
+        body: body.toString(),
+        credentials: this.config.fetchRequestCredentials ?? "same-origin",
         timeout: this.config.requestTimeoutInSeconds
           ? this.config.requestTimeoutInSeconds * 1000
           : undefined,
