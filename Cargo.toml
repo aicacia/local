@@ -106,6 +106,7 @@ env_logger = { version = "0.10", default-features = false, features = [] }
 [workspace]
 members = [
   "crates/db",
+  "crates/file-system",
   "crates/cli",
   "crates/api",
   "crates/key",

@@ -7,54 +7,24 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "file system for local first synchronization"
+description = "Local-first, eventually consistent file system primitives"
 
 [lib]
 name = "file_system"
 
 [features]
-default = ["in-memory"]
+default = ["native"]
 in-memory = []
-utoipa = ["dep:utoipa"]
-axum = ["dep:axum"]
-wasm = ["dep:tsify", "dep:serde-wasm-bindgen", "dep:wasm-bindgen"]
+native = ["std", "dep:automerge"]
+std = ["blake3/std"]
 
 [dependencies]
-# Web
-utoipa = { version = "5.5", default-features = false, features = [
-  "macros",
-  "chrono",
-], optional = true }
-axum = { version = "0.8", default-features = false, features = [
-  "json",
-], optional = true }
+# Metadata
+# Automerge documents persist per-folder file metadata and drive metadata synchronization.
+automerge = { version = "0.11", default-features = false, features = [], optional = true }
 
-# Serialization
-serde = { version = "1.0", default-features = false, features = ["std", "derive"] }
-
-# Utilities
-chrono = { version = "0.4", default-features = false, features = [
-    "std",
-  "serde",
-  "alloc",
-] }
-tracing = { version = "0.1", default-features = false, features = [] }
+# Storage
+blake3 = { version = "1.8", default-features = false, features = [] }
 
 # Async
-futures = { version = "0.3", default-features = false, features = [] }
-tokio = { version = "1.53", default-features = false, features = ["macros"] }
-tokio-util = { version = "0.7", default-features = false, features = [] }
-
-# Optional TS generation + serde for tsify
-tsify = { version = "0.5", default-features = false, features = [
-  "js",
-], optional = true }
-serde-wasm-bindgen = { version = "0.6", default-features = false, optional = true }
-wasm-bindgen = { version = "0.2", default-features = false, features = [
-  "std",
-], optional = true }
-
-[dev-dependencies]
-log = "0.4"
-env_logger = "0.11"
-test-log = "0.2"
+futures-core = { version = "0.3", default-features = false, features = [] }

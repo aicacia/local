@@ -26,7 +26,7 @@ We need a Rust library for local file access that:
 ├─────────────────────────────┤
 │   Metadata: Automerge (per folder) │  file tree entries, CRDT
 ├─────────────────────────────┤
-│   Storage Layer (redb)        │  blobs (full files) + automerge doc persistence
+│   Storage Layer (native filesystem) │  blobs (full files) + automerge doc persistence
 ├─────────────────────────────┤
 │   Transport Trait (minimal)   │  send / broadcast / subscribe, no topics — just moves bytes
 ├─────────────────────────────┤
@@ -40,9 +40,11 @@ The transport's only job is moving bytes between peers. It knows nothing about f
 
 ```rust
 trait Transport {
-    async fn send(&self, peer: PeerId, data: Bytes);
+    type PeerId;
+
+    async fn send(&self, peer: Self::PeerId, data: Bytes);
     async fn broadcast(&self, data: Bytes);
-    async fn subscribe(&self) -> Stream<(PeerId, Bytes)>;
+    async fn subscribe(&self) -> Stream<(Self::PeerId, Bytes)>;
 }
 ```
 
@@ -84,7 +86,8 @@ iroh is the default implementation. Swapping to a different transport later mean
 ### 5. Blob storage
 
 - Files are content-addressed (hashed) and chunked, enabling streaming and integrity checks.
-- Full files are stored as blobs in `redb`, keyed by hash.
+- Full files are stored as native filesystem blobs under `.lidp/blobs/<hash>`.
+- Folder documents are persisted under `.lidp/metadata/`.
 - Automerge docs never contain blob bytes — only metadata pointing at them.
 
 ### 6. Passthrough files
@@ -97,7 +100,7 @@ iroh is the default implementation. Swapping to a different transport later mean
 ### 7. Streaming
 
 - Files are chunked for content addressing anyway, so streaming reads = reading chunks in order.
-- Works identically for local and passthrough files: local reads hit `redb` first, passthrough reads always go to the network. Same read API either way.
+- Works identically for local and passthrough files: local reads hit the native blob store first, passthrough reads always go to the network. Same read API either way.
 
 ## Consequences
 
