@@ -47,5 +47,9 @@ DROP INDEX IF EXISTS "idx_user_emails_primary";
 DROP INDEX IF EXISTS "idx_user_emails_user_id";
 DROP TABLE IF EXISTS "user_emails";
 
+DROP INDEX IF EXISTS "idx_user_devices_user_state";
+DROP INDEX IF EXISTS "idx_user_devices_user_public_key";
+DROP TABLE IF EXISTS "user_devices";
+
 DROP INDEX IF EXISTS "idx_users_name";
 DROP TABLE IF EXISTS "users";

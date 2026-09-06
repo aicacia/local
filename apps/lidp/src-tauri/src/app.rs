@@ -3,7 +3,7 @@ use std::{fs, io, path::Path, sync::Arc};
 use axum::Router;
 use db::{close_database, open_database};
 use libsql::Database;
-use lidp_server::{AppConfig, RouterState};
+use lidp_server::{AppConfig, RouterState, storage_router};
 use lidp_service::{
     bootstrap::BootstrapService,
     management::ManagementService,
@@ -11,14 +11,16 @@ use lidp_service::{
     repo::{
         KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo,
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
+        LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
+    scoped_file_system::ScopedFileSystemRuntime,
+    storage_session::StorageSessionService,
 };
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
-use crate::local_storage::LocalStorage;
+use crate::device_identity::DeviceIdentity;
 use crate::localhost_server::{
     localhost_server_base_url, reserve_localhost_listener, start_unified_localhost_server,
 };
@@ -29,7 +31,11 @@ pub struct LocalhostServerState {
     pub ready: bool,
 }
 
-pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::Result<Router> {
+pub fn init_router(
+    app_config: Arc<AppConfig>,
+    database: Arc<Database>,
+    file_systems: Arc<ScopedFileSystemRuntime>,
+) -> io::Result<(Router, Arc<RouterState>)> {
     let key_service = Arc::new(KeyService::new(
         LibSqlKeyRepo::new(database.clone()),
         PrivateKeyKeyringRepo::new(&app_config.oauth2.issuer),
@@ -50,15 +56,16 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
         app_config.oauth2.clone(),
     ));
 
-    let lidp_router = lidp_server::openapi_router(
-        RouterState::new(
-            &app_config.ui_public_uri,
-            &app_config.api_public_uri,
-            database.clone(),
-            oauth2_service.clone(),
-        ),
-        "",
-    );
+    let storage_sessions = Arc::new(StorageSessionService::new());
+    let router_state = Arc::new(RouterState::new(
+        &app_config.ui_public_uri,
+        &app_config.api_public_uri,
+        database.clone(),
+        oauth2_service.clone(),
+        storage_sessions.clone(),
+        Arc::new(LibSqlUserDeviceRepo::new(database.clone())),
+    ));
+    let lidp_router = lidp_server::openapi_router(router_state.as_ref().clone(), "");
     let management_service = Arc::new(ManagementService::new(
         LibSqlApplicationRepo::new(database.clone()),
         LibSqlPermissionRepo::new(database.clone()),
@@ -74,11 +81,16 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
         "/lidp-management",
     );
 
-    Ok(lidp_router
-        .split_for_parts()
-        .0
-        .merge(management_router.split_for_parts().0)
-        .layer(CorsLayer::very_permissive().allow_private_network(true)))
+    let storage_router = storage_router(storage_sessions, file_systems);
+    Ok((
+        lidp_router
+            .split_for_parts()
+            .0
+            .merge(management_router.split_for_parts().0)
+            .merge(storage_router)
+            .layer(CorsLayer::very_permissive().allow_private_network(true)),
+        router_state,
+    ))
 }
 
 pub async fn init_datebase(
@@ -165,6 +177,14 @@ pub async fn get_localhost_server_base_url(app_handle: AppHandle<Wry>) -> String
     localhost_server_base_url_for(&app_handle).await
 }
 
+#[tauri::command]
+pub fn get_device_endpoint_id(app_handle: AppHandle<Wry>) -> Result<String, String> {
+    app_handle
+        .try_state::<Arc<DeviceIdentity>>()
+        .map(|identity| identity.endpoint_id().to_string())
+        .ok_or_else(|| "device identity is missing".to_owned())
+}
+
 pub async fn localhost_server_base_url_for(app_handle: &AppHandle<Wry>) -> String {
     if let Some(state) = app_handle.try_state::<Mutex<LocalhostServerState>>() {
         let state = state.lock().await;
@@ -190,15 +210,25 @@ pub async fn set_localhost_server_state(
     }
 }
 
-pub async fn init_local_storage(app_handle: &AppHandle<Wry>) -> tauri::Result<()> {
+pub async fn init_scoped_file_system_runtime(
+    app_handle: &AppHandle<Wry>,
+    app_config: &AppConfig,
+) -> tauri::Result<()> {
     let data_dir = app_handle.path().app_data_dir()?;
-    let files_dir = data_dir.join("files");
-    if !files_dir.exists() {
-        fs::create_dir_all(&files_dir)?;
-    }
+    let runtime = ScopedFileSystemRuntime::new(data_dir, &app_config.oauth2.issuer)
+        .map_err(tauri::Error::Io)?;
+    app_handle.manage(Arc::new(runtime));
+    Ok(())
+}
 
-    let storage = LocalStorage::new(files_dir).await;
-    app_handle.manage(Mutex::new(storage));
+pub async fn init_device_identity(
+    app_handle: &AppHandle<Wry>,
+    app_config: &AppConfig,
+) -> tauri::Result<()> {
+    let identity = DeviceIdentity::open(&app_config.oauth2.issuer)
+        .await
+        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
+    app_handle.manage(Arc::new(identity));
     Ok(())
 }
 
@@ -209,12 +239,7 @@ pub async fn init_unified_localhost_server(
     base_url: String,
 ) -> tauri::Result<String> {
     let data_dir = app_handle.path().app_data_dir()?;
-    let storage_state = app_handle
-        .try_state::<Mutex<LocalStorage>>()
-        .ok_or_else(|| tauri::Error::Io(io::Error::other("local storage state is missing")))?;
-    let storage = storage_state.lock().await.clone();
-
-    start_unified_localhost_server(router, storage, listener, &data_dir);
+    start_unified_localhost_server(router, listener, &data_dir);
 
     set_localhost_server_state(app_handle, base_url.clone(), true).await;
     Ok(base_url)

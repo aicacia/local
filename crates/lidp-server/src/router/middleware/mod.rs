@@ -1,3 +1,4 @@
 mod authorization;
 
-pub use authorization::StandardAuthorization;
+#[allow(unused_imports)]
+pub use authorization::{StandardAuthorization, authorize_bearer};

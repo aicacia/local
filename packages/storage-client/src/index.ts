@@ -1,473 +1,178 @@
 export type StorageRequest =
-    | { type: "addDevice"; deviceId: string }
-    | { type: "removeDevice"; deviceId: string }
-    | { type: "connectPeer"; peerId: string }
-    | { type: "syncPeer"; peerId: string }
-    | { type: "sendMessage"; peerId: string; payload: string | Uint8Array }
-    | { type: "closeSession"; peerId: string }
-    | { type: "readFile"; path: string }
-    | { type: "writeFile"; path: string; content: string }
-    | { type: "listDir"; path: string }
-    | { type: "createDir"; path: string }
-    | { type: "deletePath"; path: string }
-    | { type: "renamePath"; from: string; to: string }
-    | { type: "existsPath"; path: string };
+    | { type: "read"; path: string }
+    | { type: "write"; path: string; content: number[] }
+    | { type: "append"; path: string; content: number[] }
+    | { type: "delete"; path: string }
+    | { type: "entry"; path: string }
+    | { type: "list"; path: string };
 
-export type StorageResponse =
-    | { ok: true; event?: StorageEvent; payload?: unknown }
-    | { ok: false; error: string };
-
-export type StorageEvent =
-    | { type: "connected"; peerId: string }
-    | { type: "messageReceived"; peerId: string; payload: string | Uint8Array }
-    | { type: "closed"; peerId: string; reason?: string };
-
-export type StorageClientOptions = {
-    url: string;
+export type StorageEntry = {
+    name: string;
+    hash: string;
+    size: number;
+    local: boolean;
 };
 
-// Internal protocol types
-type BridgeRequest = StorageRequest & { requestId: number };
+export type StorageResponse =
+    | { type: "authenticated" }
+    | { type: "read"; content: number[] }
+    | { type: "written"; entry: StorageEntry }
+    | { type: "appended"; entry: StorageEntry }
+    | { type: "deleted" }
+    | { type: "entry"; entry: StorageEntry }
+    | { type: "listed"; entries: StorageEntry[] }
+    | { type: "error"; code: "invalidRequest" | "operationFailed" };
 
-function getSocketConstructor(): typeof WebSocket | undefined {
-    return globalThis.WebSocket;
-}
+type StorageSession = { token: string; expiresAt: number };
 
-let requestIdCounter = 0;
+type FetchFunction = (
+    input: URL | RequestInfo,
+    init?: RequestInit,
+) => Promise<Response>;
 
-function getNextRequestId(): number {
-    return ++requestIdCounter;
-}
+export type StorageClientOptions = {
+    baseUrl: URL | string;
+    bearerToken: () => string | Promise<string>;
+    fetch?: FetchFunction;
+};
 
-export class PeerSession {
-    constructor(
-        private readonly client: StorageClient,
-        public readonly peerId: string,
-    ) {}
+export class StorageSocket {
+    #queue = Promise.resolve();
 
-    async send(payload: string | Uint8Array): Promise<void> {
-        const response = await this.client.request<StorageResponse>({
-            type: "sendMessage",
-            peerId: this.peerId,
-            payload,
+    constructor(readonly socket: WebSocket) {}
+
+    request(request: StorageRequest): Promise<StorageResponse> {
+        const response = this.#queue.then(async () => {
+            const next = receive(this.socket);
+            this.socket.send(JSON.stringify({ type: "request", request }));
+            return next;
         });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
+        this.#queue = response.then(
+            () => undefined,
+            () => undefined,
+        );
+        return response;
     }
 
-    async close(): Promise<void> {
-        const response = await this.client.request<StorageResponse>({
-            type: "closeSession",
-            peerId: this.peerId,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
+    close(): void {
+        this.socket.close();
     }
-
-    async *events(): AsyncIterable<StorageEvent> {
-        for await (const event of this.client.listen()) {
-            if (
-                event.type === "messageReceived" &&
-                event.peerId !== this.peerId
-            ) {
-                continue;
-            }
-            if (
-                event.type !== "messageReceived" &&
-                event.peerId !== this.peerId
-            ) {
-                continue;
-            }
-            yield event;
-        }
-    }
-}
-
-export async function listStorageDir(
-    client: StorageClient,
-    path: string,
-): Promise<string[]> {
-    return client.listDir(path);
-}
-
-export async function createStorageDir(
-    client: StorageClient,
-    path: string,
-): Promise<void> {
-    return client.createDir(path);
-}
-
-export async function deleteStoragePath(
-    client: StorageClient,
-    path: string,
-): Promise<void> {
-    return client.deletePath(path);
-}
-
-export async function renameStoragePath(
-    client: StorageClient,
-    from: string,
-    to: string,
-): Promise<void> {
-    return client.renamePath(from, to);
-}
-
-export async function existsStoragePath(
-    client: StorageClient,
-    path: string,
-): Promise<boolean> {
-    return client.existsPath(path);
 }
 
 export class StorageClient {
-    private socket: WebSocket | null = null;
-    private requestWaiters = new Map<
-        number,
-        (response: StorageResponse) => void
-    >();
-    private eventListeners = new Set<(event: StorageEvent) => void>();
-    private socketPromise: Promise<WebSocket> | null = null;
-
     constructor(private readonly options: StorageClientOptions) {}
 
-    static create(options: StorageClientOptions): StorageClient {
-        return new StorageClient(options);
-    }
-
-    private async ensureSocket(): Promise<WebSocket> {
-        if (this.socket) {
-            if (this.socket.readyState === WebSocket.OPEN) {
-                return this.socket;
-            }
-            this.socket = null;
-            this.socketPromise = null;
+    async openSocket(): Promise<StorageSocket> {
+        const baseUrl = parseUrl(this.options.baseUrl);
+        const token = await this.options.bearerToken();
+        if (!token) {
+            throw new Error("Missing LIDP bearer token");
         }
-
-        if (this.socketPromise) {
-            return this.socketPromise;
+        const response = await (this.options.fetch ?? fetch)(
+            new URL("/storage/sessions", baseUrl),
+            { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok) {
+            throw new Error(
+                `Storage session request failed: ${response.status}`,
+            );
         }
-
-        this.socketPromise = this.openSocket();
-        return this.socketPromise;
+        const session = parseSession(await response.json());
+        const socket = new WebSocket(webSocketUrl(baseUrl));
+        await opened(socket);
+        const authenticated = receive(socket);
+        socket.send(
+            JSON.stringify({ type: "authenticate", token: session.token }),
+        );
+        if ((await authenticated).type !== "authenticated") {
+            socket.close();
+            throw new Error("Storage socket authentication failed");
+        }
+        return new StorageSocket(socket);
     }
+}
 
-    private openSocket(): Promise<WebSocket> {
-        return new Promise((resolve, reject) => {
-            const WebSocketImpl = getSocketConstructor();
+function parseUrl(value: URL | string): URL {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error("LIDP API URL must use HTTP or HTTPS");
+    }
+    return url;
+}
 
-            if (!WebSocketImpl) {
+function parseSession(value: unknown): StorageSession {
+    if (
+        !value ||
+        typeof value !== "object" ||
+        typeof (value as StorageSession).token !== "string" ||
+        typeof (value as StorageSession).expiresAt !== "number"
+    ) {
+        throw new Error("Invalid storage session response");
+    }
+    return value as StorageSession;
+}
+
+function webSocketUrl(baseUrl: URL): string {
+    const url = new URL("/storage", baseUrl);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url.href;
+}
+
+function opened(socket: WebSocket): Promise<void> {
+    if (socket.readyState === WebSocket.OPEN) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            socket.removeEventListener("open", onOpen);
+            socket.removeEventListener("error", onError);
+        };
+        const onOpen = () => {
+            cleanup();
+            resolve();
+        };
+        const onError = () => {
+            cleanup();
+            reject(new Error("Storage socket failed to open"));
+        };
+        socket.addEventListener("open", onOpen);
+        socket.addEventListener("error", onError);
+    });
+}
+
+function receive(socket: WebSocket): Promise<StorageResponse> {
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            socket.removeEventListener("message", onMessage);
+            socket.removeEventListener("close", onClose);
+            socket.removeEventListener("error", onError);
+        };
+        const onMessage = (event: MessageEvent) => {
+            cleanup();
+            if (typeof event.data !== "string") {
                 reject(
-                    new Error("WebSocket is not available in this environment"),
+                    new Error("Storage socket returned a non-text response"),
                 );
                 return;
             }
-
-            const socket = new WebSocketImpl(this.options.url);
-
-            const onOpen = () => {
-                console.debug("[storage-client] WebSocket opened", this.options.url);
-                socket.removeEventListener("open", onOpen);
-                socket.removeEventListener("error", onError);
-                this.socket = socket;
-                resolve(socket);
-            };
-
-            const onError = () => {
-                console.error("[storage-client] WebSocket error", this.options.url);
-                cleanupConnectionListeners();
-                this.socket = null;
-                this.socketPromise = null;
-                reject(
-                    new Error(
-                        `Failed to connect to storage bridge at ${this.options.url}`,
-                    ),
-                );
-            };
-
-            const onClose = () => {
-                console.warn("[storage-client] WebSocket closed", this.options.url);
-                cleanupConnectionListeners();
-                if (this.socket === socket) {
-                    this.socket = null;
-                    this.socketPromise = null;
-                }
-                for (const waiter of this.requestWaiters.values()) {
-                    waiter({
-                        ok: false,
-                        error: "Storage bridge connection closed",
-                    });
-                }
-                this.requestWaiters.clear();
-            };
-
-            const onMessage = (event: MessageEvent) => {
-                console.debug("[storage-client] WebSocket message", event.data);
-                this.handleMessage(String(event.data));
-            };
-
-            const cleanupConnectionListeners = () => {
-                socket.removeEventListener("open", onOpen);
-                socket.removeEventListener("error", onError);
-                socket.removeEventListener("close", onClose);
-                socket.removeEventListener("message", onMessage);
-            };
-
-            socket.addEventListener("open", onOpen);
-            socket.addEventListener("error", onError);
-            socket.addEventListener("close", onClose);
-            socket.addEventListener("message", onMessage);
-        });
-    }
-
-    private handleMessage(data: string): void {
-        try {
-            const parsed = JSON.parse(data);
-
-            // Check if this is a response (has requestId and ok/error properties)
-            if (
-                "requestId" in parsed &&
-                ("ok" in parsed || "error" in parsed)
-            ) {
-                const requestId = parsed.requestId;
-                const waiter = this.requestWaiters.get(requestId);
-                if (waiter) {
-                    this.requestWaiters.delete(requestId);
-                    waiter(parsed as StorageResponse);
-                }
-            } else if ("type" in parsed) {
-                // This is an event
-                const event = parsed as StorageEvent;
-                for (const listener of this.eventListeners) {
-                    listener(event);
-                }
-            }
-        } catch {
-            // Ignore malformed messages
-        }
-    }
-
-    async connectPeer(peerId: string): Promise<PeerSession> {
-        const response = await this.request<StorageResponse>({
-            type: "connectPeer",
-            peerId,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-
-        return this.peerSession(peerId);
-    }
-
-    async readFile(path: string): Promise<string> {
-        const response = await this.request<StorageResponse>({
-            type: "readFile",
-            path,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-
-        if (typeof response.payload !== "string") {
-            throw new Error("Expected string payload from readFile");
-        }
-
-        return response.payload;
-    }
-
-    async writeFile(path: string, content: string): Promise<void> {
-        const response = await this.request<StorageResponse>({
-            type: "writeFile",
-            path,
-            content,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-    }
-
-    async listDir(path: string): Promise<string[]> {
-        const response = await this.request<StorageResponse>({
-            type: "listDir",
-            path,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-
-        if (!Array.isArray(response.payload)) {
-            throw new Error("Expected array payload from listDir");
-        }
-
-        return response.payload.map((entry) => String(entry));
-    }
-
-    async createDir(path: string): Promise<void> {
-        const response = await this.request<StorageResponse>({
-            type: "createDir",
-            path,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-    }
-
-    async deletePath(path: string): Promise<void> {
-        const response = await this.request<StorageResponse>({
-            type: "deletePath",
-            path,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-    }
-
-    async renamePath(from: string, to: string): Promise<void> {
-        const response = await this.request<StorageResponse>({
-            type: "renamePath",
-            from,
-            to,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-    }
-
-    async existsPath(path: string): Promise<boolean> {
-        const response = await this.request<StorageResponse>({
-            type: "existsPath",
-            path,
-        });
-
-        if (!response.ok) {
-            throw new Error(response.error);
-        }
-
-        if (typeof response.payload !== "boolean") {
-            throw new Error("Expected boolean payload from existsPath");
-        }
-
-        return response.payload;
-    }
-
-    peerSession(peerId: string): PeerSession {
-        if (!peerId || !peerId.trim()) {
-            throw new Error("peerSession requires a peer id");
-        }
-        return new PeerSession(this, peerId.trim());
-    }
-
-    async request<TResponse = unknown>(
-        request: StorageRequest,
-    ): Promise<TResponse> {
-        const socket = await this.ensureSocket();
-        const requestId = getNextRequestId();
-
-        const message: BridgeRequest = {
-            ...request,
-            requestId,
-        };
-
-        return new Promise<TResponse>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.requestWaiters.delete(requestId);
-                reject(
-                    new Error(`storage request timeout for ${request.type}`),
-                );
-            }, 30000); // 30 second timeout
-
-            this.requestWaiters.set(requestId, (response: StorageResponse) => {
-                clearTimeout(timeout);
-                if (response.ok) {
-                    resolve(response as TResponse);
-                } else {
-                    reject(new Error(response.error));
-                }
-            });
-
             try {
-                console.debug("[storage-client] WebSocket send", message);
-                socket.send(JSON.stringify(message));
-            } catch (error) {
-                clearTimeout(timeout);
-                this.requestWaiters.delete(requestId);
+                resolve(JSON.parse(event.data) as StorageResponse);
+            } catch {
                 reject(
-                    error instanceof Error ? error : new Error(String(error)),
+                    new Error("Storage socket returned an invalid response"),
                 );
             }
-        });
-    }
-
-    listen(): AsyncIterable<StorageEvent> {
-        const eventQueue: StorageEvent[] = [];
-        const waiters: Array<() => void> = [];
-
-        const listener = (event: StorageEvent) => {
-            eventQueue.push(event);
-            const waiter = waiters.shift();
-            if (waiter) {
-                waiter();
-            }
         };
-
-        // Ensure socket is open before adding listener
-        this.ensureSocket().catch((error) => {
-            console.error("Failed to open socket for listening", error);
-        });
-
-        this.eventListeners.add(listener);
-
-        return {
-            async *[Symbol.asyncIterator]() {
-                while (true) {
-                    if (eventQueue.length > 0) {
-                        yield eventQueue.shift() as StorageEvent;
-                        continue;
-                    }
-
-                    await new Promise<void>((resolve) => {
-                        waiters.push(resolve);
-                    });
-                }
-            },
+        const onClose = () => {
+            cleanup();
+            reject(new Error("Storage socket closed"));
         };
-    }
-}
-
-/**
- * Reads the contents of a file from the storage bridge.
- * @param client The StorageClient instance
- * @param path The relative path to the file
- * @returns The file contents as a string
- */
-export async function readStorageFile(
-    client: StorageClient,
-    path: string,
-): Promise<string> {
-    return client.readFile(path);
-}
-
-/**
- * Writes content to a file in the storage bridge.
- * Creates the file if it doesn't exist, and creates parent directories as needed.
- * @param client The StorageClient instance
- * @param path The relative path to the file
- * @param content The content to write
- */
-export async function writeStorageFile(
-    client: StorageClient,
-    path: string,
-    content: string,
-): Promise<void> {
-    return client.writeFile(path, content);
+        const onError = () => {
+            cleanup();
+            reject(new Error("Storage socket failed"));
+        };
+        socket.addEventListener("message", onMessage);
+        socket.addEventListener("close", onClose);
+        socket.addEventListener("error", onError);
+    });
 }

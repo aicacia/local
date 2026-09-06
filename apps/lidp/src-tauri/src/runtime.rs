@@ -20,7 +20,10 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![app::get_localhost_server_base_url,])
+        .invoke_handler(tauri::generate_handler![
+            app::get_device_endpoint_id,
+            app::get_localhost_server_base_url,
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -39,7 +42,11 @@ pub fn run() {
             let app_config =
                 app::init_app_config(app.handle(), app.handle().path().app_config_dir()?)?;
 
-            tauri::async_runtime::block_on(app::init_local_storage(app.handle()))?;
+            tauri::async_runtime::block_on(app::init_scoped_file_system_runtime(
+                app.handle(),
+                &app_config,
+            ))?;
+            tauri::async_runtime::block_on(app::init_device_identity(app.handle(), &app_config))?;
 
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -52,8 +59,14 @@ pub fn run() {
                 let database = app::init_datebase(app_handle.clone(), runtime_config.clone())
                     .await
                     .expect("database must initialize");
-                let router =
-                    app::init_router(runtime_config, database).expect("router must initialize");
+                let file_systems = app_handle
+                    .try_state::<std::sync::Arc<lidp_service::scoped_file_system::ScopedFileSystemRuntime>>()
+                    .expect("vault runtime must initialize")
+                    .inner()
+                    .clone();
+                let (router, _router_state) =
+                    app::init_router(runtime_config, database, file_systems)
+                        .expect("router must initialize");
                 app::init_unified_localhost_server(&app_handle, router, listener, base_url)
                     .await
                     .expect("unified localhost server must initialize");

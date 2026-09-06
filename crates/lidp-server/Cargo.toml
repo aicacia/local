@@ -52,6 +52,8 @@ lidp-model = { path = "../lidp-model", default-features = false, features = [
   "migrate",
 ] }
 lidp-service = { path = "../lidp-service", default-features = false, features = ["std"] }
+storage-server = { path = "../storage-server", default-features = false, features = [] }
+storage-service = { path = "../storage-service", default-features = false, features = [] }
 
 # Database`
 libsql = { version = "0.9", default-features = false, features = [] }

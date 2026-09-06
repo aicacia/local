@@ -8,16 +8,16 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
-# Logging
-log = { version = "0.4", default-features = false }
-
-# Async filesystem
- tokio = { version = "1.52", default-features = false, features = ["fs", "rt"] }
+# Internal
+file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
 
 [dev-dependencies]
+# Internal
+file-system = { path = "../file-system", default-features = false, features = ["in-memory"] }
+
+# Async
 tokio = { version = "1.52", default-features = false, features = [
-  "fs",
   "rt",
   "macros",
 ] }
-tempfile = { version = "3.14", default-features = false }

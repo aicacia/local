@@ -1,9 +1,7 @@
-mod folder_grant;
+mod request;
+mod response;
+mod socket_request;
 
-mod storage_access;
-mod storage_policy;
-
-pub use folder_grant::FolderGrant;
-
-pub use storage_access::StorageAccess;
-pub use storage_policy::StoragePolicy;
+pub use request::StorageRequest;
+pub use response::{StorageEntry, StorageErrorCode, StorageResponse};
+pub use socket_request::StorageSocketRequest;

@@ -1,7 +1,3 @@
-pub mod error;
-pub mod fs;
-pub mod policy;
-pub mod service;
+mod service;
 
-pub use error::StorageError;
-pub use service::StorageService;
+pub use service::{StorageService, StorageServiceError};

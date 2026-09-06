@@ -303,6 +303,33 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(entry)
     }
 
+    pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError<S::Error>> {
+        let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        let message = {
+            let document = self
+                .documents
+                .get_mut(folder)
+                .ok_or(FileSystemError::NotFound)?;
+            let entry = load_entry::<C>(document, name).map_err(file_system_error)?;
+            if entry.tombstoned {
+                return Err(FileSystemError::NotFound);
+            }
+            store_tombstone(document, name).map_err(FileSystemError::Metadata)?;
+            let state = self.broadcast_states.entry(folder.to_string()).or_default();
+            document
+                .sync()
+                .generate_sync_message(state)
+                .map(|message| encode_envelope(folder, message.encode()))
+        };
+        self.persist_dirty(folder)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        if let Some(data) = message {
+            let _ = self.emit(SyncRequest::Broadcast(data));
+        }
+        Ok(())
+    }
+
     pub fn entry(&self, path: &str) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
         let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
         let document = self
@@ -317,6 +344,9 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
             return Err(FileSystemError::NotFound);
         }
         let mut entry = load_entry::<C>(document, name).map_err(file_system_error)?;
+        if entry.tombstoned {
+            return Err(FileSystemError::NotFound);
+        }
         entry.local = entry.providers.contains(&self.local_peer);
         Ok(entry)
     }
@@ -338,6 +368,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
                         entry.local = entry.providers.contains(&self.local_peer);
                         entry
                     })
+                    .filter(|entry| !entry.tombstoned)
                     .collect()
             })
     }
@@ -489,7 +520,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
 
         for entry in entries {
             let path = join_path(&folder, &entry.name);
-            if !entry.providers.contains(&self.local_peer) {
+            if !entry.tombstoned && !entry.providers.contains(&self.local_peer) {
                 self.content_store
                     .register_passthrough(&path)
                     .await
@@ -789,6 +820,10 @@ where
         self.state.lock().await.append(path, content).await
     }
 
+    pub async fn delete(&self, path: &str) -> Result<(), FileSystemError<S::Error>> {
+        self.state.lock().await.delete(path).await
+    }
+
     pub async fn entry(
         &self,
         path: &str,
@@ -871,7 +906,15 @@ fn store_entry<C: PeerCodec>(
         "providers",
         encode_providers::<C>(&entry.providers),
     )?;
+    document.put(&object, "tombstoned", false)?;
     Ok(())
+}
+
+fn store_tombstone(document: &mut AutoCommit, name: &str) -> Result<(), automerge::AutomergeError> {
+    let Some((Value::Object(ObjType::Map), object)) = document.get(ROOT, name)? else {
+        unreachable!("existing file entry must be a metadata map");
+    };
+    document.put(&object, "tombstoned", true)
 }
 
 fn load_entries<C: PeerCodec>(document: &AutoCommit) -> MetadataResult<C> {
@@ -894,13 +937,30 @@ fn load_entry<C: PeerCodec>(
     let hash = hash.try_into().map_err(|_| SyncError::InvalidMessage)?;
     let size = uint::<C>(document, &object, "size")?;
     let providers = decode_providers::<C>(&bytes::<C>(document, &object, "providers")?)?;
-    Ok(FileEntry::new(
+    let mut entry = FileEntry::new(
         name.to_string(),
         ContentHash::from_bytes(hash),
         size,
         providers,
         false,
-    ))
+    );
+    entry.tombstoned = bool_value::<C>(document, &object, "tombstoned")?.unwrap_or(false);
+    Ok(entry)
+}
+
+fn bool_value<C: PeerCodec>(
+    document: &AutoCommit,
+    object: &automerge::ObjId,
+    key: &str,
+) -> Result<Option<bool>, SyncError<(), C::Error>> {
+    match document.get(object, key).map_err(SyncError::Metadata)? {
+        Some((Value::Scalar(value), _)) => match value.as_ref() {
+            ScalarValue::Boolean(value) => Ok(Some(*value)),
+            _ => Err(SyncError::InvalidMessage),
+        },
+        None => Ok(None),
+        _ => Err(SyncError::InvalidMessage),
+    }
 }
 
 fn bytes<C: PeerCodec>(

@@ -47,7 +47,6 @@
     "@aicacia/oidc-client": "workspace:*",
     "@aicacia/lidp-client": "workspace:*",
     "@aicacia/lidp-management-client": "workspace:*",
-    "@aicacia/storage-client": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-log": "^2.9.0",

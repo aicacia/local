@@ -5,13 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use axum::{
-    Router,
-    extract::{State, WebSocketUpgrade},
-    response::Html,
-    response::IntoResponse,
-    routing::get,
-};
+use axum::{Router, response::Html, routing::get};
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair, SanType,
 };
@@ -19,7 +13,6 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
-use crate::local_storage::LocalStorage;
 use crate::localhost_trust::install_ca_to_user_trust_store;
 
 const TRUST_PAGE: &str = "<!DOCTYPE html>\
@@ -224,19 +217,10 @@ pub async fn reserve_localhost_listener(data_dir: &Path) -> Result<(TcpListener,
     Ok((listener, port))
 }
 
-pub fn start_unified_localhost_server(
-    router: Router,
-    storage: LocalStorage,
-    listener: TcpListener,
-    data_dir: &Path,
-) {
-    let state = Arc::new(storage);
-    let storage_router = Router::new()
-        .route("/storage", get(storage_handler))
-        .route("/trust", get(trust_handler))
-        .with_state(state);
+pub fn start_unified_localhost_server(router: Router, listener: TcpListener, data_dir: &Path) {
+    let vault_router = Router::new().route("/trust", get(trust_handler));
 
-    let unified_router = router.merge(storage_router);
+    let unified_router = router.merge(vault_router);
 
     let tls_listener = match build_server_config(data_dir) {
         Ok(server_config) => TlsListener {
@@ -255,13 +239,6 @@ pub fn start_unified_localhost_server(
             log::error!("unified localhost server failed: {err}");
         }
     });
-}
-
-async fn storage_handler(
-    ws: WebSocketUpgrade,
-    State(storage): State<Arc<LocalStorage>>,
-) -> impl IntoResponse {
-    ws.on_upgrade(|socket| LocalStorage::handle_socket(socket, storage))
 }
 
 async fn trust_handler() -> Html<&'static str> {

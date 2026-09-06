@@ -21,7 +21,7 @@ use lidp_model::{
         DeviceAuthorizationRequest, EntityType, ErrorCode, ErrorResponse, ErrorResponseResult,
         GrantType, IdTokenClaims, IsAllowedForUserRequest, IsAllowedForUserResponse, JwkPrivate,
         JwkPublic, Jwks, OAuth2ClientAuth, RevocationRequest, SubjectTokenType, TokenRequest,
-        UserInfo,
+        TunnelAuthorization, TunnelAuthorizationClaims, TunnelAuthorizationRequest, UserInfo,
     },
     model::User,
 };
@@ -70,6 +70,8 @@ pub struct UpdateUserInfoRequest {
     pub phone_number: Option<String>,
     pub phone_number_verified: Option<bool>,
 }
+
+const TUNNEL_AUTHORIZATION_TTL: Duration = Duration::seconds(60);
 
 impl<A, C, AC, U, G, K> OAuth2Service<A, C, AC, U, G, K>
 where
@@ -849,6 +851,35 @@ where
         self.oauth_config.to_metadata()
     }
 
+    pub async fn issue_tunnel_authorization(
+        &self,
+        principal: &dyn Principal,
+        client_id: String,
+        request: TunnelAuthorizationRequest,
+    ) -> ErrorResponseResult<TunnelAuthorization> {
+        if principal.get_entity_type() != EntityType::User {
+            return Err(ErrorResponse::new(ErrorCode::AccessDenied));
+        }
+        let now = Utc::now();
+        let claims = TunnelAuthorizationClaims {
+            iss: self.oauth_config.issuer.clone(),
+            sub: principal.get_entity_id().to_string(),
+            aud: client_id,
+            vault_id_hash: request.vault_id_hash,
+            local_public_key: request.local_public_key,
+            remote_public_key: request.remote_public_key,
+            exp: (now + TUNNEL_AUTHORIZATION_TTL).timestamp(),
+            iat: now.timestamp(),
+            nbf: now.timestamp(),
+        };
+        let signing_jwk = self.load_signing_jwk(principal.get_key()).await?;
+        let token = encode_jwt(&signing_jwk, &claims)?;
+        Ok(TunnelAuthorization {
+            token,
+            expires_at: claims.exp,
+        })
+    }
+
     async fn load_signing_jwk(&self, key: &Key) -> ErrorResponseResult<JwkPrivate> {
         if let Some(private_key) = self.key_service.private_key_repo().load(
             &self
@@ -858,8 +889,8 @@ where
         )? {
             return Ok(key.to_jwk_private(&private_key)?);
         }
-        return Err(ErrorResponse::new(ErrorCode::ServerError)
-            .with_description("signing key not found in private key repository"));
+        Err(ErrorResponse::new(ErrorCode::ServerError)
+            .with_description("signing key not found in private key repository"))
     }
 
     pub fn device_authorization(

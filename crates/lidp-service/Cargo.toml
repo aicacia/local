@@ -26,6 +26,9 @@ std = [
   "serde/std",
   "serde_json/std",
   "log/std",
+  "file-system/crypto",
+  "file-system/native",
+  "file-system/sync",
 ]
 
 [dependencies]
@@ -36,6 +39,7 @@ model = { path = "../model", default-features = false, features = [] }
 lidp-model = { path = "../lidp-model", default-features = false, features = [
   "std",
 ] }
+file-system = { path = "../file-system", default-features = false, features = [] }
 
 # Database
 libsql = { version = "0.9", default-features = false, features = [
@@ -54,6 +58,8 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 
 # Random
 getrandom = { version = "0.3", default-features = false, features = [] }
+futures-core = { version = "0.3", default-features = false, features = [] }
+tokio = { version = "1.52", default-features = false, features = ["sync"] }
 
 # Utilities
 chrono = { version = "0.4", default-features = false, features = [

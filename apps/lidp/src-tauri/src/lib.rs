@@ -1,5 +1,5 @@
 mod app;
-mod local_storage;
+mod device_identity;
 mod localhost_server;
 mod localhost_trust;
 mod runtime;

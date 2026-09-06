@@ -9,13 +9,15 @@ use lidp_service::{
     repo::{
         KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo,
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
+        LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
+    scoped_file_system::ScopedFileSystemRuntime,
+    storage_session::StorageSessionService,
 };
 use std::{
     io,
     net::{IpAddr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -23,7 +25,7 @@ use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
 
-use crate::{AppConfig, RouterState, router::openapi_router};
+use crate::{AppConfig, RouterState, router::openapi_router, storage_router};
 
 pub async fn run() -> io::Result<()> {
     match dotenvy::dotenv() {
@@ -97,14 +99,28 @@ pub async fn run() -> io::Result<()> {
         key_service.clone(),
         oauth2_config,
     ));
+    let storage_sessions = Arc::new(StorageSessionService::new());
+    let storage_root = PathBuf::from(&args.config)
+        .parent()
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+    let file_systems = Arc::new(
+        ScopedFileSystemRuntime::new(storage_root, &app_config.oauth2.issuer)
+            .map_err(io::Error::other)?,
+    );
     let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,
         database.clone(),
         oauth2_service,
+        storage_sessions.clone(),
+        Arc::new(LibSqlUserDeviceRepo::new(database.clone())),
     );
 
     let router = openapi_router(router_state, app_config.server.prefix())
+        .split_for_parts()
+        .0
+        .merge(storage_router(storage_sessions, file_systems))
         .layer(CorsLayer::very_permissive().allow_private_network(true))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new().gzip(app_config.server.gzip))

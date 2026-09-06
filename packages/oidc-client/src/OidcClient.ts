@@ -78,6 +78,7 @@ export type OidcTokenResponse = {
   refresh_token?: string;
   token_type?: string;
   expires_in?: number | string;
+  access_token_expires_at?: number;
   refresh_token_expires_in?: number | string;
   scope?: string;
   state?: string;
@@ -256,6 +257,12 @@ export class OidcClient<
       token_type:
         typeof input.token_type === "string" ? input.token_type : undefined,
       expires_in: Number.isNaN(expiresIn ?? Number.NaN) ? undefined : expiresIn,
+      access_token_expires_at:
+        typeof input.access_token_expires_at === "number"
+          ? input.access_token_expires_at
+          : typeof expiresIn === "number"
+            ? Date.now() + expiresIn * 1000
+            : undefined,
       refresh_token_expires_in: Number.isNaN(
         refreshTokenExpiresIn ?? Number.NaN,
       )
@@ -271,12 +278,8 @@ export class OidcClient<
     code: string,
     codeVerifier?: string,
   ): { headers: Record<string, string>; body: URLSearchParams } {
-    const tokenEndpointAuthMethod =
-      this.config.registration?.tokenEndpointAuthMethod;
     const body = new URLSearchParams();
-    const headers: Record<string, string> = {
-      "Content-Type": "application/x-www-form-urlencoded",
-    };
+    const headers = this.addClientAuthentication(clientId, body);
 
     body.set("grant_type", "authorization_code");
     body.set("code", code);
@@ -285,21 +288,31 @@ export class OidcClient<
       body.set("code_verifier", codeVerifier);
     }
 
+    return { headers, body };
+  }
+
+  private addClientAuthentication(
+    clientId: string,
+    body: URLSearchParams,
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    const tokenEndpointAuthMethod =
+      this.config.registration?.tokenEndpointAuthMethod;
+
     if (tokenEndpointAuthMethod === "client_secret_post") {
       body.set("client_id", clientId);
       if (this.config.clientSecret) {
         body.set("client_secret", this.config.clientSecret);
       }
-      return { headers, body };
-    }
-
-    if (tokenEndpointAuthMethod === "none" || !this.config.clientSecret) {
+    } else if (tokenEndpointAuthMethod === "none" || !this.config.clientSecret) {
       body.set("client_id", clientId);
-      return { headers, body };
+    } else {
+      headers.Authorization = `Basic ${this.encodeBasicAuth(clientId, this.config.clientSecret)}`;
     }
 
-    headers.Authorization = `Basic ${this.encodeBasicAuth(clientId, this.config.clientSecret)}`;
-    return { headers, body };
+    return headers;
   }
 
   private encodeBasicAuth(clientId: string, clientSecret: string): string {
@@ -590,6 +603,57 @@ export class OidcClient<
     });
     this.rememberTokenResponse(tokenResponse);
     return tokenResponse;
+  }
+
+  async refreshToken(): Promise<OidcTokenResponse> {
+    const storedToken = this.getStoredTokenResponse();
+    if (!storedToken?.refresh_token) {
+      throw new OidcClientError(
+        "NO_REFRESH_TOKEN",
+        "Missing refresh token in stored token response",
+      );
+    }
+
+    const config = await this.getOidcConfiguration();
+    const clientId = await this.getClientId(config);
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: storedToken.refresh_token,
+    });
+    const headers = this.addClientAuthentication(clientId, body);
+    const refreshed = this.normalizeTokenResponse({
+      ...storedToken,
+      ...(await this.requestToken(config.token_endpoint, headers, body)),
+    });
+    this.rememberTokenResponse(refreshed);
+    return refreshed;
+  }
+
+  async getAccessToken(): Promise<string> {
+    const storedToken = this.getStoredTokenResponse();
+    if (!storedToken?.access_token && !storedToken?.refresh_token) {
+      throw new OidcClientError(
+        "NO_ACCESS_TOKEN",
+        "Missing access token in stored token response",
+      );
+    }
+
+    if (
+      storedToken.access_token &&
+      typeof storedToken.access_token_expires_at === "number" &&
+      storedToken.access_token_expires_at > Date.now() + 30_000
+    ) {
+      return storedToken.access_token;
+    }
+
+    if (storedToken.refresh_token) {
+      const refreshed = await this.refreshToken();
+      if (refreshed.access_token) {
+        return refreshed.access_token;
+      }
+    }
+
+    throw new OidcClientError("NO_ACCESS_TOKEN", "Missing refreshed access token");
   }
 
   static validateConfig(config: OidcClientConfig): OidcClientConfig {

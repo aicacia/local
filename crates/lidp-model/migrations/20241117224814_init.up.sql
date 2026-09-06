@@ -48,6 +48,28 @@ CREATE UNIQUE INDEX `idx_user_emails_primary`
     ON `user_emails`(`user_id`)
     WHERE `primary` = 1;
 
+CREATE TABLE user_devices (
+    `id` INTEGER PRIMARY KEY,
+
+    `user_id` INTEGER NOT NULL
+        REFERENCES `users`(`id`) ON DELETE CASCADE,
+
+    `name` TEXT NOT NULL,
+    `public_key` TEXT NOT NULL,
+    `address` TEXT NOT NULL,
+    `state` INTEGER NOT NULL CHECK (`state` IN (0, 1, 2)),
+
+    `created_at` INTEGER NOT NULL DEFAULT (unixepoch()),
+    `updated_at` INTEGER NOT NULL DEFAULT (unixepoch()),
+    `revoked_at` INTEGER
+) STRICT;
+
+CREATE UNIQUE INDEX `idx_user_devices_user_public_key`
+    ON `user_devices`(`user_id`, `public_key`);
+
+CREATE INDEX `idx_user_devices_user_state`
+    ON `user_devices`(`user_id`, `state`);
+
 CREATE TABLE user_phone_numbers (
     `id` INTEGER PRIMARY KEY,
 

@@ -5,8 +5,9 @@ use lidp_service::{
     oauth2::OAuth2Service,
     repo::{
         LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
-        LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
+        LibSqlOAuth2UserConsentRepo, LibSqlUserDeviceRepo, LibSqlUserRepo,
     },
+    storage_session::StorageSessionService,
 };
 
 #[derive(Clone)]
@@ -24,6 +25,8 @@ pub struct RouterState {
             LibSqlKeyRepo,
         >,
     >,
+    pub storage_sessions: Arc<StorageSessionService>,
+    pub user_devices: Arc<LibSqlUserDeviceRepo>,
 }
 
 impl RouterState {
@@ -41,12 +44,16 @@ impl RouterState {
                 LibSqlKeyRepo,
             >,
         >,
+        storage_sessions: Arc<StorageSessionService>,
+        user_devices: Arc<LibSqlUserDeviceRepo>,
     ) -> Self {
         Self {
             ui_base_uri: ui_base_uri.into(),
             api_base_uri: api_base_uri.into(),
             database,
             oauth2_service,
+            storage_sessions,
+            user_devices,
         }
     }
 }

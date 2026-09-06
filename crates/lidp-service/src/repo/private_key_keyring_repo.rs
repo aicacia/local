@@ -60,7 +60,7 @@ impl PrivateKeyRepo for PrivateKeyKeyringRepo {
     }
 }
 
-fn create_key_entry(service: &str, user: &str) -> keyring_core::Result<Entry> {
+pub(crate) fn create_key_entry(service: &str, user: &str) -> keyring_core::Result<Entry> {
     let mut modifiers = HashMap::new();
     modifiers.insert("target", "Local IdP");
     let entry = Entry::new_with_modifiers(service, user, &modifiers)?;
@@ -71,7 +71,7 @@ fn derived_key_entry_name(namespace: &str, derivation_path: &str) -> String {
     format!("{namespace}:{derivation_path}")
 }
 
-fn init_credential_store() -> keyring_core::Result<()> {
+pub(crate) fn init_credential_store() -> keyring_core::Result<()> {
     if SET_CREDENTIAL_STORE.compare_exchange(false, true, Ordering::Release, Ordering::Acquire)
         == Ok(false)
     {

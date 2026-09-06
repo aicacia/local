@@ -118,7 +118,6 @@ members = [
   "crates/lidp-model",
   "crates/lidp-server",
   "crates/lidp-service",
-  "crates/storage-iroh",
   "crates/storage-model",
   "crates/storage-server",
   "crates/storage-service",

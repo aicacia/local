@@ -89,3 +89,40 @@ test("handleSigninCallback rejects an unknown state", async () => {
         ),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
 });
+
+test("getAccessToken refreshes an expired access token", async () => {
+    const client = createClient();
+    let requestBody: URLSearchParams | undefined;
+    const testClient = client as unknown as {
+        getStoredTokenResponse: () => {
+            access_token: string;
+            access_token_expires_at: number;
+            refresh_token: string;
+        };
+        getOidcConfiguration: () => Promise<OidcConfiguration>;
+        getClientId: () => Promise<string>;
+        requestToken: (
+            endpoint: string,
+            headers: Record<string, string>,
+            body: URLSearchParams,
+        ) => Promise<{ access_token: string; expires_in: number }>;
+        rememberTokenResponse: () => void;
+    };
+    testClient.getStoredTokenResponse = () => ({
+        access_token: "expired",
+        access_token_expires_at: 0,
+        refresh_token: "refresh-token",
+    });
+    testClient.getOidcConfiguration = async () => createOidcConfiguration();
+    testClient.getClientId = async () => "client-id";
+    testClient.requestToken = async (_endpoint, _headers, body) => {
+        requestBody = body;
+        return { access_token: "refreshed", expires_in: 60 };
+    };
+    testClient.rememberTokenResponse = () => {};
+
+    await expect(client.getAccessToken()).resolves.toBe("refreshed");
+    expect(requestBody?.get("grant_type")).toBe("refresh_token");
+    expect(requestBody?.get("refresh_token")).toBe("refresh-token");
+    expect(requestBody?.get("client_id")).toBe("client-id");
+});

@@ -7,5 +7,7 @@ pub mod contract;
 pub mod migrate;
 pub mod model;
 
-pub use contract::{FolderGrant, StorageAccess, StoragePolicy};
+pub use contract::{
+    StorageEntry, StorageErrorCode, StorageRequest, StorageResponse, StorageSocketRequest,
+};
 pub use model::{IssuerKey, TrustedIssuer};

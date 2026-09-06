@@ -2,6 +2,7 @@ use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
 use crate::contract::{
     ClientProfile, ClientType, CodeChallengeMethod, EntityType, Sex, TokenEndpointAuthMethod,
+    UserDeviceState,
 };
 
 pub mod client_type {
@@ -126,6 +127,31 @@ pub mod entity_type {
             0 => Ok(EntityType::User),
             1 => Ok(EntityType::Client),
             v => Err(D::Error::custom(format!("invalid EntityType value: {v}"))),
+        }
+    }
+}
+
+pub mod user_device_state {
+    use super::*;
+
+    pub fn serialize<S>(value: &UserDeviceState, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i64(*value as i64)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<UserDeviceState, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match i64::deserialize(deserializer)? {
+            0 => Ok(UserDeviceState::Pending),
+            1 => Ok(UserDeviceState::Approved),
+            2 => Ok(UserDeviceState::Revoked),
+            value => Err(D::Error::custom(format!(
+                "invalid UserDeviceState value: {value}"
+            ))),
         }
     }
 }

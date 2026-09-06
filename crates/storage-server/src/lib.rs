@@ -8,4 +8,6 @@ mod router;
 #[cfg(feature = "cli")]
 pub use cli::run;
 pub use config::AppConfig;
-pub use router::{RouterState, openapi_router};
+pub use router::{
+    RouterState, StorageSessionResolver, StorageSocketSession, openapi_router, storage_router,
+};

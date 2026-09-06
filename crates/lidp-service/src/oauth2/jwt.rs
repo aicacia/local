@@ -177,7 +177,8 @@ fn verifing_key_from_jwt(jwk: &JwkPublic) -> ErrorResponseResult<VerifyingKey> {
                     .with_description(format!("invalid client public key encoding: {error}"))
             })?;
 
-            let public_key_bytes = [x_bytes.as_slice(), y_bytes.as_slice()].concat();
+            let public_key_bytes =
+                [b"\x04".as_slice(), x_bytes.as_slice(), y_bytes.as_slice()].concat();
 
             VerifyingKey::from_sec1_bytes(&public_key_bytes).map_err(|error| {
                 ErrorResponse::new(ErrorCode::InvalidClient)

@@ -35,11 +35,15 @@ mod response_mode;
 mod response_type;
 mod revocation_request;
 mod sex;
+mod storage_session;
 mod subject_token_type;
 mod token_endpoint_auth_method;
 mod token_exchange;
 mod token_exchange_grant_request;
 mod token_request;
+mod trusted_device;
+mod tunnel_authorization;
+mod user_device_state;
 mod user_info;
 
 pub use application_registration::ApplicationRegistration;
@@ -79,9 +83,15 @@ pub use response_mode::ResponseMode;
 pub use response_type::ResponseType;
 pub use revocation_request::RevocationRequest;
 pub use sex::Sex;
+pub use storage_session::StorageSession;
 pub use subject_token_type::SubjectTokenType;
 pub use token_endpoint_auth_method::TokenEndpointAuthMethod;
 pub use token_exchange::TokenExchange;
 pub use token_exchange_grant_request::TokenExchangeGrantRequest;
 pub use token_request::TokenRequest;
+pub use trusted_device::TrustedDevice;
+pub use tunnel_authorization::{
+    TunnelAuthorization, TunnelAuthorizationClaims, TunnelAuthorizationRequest,
+};
+pub use user_device_state::UserDeviceState;
 pub use user_info::UserInfo;

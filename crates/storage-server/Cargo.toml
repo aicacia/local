@@ -36,9 +36,12 @@ cli = { path = "../cli", default-features = false, features = [
 ], optional = true }
 
 # Internal
-key = { path = "../key", default-features = false, features = ["std"] }
 api = { path = "../api", default-features = false, features = [] }
+file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+key = { path = "../key", default-features = false, features = ["std"] }
 model = { path = "../model", default-features = false, features = ["std", "utoipa", "axum"] }
+storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
+storage-service = { path = "../storage-service", default-features = false, features = [] }
 
 # Database`
 libsql = { version = "0.9", default-features = false, features = [] }
@@ -62,6 +65,7 @@ axum = { version = "0.8", default-features = false, features = [
   "form",
   "query",
   "json",
+  "ws",
   "tokio",
   "macros"
 ] }

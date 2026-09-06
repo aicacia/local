@@ -26,6 +26,7 @@ pub struct FileEntry<P> {
     pub size: u64,
     pub providers: BTreeSet<P>,
     pub local: bool,
+    pub tombstoned: bool,
     pub merge_strategy: MergeStrategy,
 }
 
@@ -45,6 +46,7 @@ impl<P> FileEntry<P> {
             size,
             providers,
             local,
+            tombstoned: false,
             merge_strategy,
         }
     }

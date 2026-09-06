@@ -6,6 +6,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::RouterState;
 
 use super::openapi::{__path_openapi_json, openapi_json};
+use super::routes::devices::{__path_trusted_devices, trusted_devices};
 use super::routes::health::{__path_health, health};
 use super::routes::oauth2::approvals::{
     __path_approve_for_user, __path_is_allowed_for_user, approve_for_user, is_allowed_for_user,
@@ -23,6 +24,10 @@ use super::routes::oauth2::register::{
 use super::routes::oauth2::revoke::{__path_revoke, revoke};
 use super::routes::oauth2::sessions::{__path_sessions_logout, sessions_logout};
 use super::routes::oauth2::token::{__path_token, token};
+use super::routes::storage_sessions::{__path_create_storage_session, create_storage_session};
+use super::routes::tunnel_authorizations::{
+    __path_create_tunnel_authorization, create_tunnel_authorization,
+};
 use super::routes::userinfo::{__path_userinfo, userinfo};
 use super::routes::version::{__path_version, version};
 use super::routes::well_known::{
@@ -43,6 +48,7 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
     let routes = || {
         OpenApiRouter::new()
             .routes(routes!(health))
+            .routes(routes!(trusted_devices))
             .routes(routes!(authorize_json))
             .routes(routes!(authorize_query))
             .routes(routes!(is_allowed_for_user))
@@ -56,6 +62,8 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(token))
             .routes(routes!(revoke))
             .routes(routes!(sessions_logout))
+            .routes(routes!(create_storage_session))
+            .routes(routes!(create_tunnel_authorization))
             .routes(routes!(version))
             .routes(routes!(jwks))
             .routes(routes!(openid_configuration))

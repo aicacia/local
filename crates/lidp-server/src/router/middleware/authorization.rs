@@ -2,9 +2,10 @@ use std::marker::PhantomData;
 
 use axum::extract::{FromRef, FromRequestParts};
 use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
+use lidp_model::contract::EntityType;
 use lidp_model::contract::{ErrorCode, ErrorResponse};
-use lidp_service::oauth2::{Principal, decode_jwt};
-use model::contract::StandardClaims;
+use lidp_service::oauth2::{Principal, decode_jwt, verify_jwt};
+use model::contract::{StandardClaims, TokenType, TokenUse};
 use serde::de::DeserializeOwned;
 
 use crate::RouterState;
@@ -18,40 +19,74 @@ where
     T: DeserializeOwned + Send,
 {
     pub principal: Box<dyn Principal>,
+    pub claims: T,
     _phantom_data: PhantomData<T>,
 }
 
-impl<S, T> FromRequestParts<S> for Authorization<T>
+impl<S> FromRequestParts<S> for Authorization<StandardClaims>
 where
     RouterState: FromRef<S>,
     S: Send + Sync,
-    T: DeserializeOwned + Send,
 {
     type Rejection = ErrorResponse;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         if let Some(authorization_header_value) = parts.headers.get(AUTHORIZATION) {
             let authorization_string = authorization_from_header(authorization_header_value)?;
-            let (jwt_header, _claims) = decode_jwt::<T>(authorization_string)?;
-
             let router_state = RouterState::from_ref(state);
-            let principal = router_state
-                .oauth2_service
-                .find_principal(jwt_header.kid)
-                .await?
-                .ok_or_else(|| {
-                    ErrorResponse::new(ErrorCode::NotAuthorized)
-                        .with_description("principal not found for key id")
-                })?;
-
-            return Ok(Self {
-                principal,
+            let authorization = authorize_bearer(&router_state, authorization_string).await?;
+            return Ok(Authorization {
+                principal: authorization.principal,
+                claims: authorization.claims,
                 _phantom_data: PhantomData,
             });
         }
         Err(ErrorResponse::new(ErrorCode::NotAuthorized)
             .with_description("missing authorization header"))
     }
+}
+
+pub async fn authorize_bearer(
+    router_state: &RouterState,
+    authorization_string: &str,
+) -> Result<Authorization<StandardClaims>, ErrorResponse> {
+    let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
+    let principal = router_state
+        .oauth2_service
+        .find_principal(jwt_header.kid)
+        .await?
+        .ok_or_else(|| {
+            ErrorResponse::new(ErrorCode::NotAuthorized)
+                .with_description("principal not found for key id")
+        })?;
+    let jwk = router_state
+        .oauth2_service
+        .find_public_jwk(jwt_header.kid)
+        .await?;
+    let (_, claims) = verify_jwt::<StandardClaims>(&jwk, authorization_string)?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?
+        .as_secs() as i64;
+    if claims.r#type != TokenType::Bearer
+        || claims.r#use != TokenUse::Access
+        || claims.iss != router_state.oauth2_service.metadata().issuer
+        || claims.exp <= now
+        || claims.nbf > now
+        || principal.get_entity_type() != EntityType::User
+        || claims.sub != principal.get_entity_id().to_string()
+        || claims.aud.is_empty()
+    {
+        return Err(ErrorResponse::new(ErrorCode::NotAuthorized)
+            .with_description("invalid bearer token claims"));
+    }
+
+    Ok(Authorization {
+        principal,
+        claims,
+        _phantom_data: PhantomData,
+    })
 }
 
 fn authorization_from_header(

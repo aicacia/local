@@ -198,6 +198,26 @@ async fn syncs_changes_made_by_each_node_while_offline() {
     entry(&right, "notes/left.txt").await;
 }
 
+#[tokio::test]
+async fn syncs_tombstones_after_reconnect() {
+    let (left, right, left_transport, _) = file_system_pair(false).await;
+
+    left.write("notes/today.txt", b"hello").await.unwrap();
+    entry(&right, "notes/today.txt").await;
+    left_transport.set_online(false).await;
+    left.delete("notes/today.txt").await.unwrap();
+
+    left_transport.set_online(true).await;
+    for _ in 0..100 {
+        if right.entry("notes/today.txt").await.is_err() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert!(right.entry("notes/today.txt").await.is_err());
+    assert!(right.list("notes").await.unwrap().is_empty());
+}
+
 #[cfg(feature = "native")]
 #[tokio::test]
 async fn persists_offline_metadata_across_a_native_restart() {
