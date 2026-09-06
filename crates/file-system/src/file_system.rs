@@ -1,6 +1,7 @@
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 use core::{
@@ -9,7 +10,6 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use std::sync::Arc;
 
 use automerge::{
     AutoCommit, ObjType, ROOT, ReadDoc, ScalarValue, Value,

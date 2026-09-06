@@ -1,7 +1,6 @@
 #![cfg(feature = "in-memory")]
 
-use core::{convert::Infallible, pin::Pin};
-use std::sync::Arc;
+use std::{convert::Infallible, pin::Pin, sync::Arc};
 #[cfg(feature = "native")]
 use std::{env, fs};
 
@@ -176,25 +175,25 @@ async fn merges_files_created_offline_in_the_same_folder() {
 async fn syncs_changes_made_by_each_node_while_offline() {
     let (left, right, left_transport, right_transport) = file_system_pair(false).await;
 
-    right_transport.set_online(false);
+    right_transport.set_online(false).await;
     right.write("notes/right.txt", b"right").await.unwrap();
     for _ in 0..10 {
         tokio::task::yield_now().await;
     }
     assert!(left.entry("notes/right.txt").await.is_err());
 
-    right_transport.set_online(true);
+    right_transport.set_online(true).await;
     assert!(right_transport.is_online());
     entry(&left, "notes/right.txt").await;
 
-    left_transport.set_online(false);
+    left_transport.set_online(false).await;
     left.write("notes/left.txt", b"left").await.unwrap();
     for _ in 0..10 {
         tokio::task::yield_now().await;
     }
     assert!(right.entry("notes/left.txt").await.is_err());
 
-    left_transport.set_online(true);
+    left_transport.set_online(true).await;
     assert!(left_transport.is_online());
     entry(&right, "notes/left.txt").await;
 }
@@ -205,7 +204,7 @@ async fn persists_offline_metadata_across_a_native_restart() {
     let root = env::temp_dir().join(format!("file-system-restart-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let (transport, _remote) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
-    transport.set_online(false);
+    transport.set_online(false).await;
     let file_system: NativeTestFileSystem =
         FileSystem::new(NativeStorage::new(&root).unwrap(), TestPeer(1), transport)
             .await

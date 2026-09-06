@@ -1,15 +1,13 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::{
     convert::Infallible,
-    future::{Future, ready},
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
-use std::sync::Mutex;
 
 use futures_core::Stream;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 
 use crate::Transport;
 
@@ -34,24 +32,20 @@ struct Endpoint<P> {
 }
 
 impl<P> Endpoint<P> {
-    fn receive(&self, message: Message<P>) {
+    async fn receive(&self, message: Message<P>) {
         if self.online.load(Ordering::Acquire) {
             let _ = self.sender.send(message);
         } else {
-            self.pending
-                .lock()
-                .expect("memory transport lock poisoned")
-                .push(message);
+            self.pending.lock().await.push(message);
         }
     }
 
-    fn set_online(&self, online: bool) {
+    async fn set_online(&self, online: bool) {
         self.online.store(online, Ordering::Release);
         if !online {
             return;
         }
-        let pending =
-            core::mem::take(&mut *self.pending.lock().expect("memory transport lock poisoned"));
+        let pending = core::mem::take(&mut *self.pending.lock().await);
         for message in pending {
             let _ = self.sender.send(message);
         }
@@ -134,20 +128,14 @@ where
         (left, right)
     }
 
-    pub fn set_online(&self, online: bool) {
-        self.state.endpoint.set_online(online);
+    pub async fn set_online(&self, online: bool) {
+        self.state.endpoint.set_online(online).await;
         if !online {
             return;
         }
-        let outbound = core::mem::take(
-            &mut *self
-                .state
-                .outbound
-                .lock()
-                .expect("memory transport lock poisoned"),
-        );
+        let outbound = core::mem::take(&mut *self.state.outbound.lock().await);
         for (peer, data) in outbound {
-            self.deliver(peer, data);
+            self.deliver(peer, data).await;
         }
     }
 
@@ -156,13 +144,9 @@ where
         self.state.endpoint.online.load(Ordering::Acquire)
     }
 
-    fn deliver(&self, peer: P, mut data: Vec<u8>) {
+    async fn deliver(&self, peer: P, mut data: Vec<u8>) {
         if !self.is_online() {
-            self.state
-                .outbound
-                .lock()
-                .expect("memory transport lock poisoned")
-                .push((peer, data));
+            self.state.outbound.lock().await.push((peer, data));
             return;
         }
         if let Some(mutator) = &self.state.mutator {
@@ -174,7 +158,8 @@ where
             .iter()
             .find_map(|(candidate, endpoint)| (*candidate == peer).then_some(endpoint))
             .expect("unknown memory transport peer");
-        endpoint.receive((self.peer.clone(), data));
+
+        endpoint.receive((self.peer.clone(), data)).await;
     }
 }
 
@@ -186,29 +171,25 @@ where
     type PeerId = P;
     type Incoming = MemoryIncoming<P>;
 
-    fn send(
-        &self,
-        peer: Self::PeerId,
-        data: Vec<u8>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        self.deliver(peer, data);
-        ready(Ok(()))
+    async fn send(&self, peer: Self::PeerId, data: Vec<u8>) -> Result<(), Self::Error> {
+        self.deliver(peer, data).await;
+        Ok(())
     }
 
-    fn broadcast(&self, data: Vec<u8>) -> impl Future<Output = Result<(), Self::Error>> + Send {
+    async fn broadcast(&self, data: Vec<u8>) -> Result<(), Self::Error> {
         for (peer, _) in &self.state.peers {
-            self.deliver(peer.clone(), data.clone());
+            self.deliver(peer.clone(), data.clone()).await;
         }
-        ready(Ok(()))
+        Ok(())
     }
 
-    fn subscribe(&self) -> impl Future<Output = Result<Self::Incoming, Self::Error>> + Send {
-        ready(Ok(self
+    async fn subscribe(&self) -> Result<Self::Incoming, Self::Error> {
+        Ok(self
             .state
             .incoming
             .lock()
-            .expect("memory transport lock poisoned")
+            .await
             .take()
-            .expect("memory transport subscribed twice")))
+            .expect("memory transport subscribed twice"))
     }
 }
