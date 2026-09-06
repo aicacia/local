@@ -1,6 +1,5 @@
 use std::io::Error;
 
-use futures::future::try_join_all;
 use iroh::{Endpoint, RelayMode, endpoint::presets};
 use iroh_chain::{IRON_CHAIN_V1_ALPN, InMemoryEndpointIdStore, Server, ServerEvent};
 use tokio::{

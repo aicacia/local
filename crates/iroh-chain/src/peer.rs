@@ -16,9 +16,10 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug)]
 struct PeerInner {
     id: EndpointId,
+    session: u64,
     send: Mutex<SendStream>,
     recv: Mutex<RecvStream>,
-    closed_tx: Mutex<Option<UnboundedSender<EndpointId>>>,
+    closed_tx: Mutex<Option<UnboundedSender<(EndpointId, u64)>>>,
     cancellation_token: CancellationToken,
 }
 
@@ -30,14 +31,16 @@ pub struct Peer {
 impl Peer {
     pub(crate) fn new(
         id: EndpointId,
+        session: u64,
         send: SendStream,
         recv: RecvStream,
-        closed_tx: UnboundedSender<EndpointId>,
+        closed_tx: UnboundedSender<(EndpointId, u64)>,
         cancellation_token: CancellationToken,
     ) -> Self {
         Self {
             inner: Arc::new(PeerInner {
                 id,
+                session,
                 send: Mutex::new(send),
                 recv: Mutex::new(recv),
                 closed_tx: Mutex::new(Some(closed_tx)),
@@ -50,10 +53,14 @@ impl Peer {
         self.inner.id
     }
 
+    pub(crate) fn session(&self) -> u64 {
+        self.inner.session
+    }
+
     pub(crate) async fn close(&self) {
         if let Some(closed_tx) = self.inner.closed_tx.lock().await.take() {
             self.inner.cancellation_token.cancel();
-            match closed_tx.send(self.inner.id) {
+            match closed_tx.send((self.inner.id, self.inner.session)) {
                 Ok(_) => {}
                 Err(e) => {
                     tracing::error!(

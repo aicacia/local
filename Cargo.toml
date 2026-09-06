@@ -112,6 +112,7 @@ members = [
   "crates/key",
   "crates/model",
   "crates/iroh-chain",
+  "crates/iroh-chain-file-system",
   "crates/iroh-client-wasm",
   "crates/lidp-management-server",
   "crates/lidp-model",

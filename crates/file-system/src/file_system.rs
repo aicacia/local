@@ -625,6 +625,33 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(())
     }
 
+    fn sync_peer(
+        &mut self,
+        peer: C::PeerId,
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
+        let messages = self
+            .documents
+            .iter_mut()
+            .filter_map(|(folder, document)| {
+                let state = self
+                    .peer_states
+                    .entry((peer.clone(), folder.clone()))
+                    .or_default();
+                document
+                    .sync()
+                    .generate_sync_message(state)
+                    .map(|message| encode_envelope(folder, message.encode()))
+            })
+            .collect::<Vec<_>>();
+        for data in messages {
+            self.emit(SyncRequest::Send {
+                peer: peer.clone(),
+                data,
+            })?;
+        }
+        Ok(())
+    }
+
     fn emit(
         &self,
         request: SyncRequest<C::PeerId>,
@@ -730,6 +757,10 @@ where
             _transport: transport,
             task,
         })
+    }
+
+    pub async fn sync_peer(&self, peer: C::PeerId) -> Result<(), SyncError<S::Error, C::Error>> {
+        self.state.lock().await.sync_peer(peer)
     }
 
     pub async fn with_storage<R>(&self, f: impl FnOnce(&S) -> R) -> R {

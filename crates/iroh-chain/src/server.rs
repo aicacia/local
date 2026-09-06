@@ -1,6 +1,9 @@
 use std::{
     io::{Error, ErrorKind},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use dashmap::DashMap;
@@ -10,7 +13,7 @@ use iroh_tickets::endpoint::EndpointTicket;
 use tokio::{
     select, spawn,
     sync::{
-        Mutex, MutexGuard,
+        Mutex, MutexGuard, broadcast,
         mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     },
 };
@@ -34,10 +37,12 @@ where
     alpn: Vec<u8>,
     store: A,
     peers: DashMap<EndpointId, Peer>,
-    closed_tx: UnboundedSender<EndpointId>,
-    closed_rx: Mutex<UnboundedReceiver<EndpointId>>,
+    closed_tx: UnboundedSender<(EndpointId, u64)>,
+    closed_rx: Mutex<UnboundedReceiver<(EndpointId, u64)>>,
     event_tx: UnboundedSender<ServerEvent>,
     event_rx: Mutex<UnboundedReceiver<ServerEvent>>,
+    events_tx: broadcast::Sender<ServerEvent>,
+    next_session: AtomicU64,
     cancellation_token: CancellationToken,
 }
 
@@ -47,6 +52,7 @@ where
 {
     fn new(endpoint: Endpoint, alpn: Vec<u8>, store: A) -> Self {
         let (event_tx, event_rx) = unbounded_channel();
+        let (events_tx, _) = broadcast::channel(64);
         let (closed_tx, closed_rx) = unbounded_channel();
 
         Self {
@@ -58,6 +64,8 @@ where
             closed_rx: Mutex::new(closed_rx),
             event_tx,
             event_rx: Mutex::new(event_rx),
+            events_tx,
+            next_session: AtomicU64::new(0),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -103,24 +111,21 @@ where
         tracing::info!("bi-directional stream established with {remote}");
 
         let cancellation_token = CancellationToken::new();
+        let session = self.next_session.fetch_add(1, Ordering::Relaxed);
 
         let peer = Peer::new(
             remote,
+            session,
             send,
             recv,
             self.closed_tx.clone(),
             cancellation_token,
         );
-        self.peers.insert(remote, peer.clone());
+        if let Some(previous) = self.peers.insert(remote, peer.clone()) {
+            previous.close().await;
+        }
 
-        self.event_tx
-            .send(ServerEvent::Connected(peer))
-            .map_err(|e| {
-                Error::new(
-                    ErrorKind::Other,
-                    format!("error sending connected event: {e}"),
-                )
-            })?;
+        self.send_event(ServerEvent::Connected(peer))?;
 
         Ok(())
     }
@@ -129,16 +134,40 @@ where
         self.peers.get(&id).map(|entry| entry.value().clone())
     }
 
+    fn peers(&self) -> Vec<Peer> {
+        self.peers
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect()
+    }
+
+    fn send_event(&self, event: ServerEvent) -> Result<(), Error> {
+        self.event_tx
+            .send(event.clone())
+            .map_err(|error| Error::other(format!("error sending server event: {error}")))?;
+        let _ = self.events_tx.send(event);
+        Ok(())
+    }
+
     async fn disconnect(&self, id: EndpointId) {
         if let Some((_, peer)) = self.peers.remove(&id) {
-            peer.close().await;
+            self.finish_disconnect(id, peer).await;
+        }
+    }
 
-            match self.event_tx.send(ServerEvent::Disconnected(id)) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!("error sending disconnected event: {e}");
-                }
-            }
+    async fn disconnect_session(&self, id: EndpointId, session: u64) {
+        if let Some((_, peer)) = self
+            .peers
+            .remove_if(&id, |_, peer| peer.session() == session)
+        {
+            self.finish_disconnect(id, peer).await;
+        }
+    }
+
+    async fn finish_disconnect(&self, id: EndpointId, peer: Peer) {
+        peer.close().await;
+        if let Err(error) = self.send_event(ServerEvent::Disconnected(id)) {
+            tracing::warn!("error sending disconnected event: {error}");
         }
     }
 
@@ -146,7 +175,7 @@ where
         let endpoint_ids = self
             .peers
             .iter()
-            .map(|entry| self.disconnect(entry.id().clone()))
+            .map(|entry| self.disconnect(entry.id()))
             .collect::<Vec<_>>();
 
         let _ = join_all(endpoint_ids).await;
@@ -188,8 +217,8 @@ where
                         }
                     });
                 }
-                Some(id) = closed_rx.recv() => {
-                    self.disconnect(id).await;
+                Some((id, session)) = closed_rx.recv() => {
+                    self.disconnect_session(id, session).await;
                 }
             }
         }
@@ -201,12 +230,22 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct Server<A>
 where
     A: AllowedEndpointId,
 {
     inner: Arc<ServerInner<A>>,
+}
+
+impl<A> Clone for Server<A>
+where
+    A: AllowedEndpointId,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
 }
 
 impl<A> Server<A>
@@ -239,6 +278,24 @@ where
 
     pub fn try_get(&self, id: EndpointId) -> Option<Peer> {
         self.inner.try_get(id)
+    }
+
+    pub fn peers(&self) -> Vec<Peer> {
+        self.inner.peers()
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<ServerEvent> {
+        self.inner.events_tx.subscribe()
+    }
+
+    pub async fn disconnect(&self, id: EndpointId) {
+        self.inner.disconnect(id).await;
+    }
+
+    pub async fn disconnect_peer(&self, peer: &Peer) {
+        self.inner
+            .disconnect_session(peer.id(), peer.session())
+            .await;
     }
 
     pub fn store(&self) -> &A {

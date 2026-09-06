@@ -3749,6 +3749,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroh-chain-file-system"
+version = "0.1.0"
+dependencies = [
+ "file-system",
+ "futures-core",
+ "iroh",
+ "iroh-chain",
+ "tokio",
+]
+
+[[package]]
 name = "iroh-client-wasm"
 version = "0.1.0"
 dependencies = [
