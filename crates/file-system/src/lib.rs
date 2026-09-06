@@ -9,6 +9,8 @@ mod file_system;
 mod hash;
 #[cfg(feature = "in-memory")]
 mod memory_storage;
+#[cfg(feature = "in-memory")]
+mod memory_transport;
 mod metadata;
 #[cfg(feature = "native")]
 mod native_storage;
@@ -19,10 +21,12 @@ mod transport;
 
 pub use error::Error;
 #[cfg(feature = "sync")]
-pub use file_system::{FileSystem, ReadError, ReadFuture, ReadStream, SyncError, SyncRequest};
+pub use file_system::{FileSystem, FileSystemError, ReadError, ReadFuture, ReadStream, SyncError};
 pub use hash::ContentHash;
 #[cfg(feature = "in-memory")]
 pub use memory_storage::InMemoryStorage;
+#[cfg(feature = "in-memory")]
+pub use memory_transport::{MemoryIncoming, MemoryTransport, MemoryTransportMutator};
 pub use metadata::{FileEntry, MergeStrategy};
 #[cfg(feature = "native")]
 pub use native_storage::NativeStorage;

@@ -1,4 +1,4 @@
-use crate::{ChunkStream, ContentHash, Error, FileEntry, PeerCodec, Storage};
+use crate::{ChunkStream, ContentHash, Error, Storage};
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::{String, ToString},
@@ -22,80 +22,49 @@ impl BlobStore {
     }
 }
 
-#[derive(Debug)]
-pub struct InMemoryStorage<C: PeerCodec<PeerId = C> + Ord + Clone> {
+#[derive(Debug, Default)]
+pub struct InMemoryStorage {
     blobs: BlobStore,
-    folders: BTreeMap<String, BTreeMap<String, FileEntry<C>>>,
-    local_peer: C,
+    paths: BTreeMap<String, ContentHash>,
+    passthrough_paths: BTreeSet<String>,
 }
 
-impl<C: PeerCodec<PeerId = C> + Ord + Clone> InMemoryStorage<C> {
+impl InMemoryStorage {
     #[must_use]
-    pub fn new(local_peer: C) -> Self {
-        Self {
-            blobs: BlobStore::default(),
-            folders: BTreeMap::new(),
-            local_peer,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<C>, Error> {
-        let (folder, name) = split_path(path)?;
+    pub fn write(&mut self, path: &str, content: &[u8]) -> Result<ContentHash, Error> {
+        validate_path(path)?;
         let hash = self.blobs.insert(content);
-        let size = u64::try_from(content.len()).map_err(|_| Error::ContentTooLarge)?;
-        let mut providers = BTreeSet::new();
-        providers.insert(self.local_peer.clone());
-        let entry = FileEntry::new(name.to_string(), hash, size, providers, true);
-        self.folders
-            .entry(folder.to_string())
-            .or_default()
-            .insert(name.to_string(), entry.clone());
-        Ok(entry)
+        self.paths.insert(path.to_string(), hash);
+        self.passthrough_paths.remove(path);
+        Ok(hash)
     }
 
-    pub fn register_passthrough(
-        &mut self,
-        path: &str,
-        hash: ContentHash,
-        size: u64,
-        providers: BTreeSet<C>,
-    ) -> Result<FileEntry<C>, Error> {
-        let (folder, name) = split_path(path)?;
-        let entry = FileEntry::new(name.to_string(), hash, size, providers, false);
-        self.folders
-            .entry(folder.to_string())
-            .or_default()
-            .insert(name.to_string(), entry.clone());
-        Ok(entry)
+    pub fn append(&mut self, path: &str, content: &[u8]) -> Result<ContentHash, Error> {
+        let mut existing = self.read_file(path)?;
+        existing.extend_from_slice(content);
+        self.write(path, &existing)
     }
 
-    pub fn entry(&self, path: &str) -> Result<&FileEntry<C>, Error> {
-        let (folder, name) = split_path(path)?;
-        self.folders
-            .get(folder)
-            .and_then(|entries| entries.get(name))
-            .ok_or(Error::NotFound)
-    }
-
-    pub fn list(&self, folder: &str) -> Result<Vec<FileEntry<C>>, Error> {
-        validate_folder(folder)?;
-        Ok(self
-            .folders
-            .get(folder)
-            .map(|entries| entries.values().cloned().collect())
-            .unwrap_or_default())
+    pub fn register_passthrough(&mut self, path: &str) -> Result<(), Error> {
+        validate_path(path)?;
+        self.paths.remove(path);
+        self.passthrough_paths.insert(path.to_string());
+        Ok(())
     }
 
     pub fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
-        let entry = self.entry(path)?;
-        if !entry.local {
-            return Err(Error::ContentUnavailable);
-        }
-        let content = self
-            .blobs
-            .get(entry.hash)
-            .ok_or(Error::ContentUnavailable)?;
-        if ContentHash::of(content) != entry.hash {
+        validate_path(path)?;
+        let hash = match self.paths.get(path) {
+            Some(hash) => *hash,
+            None if self.passthrough_paths.contains(path) => return Err(Error::ContentUnavailable),
+            None => return Err(Error::NotFound),
+        };
+        let content = self.blobs.get(hash).ok_or(Error::ContentUnavailable)?;
+        if ContentHash::of(content) != hash {
             return Err(Error::CorruptContent);
         }
         Ok(content.to_vec())
@@ -109,31 +78,19 @@ impl<C: PeerCodec<PeerId = C> + Ord + Clone> InMemoryStorage<C> {
     }
 }
 
-impl<C: PeerCodec<PeerId = C> + Ord + Clone> Storage for InMemoryStorage<C> {
+impl Storage for InMemoryStorage {
     type Error = Error;
-    type PeerId = C;
-    type PeerCodec = C;
 
-    fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<C::PeerId>, Self::Error> {
+    fn write(&mut self, path: &str, content: &[u8]) -> Result<ContentHash, Self::Error> {
         Self::write(self, path, content)
     }
 
-    fn register_passthrough(
-        &mut self,
-        path: &str,
-        hash: ContentHash,
-        size: u64,
-        providers: BTreeSet<C>,
-    ) -> Result<FileEntry<C>, Self::Error> {
-        Self::register_passthrough(self, path, hash, size, providers)
+    fn append(&mut self, path: &str, content: &[u8]) -> Result<ContentHash, Self::Error> {
+        Self::append(self, path, content)
     }
 
-    fn entry(&self, path: &str) -> Result<FileEntry<C>, Self::Error> {
-        Ok(Self::entry(self, path)?.clone())
-    }
-
-    fn list(&self, folder: &str) -> Result<Vec<FileEntry<C>>, Self::Error> {
-        Self::list(self, folder)
+    fn register_passthrough(&mut self, path: &str) -> Result<(), Self::Error> {
+        Self::register_passthrough(self, path)
     }
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
@@ -145,20 +102,11 @@ impl<C: PeerCodec<PeerId = C> + Ord + Clone> Storage for InMemoryStorage<C> {
     }
 }
 
-fn split_path(path: &str) -> Result<(&str, &str), Error> {
+fn validate_path(path: &str) -> Result<(), Error> {
     if path.is_empty() || path.starts_with('/') || path.ends_with('/') {
         return Err(Error::InvalidPath);
     }
-    let (folder, name) = path.rsplit_once('/').unwrap_or(("", path));
-    validate_folder(folder)?;
-    if !is_name(name) {
-        return Err(Error::InvalidPath);
-    }
-    Ok((folder, name))
-}
-
-fn validate_folder(folder: &str) -> Result<(), Error> {
-    if folder.is_empty() || folder.split('/').all(is_name) {
+    if path.split('/').all(is_name) {
         Ok(())
     } else {
         Err(Error::InvalidPath)
@@ -171,7 +119,7 @@ fn is_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{collections::BTreeSet, vec};
+
     use core::{
         pin::Pin,
         task::{Context, Poll, Waker},
@@ -180,58 +128,56 @@ mod tests {
     use futures_core::Stream;
 
     use super::InMemoryStorage;
-    use crate::{ContentHash, Error, MergeStrategy, PeerCodec};
-
-    impl PeerCodec for u8 {
-        type Error = core::convert::Infallible;
-        type PeerId = Self;
-
-        fn encode(peer: &Self::PeerId) -> Vec<u8> {
-            vec![*peer]
-        }
-
-        fn decode(bytes: &[u8]) -> Result<Self::PeerId, Self::Error> {
-            Ok(bytes[0])
-        }
-    }
-
-    const PEER: u8 = 7;
+    use crate::{ContentHash, Error};
 
     #[test]
     fn writes_and_reads_content_addressed_files() {
-        let mut file_system = InMemoryStorage::new(PEER);
-        let entry = file_system.write("documents/note.txt", b"hello").unwrap();
+        let mut storage = InMemoryStorage::new();
+        let hash = storage.write("documents/note.txt", b"hello").unwrap();
 
-        assert_eq!(entry.hash, ContentHash::of(b"hello"));
-        assert_eq!(entry.size, 5);
-        assert!(entry.local);
+        assert_eq!(hash, ContentHash::of(b"hello"));
+        assert_eq!(storage.read_file("documents/note.txt").unwrap(), b"hello");
+    }
+
+    #[test]
+    fn appends_to_local_content() {
+        let mut storage = InMemoryStorage::new();
+        storage.write("notes/today.txt", b"hello").unwrap();
+
+        let hash = storage.append("notes/today.txt", b" world").unwrap();
+
+        assert_eq!(hash, ContentHash::of(b"hello world"));
         assert_eq!(
-            file_system.read_file("documents/note.txt").unwrap(),
-            b"hello"
+            storage.read_file("notes/today.txt").unwrap(),
+            b"hello world"
         );
-        assert_eq!(file_system.list("documents").unwrap(), vec![entry]);
     }
 
     #[test]
     fn passthrough_content_is_not_read_locally() {
-        let mut file_system = InMemoryStorage::new(PEER);
-        let mut providers = BTreeSet::new();
-        providers.insert(8);
-        file_system
-            .register_passthrough("remote.bin", ContentHash::of(b"remote"), 6, providers)
-            .unwrap();
+        let mut storage = InMemoryStorage::new();
+        storage.register_passthrough("remote.bin").unwrap();
 
         assert_eq!(
-            file_system.read_file("remote.bin"),
+            storage.read_file("remote.bin"),
             Err(Error::ContentUnavailable)
         );
     }
 
     #[test]
+    fn writes_replace_passthrough_markers() {
+        let mut storage = InMemoryStorage::new();
+        storage.register_passthrough("remote.bin").unwrap();
+        storage.write("remote.bin", b"local").unwrap();
+
+        assert_eq!(storage.read_file("remote.bin").unwrap(), b"local");
+    }
+
+    #[test]
     fn streams_content_in_order() {
-        let mut file_system = InMemoryStorage::new(PEER);
-        file_system.write("data", b"abcdef").unwrap();
-        let mut stream = file_system.stream("data", 2).unwrap();
+        let mut storage = InMemoryStorage::new();
+        storage.write("data", b"abcdef").unwrap();
+        let mut stream = storage.stream("data", 2).unwrap();
         let waker = Waker::noop();
         let mut context = Context::from_waker(waker);
 
@@ -254,24 +200,16 @@ mod tests {
     }
 
     #[test]
-    fn derives_merge_strategy_from_extension() {
-        let mut file_system = InMemoryStorage::new(PEER);
-        let entry = file_system.write("state.automerge", b"document").unwrap();
-
-        assert_eq!(entry.merge_strategy, MergeStrategy::AutomergeDocument);
-    }
-
-    #[test]
     fn rejects_unsafe_paths_and_zero_size_chunks() {
-        let mut file_system = InMemoryStorage::new(PEER);
+        let mut storage = InMemoryStorage::new();
 
         assert_eq!(
-            file_system.write("../secret", b"content"),
+            storage.write("../secret", b"content"),
             Err(Error::InvalidPath)
         );
-        file_system.write("safe", b"content").unwrap();
+        storage.write("safe", b"content").unwrap();
         assert!(matches!(
-            file_system.stream("safe", 0),
+            storage.stream("safe", 0),
             Err(Error::InvalidChunkSize)
         ));
     }

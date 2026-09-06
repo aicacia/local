@@ -1,12 +1,11 @@
 #![cfg(feature = "in-memory")]
 
-use core::{
-    convert::Infallible,
-    pin::Pin,
-    task::{Context, Poll, Waker},
-};
+use core::{convert::Infallible, pin::Pin};
+use std::sync::Arc;
 
-use file_system::{FileSystem, InMemoryStorage, PeerCodec, SyncRequest};
+use file_system::{
+    FileEntry, FileSystem, InMemoryStorage, MemoryTransport, MemoryTransportMutator, PeerCodec,
+};
 use futures_core::Stream;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -25,22 +24,60 @@ impl PeerCodec for TestPeer {
     }
 }
 
-#[test]
-fn syncs_a_file_created_on_another_node() {
-    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
-    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
-    let mut left_requests = left.take_sync_requests().unwrap();
-    let mut right_requests = right.take_sync_requests().unwrap();
+type TestFileSystem = FileSystem<InMemoryStorage, TestPeer, MemoryTransport<TestPeer>>;
+
+async fn file_system_pair(corrupt_left_responses: bool) -> (TestFileSystem, TestFileSystem) {
+    let left_mutator: Option<MemoryTransportMutator> = corrupt_left_responses.then(|| {
+        Arc::new(|data: &mut Vec<u8>| {
+            if data.get(1) == Some(&2) {
+                *data.last_mut().expect("blob response is not empty") ^= 1;
+            }
+        }) as MemoryTransportMutator
+    });
+    let (left_transport, right_transport) =
+        MemoryTransport::pair_with_mutators(TestPeer(1), TestPeer(2), left_mutator, None);
+    let left = FileSystem::new(InMemoryStorage::new(), TestPeer(1), left_transport)
+        .await
+        .unwrap();
+    let right = FileSystem::new(InMemoryStorage::new(), TestPeer(2), right_transport)
+        .await
+        .unwrap();
+    (left, right)
+}
+
+async fn entry(file_system: &TestFileSystem, path: &str) -> FileEntry<TestPeer> {
+    for _ in 0..100 {
+        if let Ok(entry) = file_system.entry(path) {
+            return entry;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("file metadata did not synchronize")
+}
+
+async fn entry_with_size(
+    file_system: &TestFileSystem,
+    path: &str,
+    size: u64,
+) -> FileEntry<TestPeer> {
+    for _ in 0..100 {
+        if let Ok(entry) = file_system.entry(path)
+            && entry.size == size
+        {
+            return entry;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("updated file metadata did not synchronize")
+}
+
+#[tokio::test]
+async fn syncs_a_file_created_on_another_node() {
+    let (left, right) = file_system_pair(false).await;
 
     left.write("notes/today.txt", b"hello").unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
 
-    let entry = right.entry("notes/today.txt").unwrap();
+    let entry = entry(&right, "notes/today.txt").await;
     assert_eq!(entry.size, 5);
     assert_eq!(
         entry.providers.into_iter().collect::<Vec<_>>(),
@@ -49,128 +86,63 @@ fn syncs_a_file_created_on_another_node() {
     assert!(!entry.local);
 }
 
-#[test]
-fn reads_passthrough_content_from_a_provider() {
-    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
-    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
-    let mut left_requests = left.take_sync_requests().unwrap();
-    let mut right_requests = right.take_sync_requests().unwrap();
+#[tokio::test]
+async fn appends_content_and_syncs_the_updated_file() {
+    let (left, right) = file_system_pair(false).await;
 
     left.write("notes/today.txt", b"hello").unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
-    let mut read = right.start_read("notes/today.txt").unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
+    entry(&right, "notes/today.txt").await;
+    left.append("notes/today.txt", b" world").unwrap();
 
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
+    let entry = entry_with_size(&right, "notes/today.txt", 11).await;
+    assert_eq!(entry.size, 11);
+    assert!(!entry.local);
     assert_eq!(
-        Pin::new(&mut read).poll(&mut context),
-        Poll::Ready(Ok(b"hello".to_vec()))
+        right.start_read("notes/today.txt").unwrap().await.unwrap(),
+        b"hello world"
     );
     assert!(!right.entry("notes/today.txt").unwrap().local);
 }
 
-#[test]
-fn streams_passthrough_content_in_verified_order() {
-    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
-    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
-    let mut left_requests = left.take_sync_requests().unwrap();
-    let mut right_requests = right.take_sync_requests().unwrap();
+#[tokio::test]
+async fn streams_passthrough_content_in_verified_order() {
+    let (left, right) = file_system_pair(false).await;
 
     left.write("notes/today.txt", b"abcdef").unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
+    entry(&right, "notes/today.txt").await;
     let mut stream = right.start_stream("notes/today.txt", 2).unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
 
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert_eq!(
-        Pin::new(&mut stream).poll_next(&mut context),
-        Poll::Ready(Some(Ok(b"ab".to_vec())))
-    );
-    assert_eq!(
-        Pin::new(&mut stream).poll_next(&mut context),
-        Poll::Ready(Some(Ok(b"cd".to_vec())))
-    );
-    assert_eq!(
-        Pin::new(&mut stream).poll_next(&mut context),
-        Poll::Ready(Some(Ok(b"ef".to_vec())))
-    );
-    assert_eq!(
-        Pin::new(&mut stream).poll_next(&mut context),
-        Poll::Ready(None)
-    );
+    assert_eq!(next(&mut stream).await, Some(Ok(b"ab".to_vec())));
+    assert_eq!(next(&mut stream).await, Some(Ok(b"cd".to_vec())));
+    assert_eq!(next(&mut stream).await, Some(Ok(b"ef".to_vec())));
+    assert_eq!(next(&mut stream).await, None);
     assert!(!right.entry("notes/today.txt").unwrap().local);
 }
 
-#[test]
-fn rejects_a_corrupt_passthrough_chunk() {
-    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
-    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
-    let mut left_requests = left.take_sync_requests().unwrap();
-    let mut right_requests = right.take_sync_requests().unwrap();
+#[tokio::test]
+async fn rejects_a_corrupt_passthrough_chunk() {
+    let (left, right) = file_system_pair(true).await;
 
     left.write("notes/today.txt", b"hello").unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
+    entry(&right, "notes/today.txt").await;
     let mut stream = right.start_stream("notes/today.txt", 2).unwrap();
-    let SyncRequest::Send { data, .. } = right_requests.try_recv().unwrap() else {
-        panic!("expected a content request");
-    };
-    left.receive(TestPeer(2), data).unwrap();
-    let SyncRequest::Send { mut data, .. } = left_requests.try_recv().unwrap() else {
-        panic!("expected a content response");
-    };
-    *data.last_mut().unwrap() ^= 1;
-    right.receive(TestPeer(1), data).unwrap();
 
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    assert!(matches!(
-        Pin::new(&mut stream).poll_next(&mut context),
-        Poll::Ready(Some(Err(_)))
-    ));
+    assert!(matches!(next(&mut stream).await, Some(Err(_))));
 }
 
-#[test]
-fn merges_files_created_offline_in_the_same_folder() {
-    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
-    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
-    let mut left_requests = left.take_sync_requests().unwrap();
-    let mut right_requests = right.take_sync_requests().unwrap();
+#[tokio::test]
+async fn merges_files_created_offline_in_the_same_folder() {
+    let (left, right) = file_system_pair(false).await;
 
     left.write("notes/left.txt", b"left").unwrap();
     right.write("notes/right.txt", b"right").unwrap();
-    exchange(
-        &mut left,
-        &mut right,
-        &mut left_requests,
-        &mut right_requests,
-    );
+
+    for _ in 0..100 {
+        if left.list("notes").unwrap().len() == 2 && right.list("notes").unwrap().len() == 2 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
 
     assert_eq!(left.list("notes").unwrap().len(), 2);
     assert_eq!(right.list("notes").unwrap().len(), 2);
@@ -178,30 +150,8 @@ fn merges_files_created_offline_in_the_same_folder() {
     assert!(!right.entry("notes/left.txt").unwrap().local);
 }
 
-fn exchange(
-    left: &mut FileSystem<InMemoryStorage<TestPeer>>,
-    right: &mut FileSystem<InMemoryStorage<TestPeer>>,
-    left_requests: &mut tokio::sync::mpsc::Receiver<SyncRequest<TestPeer>>,
-    right_requests: &mut tokio::sync::mpsc::Receiver<SyncRequest<TestPeer>>,
-) {
-    for _ in 0..8 {
-        while let Ok(request) = left_requests.try_recv() {
-            match request {
-                SyncRequest::Broadcast(data) => right.receive(TestPeer(1), data).unwrap(),
-                SyncRequest::Send { peer, data } => {
-                    assert_eq!(peer, TestPeer(2));
-                    right.receive(TestPeer(1), data).unwrap();
-                }
-            }
-        }
-        while let Ok(request) = right_requests.try_recv() {
-            match request {
-                SyncRequest::Broadcast(data) => left.receive(TestPeer(2), data).unwrap(),
-                SyncRequest::Send { peer, data } => {
-                    assert_eq!(peer, TestPeer(1));
-                    left.receive(TestPeer(2), data).unwrap();
-                }
-            }
-        }
-    }
+async fn next(
+    stream: &mut file_system::ReadStream<file_system::Error>,
+) -> Option<Result<Vec<u8>, file_system::ReadError<file_system::Error>>> {
+    core::future::poll_fn(|context| Pin::new(&mut *stream).poll_next(context)).await
 }

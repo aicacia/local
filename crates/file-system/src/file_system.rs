@@ -5,10 +5,11 @@ use alloc::{
 };
 use core::{
     fmt,
-    future::Future,
+    future::{Future, poll_fn},
     pin::Pin,
     task::{Context, Poll},
 };
+use std::sync::{Arc, Mutex};
 
 use automerge::{
     AutoCommit, ObjType, ROOT, ReadDoc, ScalarValue, Value,
@@ -18,7 +19,7 @@ use automerge::{
 use futures_core::Stream;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{ChunkStream, ContentHash, FileEntry, PeerCodec, Storage};
+use crate::{ChunkStream, ContentHash, FileEntry, PeerCodec, Storage, Transport};
 
 const PROTOCOL_VERSION: u8 = 1;
 const METADATA_MESSAGE: u8 = 0;
@@ -29,9 +30,10 @@ const READ_CHUNK_SIZE: usize = 64 * 1024;
 
 type MetadataResult<C> =
     Result<Vec<FileEntry<<C as PeerCodec>::PeerId>>, SyncError<(), <C as PeerCodec>::Error>>;
-type PendingReads<S> = BTreeMap<u64, PendingRead<<S as Storage>::Error, <S as Storage>::PeerId>>;
-type PendingStreams<S> =
-    BTreeMap<u64, PendingStream<<S as Storage>::Error, <S as Storage>::PeerId>>;
+type PendingReads<S, C> =
+    BTreeMap<u64, PendingRead<<S as Storage>::Error, <C as PeerCodec>::PeerId>>;
+type PendingStreams<S, C> =
+    BTreeMap<u64, PendingStream<<S as Storage>::Error, <C as PeerCodec>::PeerId>>;
 type BlobRequest = (u64, String, ContentHash, u64, usize);
 type BlobResponse = (u64, ContentHash, u64, bool, ContentHash, Vec<u8>);
 
@@ -57,7 +59,7 @@ struct PendingStream<StorageError, PeerId> {
 }
 
 #[derive(Debug)]
-pub enum SyncRequest<P> {
+enum SyncRequest<P> {
     Broadcast(Vec<u8>),
     Send { peer: P, data: Vec<u8> },
 }
@@ -114,6 +116,27 @@ impl<StorageError> Stream for ReadStream<StorageError> {
 }
 
 #[derive(Debug)]
+pub enum FileSystemError<StorageError> {
+    Storage(StorageError),
+    NotFound,
+    InvalidPath,
+    InvalidMetadata,
+    Metadata(automerge::AutomergeError),
+}
+
+impl<StorageError: fmt::Display> fmt::Display for FileSystemError<StorageError> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Storage(error) => error.fmt(formatter),
+            Self::NotFound => formatter.write_str("file metadata was not found"),
+            Self::InvalidPath => formatter.write_str("invalid file path"),
+            Self::InvalidMetadata => formatter.write_str("invalid file metadata"),
+            Self::Metadata(error) => error.fmt(formatter),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum SyncError<StorageError, PeerError> {
     Storage(StorageError),
     Peer(PeerError),
@@ -135,27 +158,36 @@ impl<StorageError: fmt::Display, PeerError: fmt::Display> fmt::Display
 }
 
 #[must_use]
-pub struct FileSystem<S: Storage> {
+pub struct FileSystem<S: Storage, C: PeerCodec, T: Transport<PeerId = C::PeerId>> {
+    state: Arc<Mutex<FileSystemState<S, C>>>,
+    _transport: Arc<T>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+struct FileSystemState<S: Storage, C: PeerCodec> {
     storage: S,
+    local_peer: C::PeerId,
     documents: BTreeMap<String, AutoCommit>,
     broadcast_states: BTreeMap<String, State>,
-    peer_states: BTreeMap<(S::PeerId, String), State>,
-    sync_requests: Option<mpsc::Receiver<SyncRequest<S::PeerId>>>,
-    sync_sender: mpsc::Sender<SyncRequest<S::PeerId>>,
-    pending_reads: PendingReads<S>,
-    pending_streams: PendingStreams<S>,
+    peer_states: BTreeMap<(C::PeerId, String), State>,
+    sync_sender: mpsc::Sender<SyncRequest<C::PeerId>>,
+    pending_reads: PendingReads<S, C>,
+    pending_streams: PendingStreams<S, C>,
     next_read_id: u64,
 }
 
-impl<S: Storage> FileSystem<S> {
-    pub fn new(storage: S) -> Self {
-        let (sync_sender, sync_requests) = mpsc::channel(REQUEST_CAPACITY);
+impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
+    fn new(
+        storage: S,
+        local_peer: C::PeerId,
+        sync_sender: mpsc::Sender<SyncRequest<C::PeerId>>,
+    ) -> Self {
         Self {
             storage,
+            local_peer,
             documents: BTreeMap::new(),
             broadcast_states: BTreeMap::new(),
             peer_states: BTreeMap::new(),
-            sync_requests: Some(sync_requests),
             sync_sender,
             pending_reads: BTreeMap::new(),
             pending_streams: BTreeMap::new(),
@@ -163,29 +195,28 @@ impl<S: Storage> FileSystem<S> {
         }
     }
 
-    pub fn take_sync_requests(&mut self) -> Option<mpsc::Receiver<SyncRequest<S::PeerId>>> {
-        self.sync_requests.take()
-    }
-
-    pub fn storage(&self) -> &S {
-        &self.storage
-    }
-
-    pub fn storage_mut(&mut self) -> &mut S {
-        &mut self.storage
-    }
-
-    pub fn into_storage(self) -> S {
-        self.storage
-    }
-
-    pub fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<S::PeerId>, S::Error> {
-        let entry = self.storage.write(path, content)?;
-        let (folder, _) = split_path(path).expect("storage accepted an invalid path");
+    pub fn write(
+        &mut self,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        let hash = self
+            .storage
+            .write(path, content)
+            .map_err(FileSystemError::Storage)?;
+        let mut providers = BTreeSet::new();
+        providers.insert(self.local_peer.clone());
+        let entry = FileEntry::new(
+            name.to_string(),
+            hash,
+            u64::try_from(content.len()).expect("content length exceeds u64"),
+            providers,
+            true,
+        );
         let message = {
             let document = self.documents.entry(folder.to_string()).or_default();
-            store_entry::<S::PeerCodec>(document, &entry)
-                .expect("metadata generated from a valid entry");
+            store_entry::<C>(document, &entry).map_err(FileSystemError::Metadata)?;
             let state = self.broadcast_states.entry(folder.to_string()).or_default();
             document
                 .sync()
@@ -198,12 +229,81 @@ impl<S: Storage> FileSystem<S> {
         Ok(entry)
     }
 
-    pub fn entry(&self, path: &str) -> Result<FileEntry<S::PeerId>, S::Error> {
-        self.storage.entry(path)
+    pub fn append(
+        &mut self,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        let hash = self
+            .storage
+            .append(path, content)
+            .map_err(FileSystemError::Storage)?;
+        let content = self
+            .storage
+            .read_file(path)
+            .map_err(FileSystemError::Storage)?;
+        let mut providers = BTreeSet::new();
+        providers.insert(self.local_peer.clone());
+        let entry = FileEntry::new(
+            name.to_string(),
+            hash,
+            u64::try_from(content.len()).expect("content length exceeds u64"),
+            providers,
+            true,
+        );
+        let message = {
+            let document = self.documents.entry(folder.to_string()).or_default();
+            store_entry::<C>(document, &entry).map_err(FileSystemError::Metadata)?;
+            let state = self.broadcast_states.entry(folder.to_string()).or_default();
+            document
+                .sync()
+                .generate_sync_message(state)
+                .map(|message| encode_envelope(folder, message.encode()))
+        };
+        if let Some(data) = message {
+            let _ = self.emit(SyncRequest::Broadcast(data));
+        }
+        Ok(entry)
     }
 
-    pub fn list(&self, folder: &str) -> Result<Vec<FileEntry<S::PeerId>>, S::Error> {
-        self.storage.list(folder)
+    pub fn entry(&self, path: &str) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        let document = self
+            .documents
+            .get(folder)
+            .ok_or(FileSystemError::NotFound)?;
+        if document
+            .get(ROOT, name)
+            .map_err(FileSystemError::Metadata)?
+            .is_none()
+        {
+            return Err(FileSystemError::NotFound);
+        }
+        let mut entry = load_entry::<C>(document, name).map_err(file_system_error)?;
+        entry.local = entry.providers.contains(&self.local_peer);
+        Ok(entry)
+    }
+
+    pub fn list(
+        &self,
+        folder: &str,
+    ) -> Result<Vec<FileEntry<C::PeerId>>, FileSystemError<S::Error>> {
+        validate_folder(folder).map_err(|_| FileSystemError::InvalidPath)?;
+        let Some(document) = self.documents.get(folder) else {
+            return Ok(Vec::new());
+        };
+        load_entries::<C>(document)
+            .map_err(file_system_error)
+            .map(|entries| {
+                entries
+                    .into_iter()
+                    .map(|mut entry| {
+                        entry.local = entry.providers.contains(&self.local_peer);
+                        entry
+                    })
+                    .collect()
+            })
     }
 
     pub fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
@@ -211,7 +311,7 @@ impl<S: Storage> FileSystem<S> {
     }
 
     pub fn start_read(&mut self, path: &str) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
-        let entry = self.storage.entry(path).map_err(ReadError::Storage)?;
+        let entry = self.entry(path).map_err(metadata_read_error)?;
         let (sender, receiver) = oneshot::channel();
         if entry.local {
             let _ = sender.send(self.storage.read_file(path).map_err(ReadError::Storage));
@@ -260,7 +360,7 @@ impl<S: Storage> FileSystem<S> {
         if chunk_size == 0 {
             return Err(ReadError::InvalidChunkSize);
         }
-        let entry = self.storage.entry(path).map_err(ReadError::Storage)?;
+        let entry = self.entry(path).map_err(metadata_read_error)?;
         let (sender, receiver) = mpsc::unbounded_channel();
         if entry.local {
             let content = self.storage.read_file(path).map_err(ReadError::Storage)?;
@@ -303,9 +403,9 @@ impl<S: Storage> FileSystem<S> {
 
     pub fn receive(
         &mut self,
-        peer: S::PeerId,
+        peer: C::PeerId,
         data: Vec<u8>,
-    ) -> Result<(), SyncError<S::Error, <S::PeerCodec as PeerCodec>::Error>> {
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         match data.get(1).copied() {
             Some(BLOB_REQUEST) => return self.receive_blob_request(peer, &data),
             Some(BLOB_RESPONSE) => return self.receive_blob_response(&data),
@@ -324,7 +424,7 @@ impl<S: Storage> FileSystem<S> {
                 .sync()
                 .receive_sync_message(state, message)
                 .map_err(SyncError::Metadata)?;
-            let entries = load_entries::<S::PeerCodec>(document).map_err(map_metadata_error)?;
+            let entries = load_entries::<C>(document).map_err(map_metadata_error)?;
             let reply = document
                 .sync()
                 .generate_sync_message(state)
@@ -334,9 +434,9 @@ impl<S: Storage> FileSystem<S> {
 
         for entry in entries {
             let path = join_path(&folder, &entry.name);
-            if self.storage.entry(&path).is_err() {
+            if !entry.providers.contains(&self.local_peer) {
                 self.storage
-                    .register_passthrough(&path, entry.hash, entry.size, entry.providers)
+                    .register_passthrough(&path)
                     .map_err(SyncError::Storage)?;
             }
         }
@@ -349,9 +449,9 @@ impl<S: Storage> FileSystem<S> {
 
     fn receive_blob_request(
         &mut self,
-        peer: S::PeerId,
+        peer: C::PeerId,
         data: &[u8],
-    ) -> Result<(), SyncError<S::Error, <S::PeerCodec as PeerCodec>::Error>> {
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         let (id, path, hash, offset, chunk_size) = decode_blob_request(data)?;
         let content = self.storage.read_file(&path).map_err(SyncError::Storage)?;
         if ContentHash::of(&content) != hash {
@@ -377,7 +477,7 @@ impl<S: Storage> FileSystem<S> {
     fn receive_blob_response(
         &mut self,
         data: &[u8],
-    ) -> Result<(), SyncError<S::Error, <S::PeerCodec as PeerCodec>::Error>> {
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         let (id, hash, offset, final_chunk, chunk_hash, content) = decode_blob_response(data)?;
         if let Some(mut pending) = self.pending_reads.remove(&id) {
             if hash != pending.hash
@@ -455,11 +555,171 @@ impl<S: Storage> FileSystem<S> {
 
     fn emit(
         &self,
-        request: SyncRequest<S::PeerId>,
-    ) -> Result<(), SyncError<S::Error, <S::PeerCodec as PeerCodec>::Error>> {
+        request: SyncRequest<C::PeerId>,
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         self.sync_sender
             .try_send(request)
             .map_err(|_| SyncError::InvalidMessage)
+    }
+}
+
+impl<S, C, T> FileSystem<S, C, T>
+where
+    S: Storage + Send + 'static,
+    S::Error: Send + 'static,
+    C: PeerCodec + Send + 'static,
+    C::Error: Send + 'static,
+    C::PeerId: Send + 'static,
+    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T::Incoming: 'static,
+{
+    pub async fn new(storage: S, local_peer: C::PeerId, transport: T) -> Result<Self, T::Error> {
+        let transport = Arc::new(transport);
+        let incoming = Box::pin(transport.subscribe().await?);
+        let (outbound, mut requests) = mpsc::channel(REQUEST_CAPACITY);
+        let state = Arc::new(Mutex::new(FileSystemState::new(
+            storage,
+            local_peer,
+            outbound.clone(),
+        )));
+        let task_state = Arc::clone(&state);
+        let task_transport = Arc::clone(&transport);
+        let task = tokio::spawn(async move {
+            let mut incoming = incoming;
+            loop {
+                tokio::select! {
+                    request = requests.recv() => match request {
+                        Some(SyncRequest::Broadcast(data)) => {
+                            let _ = task_transport.broadcast(data).await;
+                        }
+                        Some(SyncRequest::Send { peer, data }) => {
+                            let _ = task_transport.send(peer, data).await;
+                        }
+                        None => return,
+                    },
+                    message = poll_fn(|context| incoming.as_mut().poll_next(context)) => match message {
+                        Some((peer, data)) => {
+                            let _ = task_state
+                                .lock()
+                                .expect("file system state lock poisoned")
+                                .receive(peer, data);
+                        }
+                        None => return,
+                    },
+                }
+            }
+        });
+        Ok(Self {
+            state,
+            _transport: transport,
+            task,
+        })
+    }
+
+    pub fn with_storage<R>(&self, f: impl FnOnce(&S) -> R) -> R {
+        let state = self.state.lock().expect("file system state lock poisoned");
+        f(&state.storage)
+    }
+
+    pub fn with_storage_mut<R>(&self, f: impl FnOnce(&mut S) -> R) -> R {
+        let mut state = self.state.lock().expect("file system state lock poisoned");
+        f(&mut state.storage)
+    }
+
+    pub fn write(
+        &self,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .write(path, content)
+    }
+
+    pub fn append(
+        &self,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .append(path, content)
+    }
+
+    pub fn entry(&self, path: &str) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .entry(path)
+    }
+
+    pub fn list(
+        &self,
+        folder: &str,
+    ) -> Result<Vec<FileEntry<C::PeerId>>, FileSystemError<S::Error>> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .list(folder)
+    }
+
+    pub fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .read(path)
+    }
+
+    pub fn start_read(&self, path: &str) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .start_read(path)
+    }
+
+    pub fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, S::Error> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .stream(path, chunk_size)
+    }
+
+    pub fn start_stream(
+        &self,
+        path: &str,
+        chunk_size: usize,
+    ) -> Result<ReadStream<S::Error>, ReadError<S::Error>> {
+        self.state
+            .lock()
+            .expect("file system state lock poisoned")
+            .start_stream(path, chunk_size)
+    }
+}
+
+impl<S: Storage, C: PeerCodec, T: Transport<PeerId = C::PeerId>> Drop for FileSystem<S, C, T> {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+fn file_system_error<StorageError, PeerError>(
+    error: SyncError<(), PeerError>,
+) -> FileSystemError<StorageError> {
+    match error {
+        SyncError::Metadata(error) => FileSystemError::Metadata(error),
+        SyncError::Peer(_) | SyncError::InvalidMessage => FileSystemError::InvalidMetadata,
+        SyncError::Storage(()) => unreachable!(),
+    }
+}
+
+fn metadata_read_error<StorageError>(
+    error: FileSystemError<StorageError>,
+) -> ReadError<StorageError> {
+    match error {
+        FileSystemError::Storage(error) => ReadError::Storage(error),
+        _ => ReadError::NoProvider,
     }
 }
 

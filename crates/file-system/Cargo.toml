@@ -29,4 +29,4 @@ blake3 = { version = "1.8", default-features = false, features = [] }
 
 # Async
 futures-core = { version = "0.3", default-features = false, features = [] }
-tokio = { version = "1.52", default-features = false, features = ["sync"], optional = true }
+tokio = { version = "1.52", default-features = false, features = ["macros", "rt", "sync"], optional = true }
