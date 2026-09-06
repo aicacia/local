@@ -26,11 +26,11 @@ impl NativeStorage {
 impl Storage for NativeStorage {
     type Error = io::Error;
 
-    fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
+    async fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
         fs::read(self.path(path)?)
     }
 
-    fn write(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
         let path = self.path(path)?;
         let parent = path
             .parent()
@@ -39,7 +39,7 @@ impl Storage for NativeStorage {
         fs::write(path, content)
     }
 
-    fn append(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
+    async fn append(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
         use std::io::Write;
 
         let path = self.path(path)?;
@@ -47,11 +47,11 @@ impl Storage for NativeStorage {
         file.write_all(content)
     }
 
-    fn remove(&mut self, path: &str) -> Result<(), Self::Error> {
+    async fn remove(&mut self, path: &str) -> Result<(), Self::Error> {
         fs::remove_file(self.path(path)?)
     }
 
-    fn rename(&mut self, from: &str, to: &str) -> Result<(), Self::Error> {
+    async fn rename(&mut self, from: &str, to: &str) -> Result<(), Self::Error> {
         let from = self.path(from)?;
         let to = self.path(to)?;
         let parent = to
@@ -61,7 +61,7 @@ impl Storage for NativeStorage {
         fs::rename(from, to)
     }
 
-    fn scan(&self, path: &str) -> Result<Vec<String>, Self::Error> {
+    async fn scan(&self, path: &str) -> Result<Vec<String>, Self::Error> {
         validate_directory_path(path)?;
         let root = if path.is_empty() {
             self.root.clone()
@@ -140,16 +140,16 @@ mod tests {
     use super::NativeStorage;
     use crate::Storage;
 
-    #[test]
-    fn persists_raw_files() {
+    #[tokio::test]
+    async fn persists_raw_files() {
         let root = env::temp_dir().join(format!("file-system-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let mut storage = NativeStorage::new(&root).unwrap();
-        storage.write("notes/today.txt", b"hello").unwrap();
+        storage.write("notes/today.txt", b"hello").await.unwrap();
         drop(storage);
 
         let storage = NativeStorage::new(&root).unwrap();
-        assert_eq!(storage.read("notes/today.txt").unwrap(), b"hello");
+        assert_eq!(storage.read("notes/today.txt").await.unwrap(), b"hello");
         let _ = fs::remove_dir_all(root);
     }
 }

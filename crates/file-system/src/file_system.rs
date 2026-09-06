@@ -9,7 +9,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use automerge::{
     AutoCommit, ObjType, ROOT, ReadDoc, ScalarValue, Value,
@@ -17,7 +17,7 @@ use automerge::{
     transaction::Transactable,
 };
 use futures_core::Stream;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::{
     ChunkStream, ContentHash, FileEntry, PeerCodec, Storage, Transport,
@@ -222,7 +222,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         }
     }
 
-    pub fn write(
+    pub async fn write(
         &mut self,
         path: &str,
         content: &[u8],
@@ -231,6 +231,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         let hash = self
             .content_store
             .write(path, content)
+            .await
             .map_err(FileSystemError::Storage)?;
         let mut providers = BTreeSet::new();
         providers.insert(self.local_peer.clone());
@@ -251,6 +252,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
                 .map(|message| encode_envelope(folder, message.encode()))
         };
         self.persist_dirty(folder)
+            .await
             .map_err(FileSystemError::Storage)?;
         if let Some(data) = message {
             let _ = self.emit(SyncRequest::Broadcast(data));
@@ -258,7 +260,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(entry)
     }
 
-    pub fn append(
+    pub async fn append(
         &mut self,
         path: &str,
         content: &[u8],
@@ -267,10 +269,12 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         let hash = self
             .content_store
             .append(path, content)
+            .await
             .map_err(FileSystemError::Storage)?;
         let content = self
             .content_store
             .read(path)
+            .await
             .map_err(FileSystemError::Storage)?;
         let mut providers = BTreeSet::new();
         providers.insert(self.local_peer.clone());
@@ -291,6 +295,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
                 .map(|message| encode_envelope(folder, message.encode()))
         };
         self.persist_dirty(folder)
+            .await
             .map_err(FileSystemError::Storage)?;
         if let Some(data) = message {
             let _ = self.emit(SyncRequest::Broadcast(data));
@@ -337,15 +342,23 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
             })
     }
 
-    pub fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
-        self.content_store.read(path)
+    pub async fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
+        self.content_store.read(path).await
     }
 
-    pub fn start_read(&mut self, path: &str) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
+    pub async fn start_read(
+        &mut self,
+        path: &str,
+    ) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
         let entry = self.entry(path).map_err(metadata_read_error)?;
         let (sender, receiver) = oneshot::channel();
         if entry.local {
-            let _ = sender.send(self.content_store.read(path).map_err(ReadError::Storage));
+            let _ = sender.send(
+                self.content_store
+                    .read(path)
+                    .await
+                    .map_err(ReadError::Storage),
+            );
             return Ok(ReadFuture(receiver));
         }
         let peer = entry
@@ -379,11 +392,14 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(ReadFuture(receiver))
     }
 
-    pub fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, S::Error> {
-        Ok(ChunkStream::new(self.content_store.read(path)?, chunk_size))
+    pub async fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, S::Error> {
+        Ok(ChunkStream::new(
+            self.content_store.read(path).await?,
+            chunk_size,
+        ))
     }
 
-    pub fn start_stream(
+    pub async fn start_stream(
         &mut self,
         path: &str,
         chunk_size: usize,
@@ -394,7 +410,11 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         let entry = self.entry(path).map_err(metadata_read_error)?;
         let (sender, receiver) = mpsc::unbounded_channel();
         if entry.local {
-            let content = self.content_store.read(path).map_err(ReadError::Storage)?;
+            let content = self
+                .content_store
+                .read(path)
+                .await
+                .map_err(ReadError::Storage)?;
             for chunk in content.chunks(chunk_size) {
                 let _ = sender.send(Ok(chunk.to_vec()));
             }
@@ -432,13 +452,13 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(ReadStream { receiver })
     }
 
-    pub fn receive(
+    pub async fn receive(
         &mut self,
         peer: C::PeerId,
         data: Vec<u8>,
     ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         match data.get(1).copied() {
-            Some(BLOB_REQUEST) => return self.receive_blob_request(peer, &data),
+            Some(BLOB_REQUEST) => return self.receive_blob_request(peer, &data).await,
             Some(BLOB_RESPONSE) => return self.receive_blob_response(&data),
             Some(METADATA_MESSAGE) => {}
             _ => return Err(SyncError::InvalidMessage),
@@ -463,13 +483,16 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
             (entries, reply)
         };
 
-        self.persist_dirty(&folder).map_err(SyncError::Storage)?;
+        self.persist_dirty(&folder)
+            .await
+            .map_err(SyncError::Storage)?;
 
         for entry in entries {
             let path = join_path(&folder, &entry.name);
             if !entry.providers.contains(&self.local_peer) {
                 self.content_store
                     .register_passthrough(&path)
+                    .await
                     .map_err(SyncError::Storage)?;
             }
         }
@@ -480,13 +503,17 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(())
     }
 
-    fn receive_blob_request(
+    async fn receive_blob_request(
         &mut self,
         peer: C::PeerId,
         data: &[u8],
     ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         let (id, path, hash, offset, chunk_size) = decode_blob_request(data)?;
-        let content = self.content_store.read(&path).map_err(SyncError::Storage)?;
+        let content = self
+            .content_store
+            .read(&path)
+            .await
+            .map_err(SyncError::Storage)?;
         if ContentHash::of(&content) != hash {
             return Err(SyncError::InvalidMessage);
         }
@@ -586,14 +613,14 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         self.emit(SyncRequest::Send { peer, data })
     }
 
-    fn persist_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
+    async fn persist_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
         let document = self
             .documents
             .get_mut(folder)
             .expect("changed folder must have a document");
         let mut sync_store = SyncStore::new(self.content_store.storage_mut());
-        sync_store.persist(folder, document)?;
-        sync_store.mark_dirty(folder)?;
+        sync_store.persist(folder, document).await?;
+        sync_store.mark_dirty(folder).await?;
         self.dirty_folders.insert(folder.to_string());
         Ok(())
     }
@@ -610,7 +637,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
 
 impl<S, C, T> FileSystem<S, C, T>
 where
-    S: Storage + Send + 'static,
+    S: Storage + Send + Sync + 'static,
     S::Error: Send + 'static,
     C: PeerCodec + Send + 'static,
     C::Error: Send + 'static,
@@ -624,7 +651,7 @@ where
         transport: T,
     ) -> Result<Self, FileSystemInitError<S::Error, T::Error>> {
         let mut content_store = ContentStore::new(storage);
-        let sync_state = match SyncStore::new(content_store.storage_mut()).load() {
+        let sync_state = match SyncStore::new(content_store.storage_mut()).load().await {
             Ok(value) => value,
             Err(SyncStoreError::Storage(error)) => return Err(FileSystemInitError::Storage(error)),
             Err(SyncStoreError::Metadata(error)) => {
@@ -647,7 +674,7 @@ where
             outbound.clone(),
         )));
         {
-            let mut state = state.lock().expect("file system state lock poisoned");
+            let mut state = state.lock().await;
             let folders: Vec<_> = state.dirty_folders.iter().cloned().collect();
             for folder in folders {
                 let message = {
@@ -689,8 +716,9 @@ where
                         Some((peer, data)) => {
                             let _ = task_state
                                 .lock()
-                                .expect("file system state lock poisoned")
-                                .receive(peer, data);
+                                .await
+                                .receive(peer, data)
+                                .await;
                         }
                         None => return,
                     },
@@ -704,85 +732,67 @@ where
         })
     }
 
-    pub fn with_storage<R>(&self, f: impl FnOnce(&S) -> R) -> R {
-        let state = self.state.lock().expect("file system state lock poisoned");
+    pub async fn with_storage<R>(&self, f: impl FnOnce(&S) -> R) -> R {
+        let state = self.state.lock().await;
         f(state.content_store.storage())
     }
 
-    pub fn with_storage_mut<R>(&self, f: impl FnOnce(&mut S) -> R) -> R {
-        let mut state = self.state.lock().expect("file system state lock poisoned");
+    pub async fn with_storage_mut<R>(&self, f: impl FnOnce(&mut S) -> R) -> R {
+        let mut state = self.state.lock().await;
         f(state.content_store.storage_mut())
     }
 
-    pub fn write(
+    pub async fn write(
         &self,
         path: &str,
         content: &[u8],
     ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .write(path, content)
+        self.state.lock().await.write(path, content).await
     }
 
-    pub fn append(
+    pub async fn append(
         &self,
         path: &str,
         content: &[u8],
     ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .append(path, content)
+        self.state.lock().await.append(path, content).await
     }
 
-    pub fn entry(&self, path: &str) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .entry(path)
+    pub async fn entry(
+        &self,
+        path: &str,
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        self.state.lock().await.entry(path)
     }
 
-    pub fn list(
+    pub async fn list(
         &self,
         folder: &str,
     ) -> Result<Vec<FileEntry<C::PeerId>>, FileSystemError<S::Error>> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .list(folder)
+        self.state.lock().await.list(folder)
     }
 
-    pub fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .read(path)
+    pub async fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
+        self.state.lock().await.read(path).await
     }
 
-    pub fn start_read(&self, path: &str) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .start_read(path)
+    pub async fn start_read(
+        &self,
+        path: &str,
+    ) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
+        self.state.lock().await.start_read(path).await
     }
 
-    pub fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, S::Error> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .stream(path, chunk_size)
+    pub async fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, S::Error> {
+        self.state.lock().await.stream(path, chunk_size).await
     }
 
-    pub fn start_stream(
+    pub async fn start_stream(
         &self,
         path: &str,
         chunk_size: usize,
     ) -> Result<ReadStream<S::Error>, ReadError<S::Error>> {
-        self.state
-            .lock()
-            .expect("file system state lock poisoned")
-            .start_stream(path, chunk_size)
+        self.state.lock().await.start_stream(path, chunk_size).await
     }
 }
 

@@ -21,18 +21,18 @@ impl InMemoryStorage {
 impl Storage for InMemoryStorage {
     type Error = Error;
 
-    fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
+    async fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
         validate_file_path(path)?;
         self.files.get(path).cloned().ok_or(Error::NotFound)
     }
 
-    fn write(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
+    async fn write(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
         validate_file_path(path)?;
         self.files.insert(path.to_string(), content.to_vec());
         Ok(())
     }
 
-    fn append(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
+    async fn append(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
         validate_file_path(path)?;
         self.files
             .get_mut(path)
@@ -41,12 +41,12 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn remove(&mut self, path: &str) -> Result<(), Self::Error> {
+    async fn remove(&mut self, path: &str) -> Result<(), Self::Error> {
         validate_file_path(path)?;
         self.files.remove(path).map(|_| ()).ok_or(Error::NotFound)
     }
 
-    fn rename(&mut self, from: &str, to: &str) -> Result<(), Self::Error> {
+    async fn rename(&mut self, from: &str, to: &str) -> Result<(), Self::Error> {
         validate_file_path(from)?;
         validate_file_path(to)?;
         let content = self.files.remove(from).ok_or(Error::NotFound)?;
@@ -54,7 +54,7 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn scan(&self, path: &str) -> Result<Vec<String>, Self::Error> {
+    async fn scan(&self, path: &str) -> Result<Vec<String>, Self::Error> {
         validate_directory_path(path)?;
         let prefix = if path.is_empty() {
             String::new()
@@ -103,18 +103,25 @@ mod tests {
     use super::InMemoryStorage;
     use crate::{Error, Storage};
 
-    #[test]
-    fn performs_raw_file_operations() {
+    #[tokio::test]
+    async fn performs_raw_file_operations() {
         let mut storage = InMemoryStorage::new();
-        storage.write("notes/today.txt", b"hello").unwrap();
-        storage.append("notes/today.txt", b" world").unwrap();
+        storage.write("notes/today.txt", b"hello").await.unwrap();
+        storage.append("notes/today.txt", b" world").await.unwrap();
         storage
             .rename("notes/today.txt", "notes/tomorrow.txt")
+            .await
             .unwrap();
 
-        assert_eq!(storage.read("notes/tomorrow.txt").unwrap(), b"hello world");
-        assert_eq!(storage.scan("notes").unwrap(), ["notes/tomorrow.txt"]);
-        storage.remove("notes/tomorrow.txt").unwrap();
-        assert_eq!(storage.read("notes/tomorrow.txt"), Err(Error::NotFound));
+        assert_eq!(
+            storage.read("notes/tomorrow.txt").await.unwrap(),
+            b"hello world"
+        );
+        assert_eq!(storage.scan("notes").await.unwrap(), ["notes/tomorrow.txt"]);
+        storage.remove("notes/tomorrow.txt").await.unwrap();
+        assert_eq!(
+            storage.read("notes/tomorrow.txt").await,
+            Err(Error::NotFound)
+        );
     }
 }

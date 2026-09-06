@@ -7,8 +7,8 @@ use automerge::AutoCommit;
 
 use crate::Storage;
 
-const DOCUMENTS_DIRECTORY: &str = ".lidp/sync/documents";
-const DIRTY_DIRECTORY: &str = ".lidp/sync/dirty";
+const DOCUMENTS_DIRECTORY: &str = ".sync/documents";
+const DIRTY_DIRECTORY: &str = ".sync/dirty";
 
 pub(crate) enum SyncStoreError<E> {
     Storage(E),
@@ -29,18 +29,23 @@ impl<'a, S: Storage> SyncStore<'a, S> {
         Self { storage }
     }
 
-    pub(crate) fn load(&self) -> Result<SyncState, SyncStoreError<S::Error>> {
+    pub(crate) async fn load(&self) -> Result<SyncState, SyncStoreError<S::Error>> {
         let mut documents = BTreeMap::new();
         let documents_prefix = format!("{DOCUMENTS_DIRECTORY}/");
         for path in self
             .storage
             .scan(DOCUMENTS_DIRECTORY)
+            .await
             .map_err(SyncStoreError::Storage)?
         {
             let Some(folder) = path.strip_prefix(&documents_prefix) else {
                 continue;
             };
-            let bytes = self.storage.read(&path).map_err(SyncStoreError::Storage)?;
+            let bytes = self
+                .storage
+                .read(&path)
+                .await
+                .map_err(SyncStoreError::Storage)?;
             let document = AutoCommit::load(&bytes).map_err(SyncStoreError::Metadata)?;
             documents.insert(folder.to_string(), document);
         }
@@ -48,6 +53,7 @@ impl<'a, S: Storage> SyncStore<'a, S> {
         let dirty = self
             .storage
             .scan(DIRTY_DIRECTORY)
+            .await
             .map_err(SyncStoreError::Storage)?
             .into_iter()
             .filter_map(|path| path.strip_prefix(&dirty_prefix).map(ToString::to_string))
@@ -58,16 +64,18 @@ impl<'a, S: Storage> SyncStore<'a, S> {
         })
     }
 
-    pub(crate) fn persist(
+    pub(crate) async fn persist(
         &mut self,
         folder: &str,
         document: &mut AutoCommit,
     ) -> Result<(), S::Error> {
-        self.storage.write(&document_path(folder), &document.save())
+        self.storage
+            .write(&document_path(folder), &document.save())
+            .await
     }
 
-    pub(crate) fn mark_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
-        self.storage.write(&dirty_path(folder), &[])
+    pub(crate) async fn mark_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
+        self.storage.write(&dirty_path(folder), &[]).await
     }
 }
 

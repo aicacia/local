@@ -86,8 +86,8 @@ iroh is the default implementation. Swapping to a different transport later mean
 ### 5. Blob storage
 
 - Files are content-addressed (hashed) and chunked, enabling streaming and integrity checks.
-- Full files are stored as native filesystem blobs under `.lidp/blobs/<hash>`.
-- Folder documents are persisted under `.lidp/metadata/`.
+- Full files are stored as native filesystem blobs under `.blobs/<hash>`.
+- Folder documents are persisted under `.metadata/`.
 - Automerge docs never contain blob bytes — only metadata pointing at them.
 
 ### 6. Passthrough files
