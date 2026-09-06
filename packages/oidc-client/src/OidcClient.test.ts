@@ -69,3 +69,23 @@ test("getUserInfo throws NO_USERINFO_ENDPOINT when provider does not expose endp
         }
     }
 });
+
+test("handleSigninCallback rejects a callback without state", async () => {
+    const client = createClient();
+
+    await expect(
+        client.handleSigninCallback(
+            new URL("https://app.example/callback?code=code"),
+        ),
+    ).rejects.toMatchObject({ code: "MISSING_STATE" });
+});
+
+test("handleSigninCallback rejects an unknown state", async () => {
+    const client = createClient();
+
+    await expect(
+        client.handleSigninCallback(
+            new URL("https://app.example/callback?code=code&state=unknown"),
+        ),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+});

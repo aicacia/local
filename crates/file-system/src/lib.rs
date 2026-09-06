@@ -5,6 +5,8 @@ extern crate alloc;
 
 #[cfg(feature = "sync")]
 mod content_store;
+#[cfg(feature = "crypto")]
+mod encrypted_storage;
 mod error;
 #[cfg(feature = "sync")]
 mod file_system;
@@ -23,6 +25,8 @@ mod stream;
 mod sync_store;
 mod transport;
 
+#[cfg(feature = "crypto")]
+pub use encrypted_storage::{EncryptedStorage, EncryptedStorageError};
 pub use error::Error;
 #[cfg(feature = "sync")]
 pub use file_system::{

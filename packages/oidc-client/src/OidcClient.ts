@@ -561,9 +561,23 @@ export class OidcClient<
       return null;
     }
 
+    if (!callbackState) {
+      throw new OidcClientError(
+        "MISSING_STATE",
+        "Signin callback is missing state",
+      );
+    }
+
+    const codeVerifier = this.consumePkceVerifier(callbackState);
+    if (!codeVerifier) {
+      throw new OidcClientError(
+        "INVALID_STATE",
+        "Signin callback state is unknown or has expired",
+      );
+    }
+
     const config = await this.getOidcConfiguration();
     const clientId = await this.getClientId(config);
-    const codeVerifier = this.consumePkceVerifier(callbackState);
     const { headers, body } = this.buildTokenRequest(
       clientId,
       authorizationCode,

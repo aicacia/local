@@ -25,9 +25,8 @@ export function createReturnTo({ id, goto, defaultPath }: ReturnToOptions) {
             try {
                 await goto(returnToPath);
             } catch (error) {
-                throw error;
-            } finally {
                 returnTo.item = returnToPath;
+                throw error;
             }
         }
     }

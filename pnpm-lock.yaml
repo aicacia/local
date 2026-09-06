@@ -129,9 +129,6 @@ importers:
       '@aicacia/oidc-client':
         specifier: workspace:*
         version: link:../../packages/oidc-client
-      '@aicacia/storage-client':
-        specifier: workspace:*
-        version: link:../../packages/storage-client
       '@aicacia/svelte-forms':
         specifier: ^0.1.1
         version: 0.1.1(svelte@5.56.8)(tslib@2.8.1)
@@ -141,15 +138,6 @@ importers:
       '@lucide/svelte':
         specifier: ^1.24.0
         version: 1.28.0(svelte@5.56.8)
-      '@tanstack/db':
-        specifier: ^0.8.7
-        version: 0.8.7(typescript@5.9.3)
-      '@tanstack/svelte-db':
-        specifier: ^0.3.7
-        version: 0.3.7(svelte@5.56.8)(typescript@5.9.3)
-      tauri-plugin-fetch-api:
-        specifier: workspace:*
-        version: link:../../crates/tauri-plugin-fetch-api
       valibot:
         specifier: ^1.4.2
         version: 1.4.2(typescript@5.9.3)
@@ -1293,25 +1281,6 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/db-ivm@0.1.19':
-    resolution: {integrity: sha512-3VGvgNXAPSVqny/pL8Y6n/txnaZzV49WmgSQ9N5eyCQNgMtuOEOJHKDatqqCy3gDxVu6pkhSHDKxcNFOtxMouw==}
-    peerDependencies:
-      typescript: '>=4.7'
-
-  '@tanstack/db@0.8.7':
-    resolution: {integrity: sha512-NIocfK737qPvkE1Ot2iM5PXN6CSBZY5cw1ovAwo0RvQDc/iinyr3x7v+kavoiWxClbkul98J/wRzr0KLanMxOA==}
-    peerDependencies:
-      typescript: '>=4.7'
-
-  '@tanstack/pacer-lite@0.2.2':
-    resolution: {integrity: sha512-eQ1MyLKCHyXiH7NbdmB80W77OhiMgGBUb+qDx/8WMGbwg5Lf/NlfD0TfNYAqY77i8V3AxoDoYdICrQE5ADw4Yw==}
-    engines: {node: '>=18'}
-
-  '@tanstack/svelte-db@0.3.7':
-    resolution: {integrity: sha512-8ybV5we0cP6oI1kMMWOECjcAl82C9uF9WL1LiA7GCF1l6/e1QJSkv1VGvU/4ydZBJCxKfSPrCKR6EL0zHoLr5A==}
-    peerDependencies:
-      svelte: ^5.0.0
-
   '@tauri-apps/api@2.11.1':
     resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
@@ -1883,10 +1852,6 @@ packages:
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
-
-  fractional-indexing@3.4.0:
-    resolution: {integrity: sha512-8J3glhz2rrpKG6KmI7wmJo3zH1VjeOpN+vTJSw1fOyO+Viqq3zX6/5NGh6oaZB2qIAYdOYuu5Dz9xp4faOO0Pg==}
-    engines: {node: ^14.13.1 || >=16.0.0}
 
   fs-extra@11.4.0:
     resolution: {integrity: sha512-EQsFzMUJkCKGr1ePqlYADkIUmHW1s3ZXr5Yqy6wbGrfUCphpl2maM/kyOIRA2HpP3AaFQTZXD4ldjek+nccddA==}
@@ -2553,9 +2518,6 @@ packages:
   socks@2.8.9:
     resolution: {integrity: sha512-LJhUYUvItdQ0LkJTmPeaEObWXAqFyfmP85x0tch/ez9cahmhlBBLbIqDFnvBnUJGagb0JbIQrkBs1wJ+yRYpEw==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
-
-  sorted-btree@1.8.1:
-    resolution: {integrity: sha512-395+XIP+wqNn3USkFSrNz7G3Ss/MXlZEqesxvzCRFwL14h6e8LukDHdLBePn5pwbm5OQ9vGu8mDyz2lLDIqamQ==}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -3500,28 +3462,6 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.2.0(@types/node@26.1.2)(jiti@2.7.0)(yaml@2.9.0)
 
-  '@tanstack/db-ivm@0.1.19(typescript@5.9.3)':
-    dependencies:
-      fractional-indexing: 3.4.0
-      sorted-btree: 1.8.1
-      typescript: 5.9.3
-
-  '@tanstack/db@0.8.7(typescript@5.9.3)':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      '@tanstack/db-ivm': 0.1.19(typescript@5.9.3)
-      '@tanstack/pacer-lite': 0.2.2
-      typescript: 5.9.3
-
-  '@tanstack/pacer-lite@0.2.2': {}
-
-  '@tanstack/svelte-db@0.3.7(svelte@5.56.8)(typescript@5.9.3)':
-    dependencies:
-      '@tanstack/db': 0.8.7(typescript@5.9.3)
-      svelte: 5.56.8
-    transitivePeerDependencies:
-      - typescript
-
   '@tauri-apps/api@2.11.1': {}
 
   '@tauri-apps/cli-darwin-arm64@2.11.4':
@@ -4027,8 +3967,6 @@ snapshots:
       es-set-tostringtag: 2.1.0
       hasown: 2.0.4
       mime-types: 2.1.35
-
-  fractional-indexing@3.4.0: {}
 
   fs-extra@11.4.0:
     dependencies:
@@ -4627,8 +4565,6 @@ snapshots:
     dependencies:
       ip-address: 10.5.0
       smart-buffer: 4.2.0
-
-  sorted-btree@1.8.1: {}
 
   source-map-js@1.2.1: {}
 

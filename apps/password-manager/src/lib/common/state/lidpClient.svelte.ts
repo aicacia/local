@@ -5,13 +5,18 @@ import {
 } from "@aicacia/lidp-client";
 import { createNativeFetch } from "@aicacia/native-fetch";
 import { createStorage } from "@aicacia/svelte-headless";
+import { isTauri } from "@tauri-apps/api/core";
 import { goto } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
+import { env } from "$env/dynamic/public";
 import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
-const lidpApiUrl = createStorage<string>("lidp-api-url", "lidp://app");
+const lidpApiUrl = createStorage<string>(
+    "lidp-api-url",
+    (isTauri() ? "lidp://app" : env.PUBLIC_LIDP_BASE_URL) ?? "lidp://app",
+);
 let lidpApiIsNative = $derived.by(() => lidpApiUrl.item?.startsWith("lidp:"));
 
 export const defaultConfigurationParameters: ConfigurationParameters = {

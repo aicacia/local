@@ -1,6 +1,8 @@
 <script lang="ts">
-
-import { getLidpApiUrl, setLidpApiUrl } from "$lib/common/state/lidpClient.svelte";
+import {
+    getLidpApiUrl,
+    setLidpApiUrl,
+} from "$lib/common/state/lidpClient.svelte";
 import { getOidcClient } from "$lib/common/state/oidc.svelte";
 
 let error = $state<string | null>(null);
@@ -14,11 +16,10 @@ async function signIn(authority: string): Promise<void> {
     try {
         await getOidcClient().signin();
     } catch (cause) {
+        if (currentAuthority) {
+            setLidpApiUrl(currentAuthority);
+        }
         error = cause instanceof Error ? cause.message : String(cause);
-    } finally {
-      if (currentAuthority) {
-        setLidpApiUrl(currentAuthority);
-      }
     }
 }
 

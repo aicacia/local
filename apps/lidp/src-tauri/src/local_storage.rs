@@ -45,8 +45,6 @@ impl LocalStorage {
         &self,
         request: StorageRequest,
     ) -> Result<StorageResponse, String> {
-        log::info!("local storage dispatching request: {request:?}");
-
         let result = match request {
             StorageRequest::ReadFile { path } => {
                 let bytes = self
@@ -121,11 +119,6 @@ impl LocalStorage {
             )),
         };
 
-        match &result {
-            Ok(response) => log::info!("local storage request completed: {response:?}"),
-            Err(error) => log::error!("local storage request failed: {error}"),
-        }
-
         result
     }
 
@@ -143,7 +136,6 @@ impl LocalStorage {
                         continue;
                     };
 
-                    log::info!("local storage received websocket frame: {raw}");
 
                     match serde_json::from_str::<StorageMessage>(&raw) {
                         Ok(StorageMessage::Request { request, request_id }) => {

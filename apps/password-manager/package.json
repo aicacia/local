@@ -42,13 +42,9 @@
         "@aicacia/lidp-management-client": "workspace:*",
         "@aicacia/native-fetch": "workspace:*",
         "@aicacia/oidc-client": "workspace:*",
-        "@aicacia/storage-client": "workspace:*",
-        "tauri-plugin-fetch-api": "workspace:*",
         "@aicacia/svelte-forms": "^0.1.1",
         "@aicacia/svelte-headless": "workspace:*",
         "@lucide/svelte": "^1.24.0",
-        "@tanstack/db": "^0.8.7",
-        "@tanstack/svelte-db": "^0.3.7",
         "valibot": "^1.4.2"
     }
 }
