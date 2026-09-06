@@ -2250,6 +2250,7 @@ dependencies = [
  "automerge",
  "blake3",
  "futures-core",
+ "tokio",
 ]
 
 [[package]]

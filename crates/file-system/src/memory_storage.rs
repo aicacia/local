@@ -1,4 +1,4 @@
-use crate::{ChunkStream, ContentHash, Error, FileEntry, Storage};
+use crate::{ChunkStream, ContentHash, Error, FileEntry, PeerCodec, Storage};
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     string::{String, ToString},
@@ -23,15 +23,15 @@ impl BlobStore {
 }
 
 #[derive(Debug)]
-pub struct InMemoryStorage<P> {
+pub struct InMemoryStorage<C: PeerCodec<PeerId = C> + Ord + Clone> {
     blobs: BlobStore,
-    folders: BTreeMap<String, BTreeMap<String, FileEntry<P>>>,
-    local_peer: P,
+    folders: BTreeMap<String, BTreeMap<String, FileEntry<C>>>,
+    local_peer: C,
 }
 
-impl<P: Ord + Clone> InMemoryStorage<P> {
+impl<C: PeerCodec<PeerId = C> + Ord + Clone> InMemoryStorage<C> {
     #[must_use]
-    pub fn new(local_peer: P) -> Self {
+    pub fn new(local_peer: C) -> Self {
         Self {
             blobs: BlobStore::default(),
             folders: BTreeMap::new(),
@@ -39,7 +39,7 @@ impl<P: Ord + Clone> InMemoryStorage<P> {
         }
     }
 
-    pub fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<P>, Error> {
+    pub fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<C>, Error> {
         let (folder, name) = split_path(path)?;
         let hash = self.blobs.insert(content);
         let size = u64::try_from(content.len()).map_err(|_| Error::ContentTooLarge)?;
@@ -58,8 +58,8 @@ impl<P: Ord + Clone> InMemoryStorage<P> {
         path: &str,
         hash: ContentHash,
         size: u64,
-        providers: BTreeSet<P>,
-    ) -> Result<FileEntry<P>, Error> {
+        providers: BTreeSet<C>,
+    ) -> Result<FileEntry<C>, Error> {
         let (folder, name) = split_path(path)?;
         let entry = FileEntry::new(name.to_string(), hash, size, providers, false);
         self.folders
@@ -69,7 +69,7 @@ impl<P: Ord + Clone> InMemoryStorage<P> {
         Ok(entry)
     }
 
-    pub fn entry(&self, path: &str) -> Result<&FileEntry<P>, Error> {
+    pub fn entry(&self, path: &str) -> Result<&FileEntry<C>, Error> {
         let (folder, name) = split_path(path)?;
         self.folders
             .get(folder)
@@ -77,7 +77,7 @@ impl<P: Ord + Clone> InMemoryStorage<P> {
             .ok_or(Error::NotFound)
     }
 
-    pub fn list(&self, folder: &str) -> Result<Vec<FileEntry<P>>, Error> {
+    pub fn list(&self, folder: &str) -> Result<Vec<FileEntry<C>>, Error> {
         validate_folder(folder)?;
         Ok(self
             .folders
@@ -109,11 +109,12 @@ impl<P: Ord + Clone> InMemoryStorage<P> {
     }
 }
 
-impl<P: Ord + Clone> Storage for InMemoryStorage<P> {
+impl<C: PeerCodec<PeerId = C> + Ord + Clone> Storage for InMemoryStorage<C> {
     type Error = Error;
-    type PeerId = P;
+    type PeerId = C;
+    type PeerCodec = C;
 
-    fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<P>, Self::Error> {
+    fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<C::PeerId>, Self::Error> {
         Self::write(self, path, content)
     }
 
@@ -122,16 +123,16 @@ impl<P: Ord + Clone> Storage for InMemoryStorage<P> {
         path: &str,
         hash: ContentHash,
         size: u64,
-        providers: BTreeSet<P>,
-    ) -> Result<FileEntry<P>, Self::Error> {
+        providers: BTreeSet<C>,
+    ) -> Result<FileEntry<C>, Self::Error> {
         Self::register_passthrough(self, path, hash, size, providers)
     }
 
-    fn entry(&self, path: &str) -> Result<FileEntry<P>, Self::Error> {
+    fn entry(&self, path: &str) -> Result<FileEntry<C>, Self::Error> {
         Ok(Self::entry(self, path)?.clone())
     }
 
-    fn list(&self, folder: &str) -> Result<Vec<FileEntry<P>>, Self::Error> {
+    fn list(&self, folder: &str) -> Result<Vec<FileEntry<C>>, Self::Error> {
         Self::list(self, folder)
     }
 
@@ -179,7 +180,20 @@ mod tests {
     use futures_core::Stream;
 
     use super::InMemoryStorage;
-    use crate::{ContentHash, Error, MergeStrategy};
+    use crate::{ContentHash, Error, MergeStrategy, PeerCodec};
+
+    impl PeerCodec for u8 {
+        type Error = core::convert::Infallible;
+        type PeerId = Self;
+
+        fn encode(peer: &Self::PeerId) -> Vec<u8> {
+            vec![*peer]
+        }
+
+        fn decode(bytes: &[u8]) -> Result<Self::PeerId, Self::Error> {
+            Ok(bytes[0])
+        }
+    }
 
     const PEER: u8 = 7;
 

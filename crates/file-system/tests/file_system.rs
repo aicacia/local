@@ -1,66 +1,89 @@
 #![cfg(feature = "in-memory")]
 
-use core::{
-    convert::Infallible,
-    future::{Future, ready},
-    pin::Pin,
-    task::{Context, Poll},
-};
+use core::convert::Infallible;
 
-use file_system::{FileSystem, InMemoryStorage, Transport};
-use futures_core::Stream;
+use file_system::{FileSystem, InMemoryStorage, PeerCodec, SyncRequest};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct TestPeer(u16);
+struct TestPeer(u8);
 
-struct TestTransport;
-
-struct NoIncoming;
-
-impl Stream for NoIncoming {
-    type Item = (TestPeer, Vec<u8>);
-
-    fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Poll::Ready(None)
-    }
-}
-
-impl Transport for TestTransport {
+impl PeerCodec for TestPeer {
     type Error = Infallible;
-    type PeerId = TestPeer;
-    type Incoming = NoIncoming;
+    type PeerId = Self;
 
-    fn send(
-        &self,
-        _: TestPeer,
-        _: Vec<u8>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        ready(Ok(()))
+    fn encode(peer: &Self::PeerId) -> Vec<u8> {
+        vec![peer.0]
     }
 
-    fn broadcast(&self, _: Vec<u8>) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        ready(Ok(()))
-    }
-
-    fn subscribe(&self) -> impl Future<Output = Result<Self::Incoming, Self::Error>> + Send {
-        ready(Ok(NoIncoming))
+    fn decode(bytes: &[u8]) -> Result<Self::PeerId, Self::Error> {
+        Ok(Self(bytes[0]))
     }
 }
 
 #[test]
-fn file_system_binds_storage_to_its_transport_peer_type() {
-    let storage = InMemoryStorage::new(TestPeer(7));
-    let mut file_system = FileSystem::new(storage, TestTransport);
+fn syncs_a_file_created_on_another_node() {
+    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
+    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
+    let mut left_requests = left.take_sync_requests().unwrap();
+    let mut right_requests = right.take_sync_requests().unwrap();
 
-    let entry = file_system.write("notes/today.txt", b"hello").unwrap();
+    left.write("notes/today.txt", b"hello").unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
+    );
 
+    let entry = right.entry("notes/today.txt").unwrap();
+    assert_eq!(entry.size, 5);
     assert_eq!(
         entry.providers.into_iter().collect::<Vec<_>>(),
-        [TestPeer(7)]
+        [TestPeer(1)]
     );
-    assert_eq!(file_system.read("notes/today.txt").unwrap(), b"hello");
-    assert_eq!(
-        file_system.storage().entry("notes/today.txt").unwrap().hash,
-        entry.hash
+    assert!(!entry.local);
+}
+
+#[test]
+fn merges_files_created_offline_in_the_same_folder() {
+    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
+    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
+    let mut left_requests = left.take_sync_requests().unwrap();
+    let mut right_requests = right.take_sync_requests().unwrap();
+
+    left.write("notes/left.txt", b"left").unwrap();
+    right.write("notes/right.txt", b"right").unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
     );
+
+    assert_eq!(left.list("notes").unwrap().len(), 2);
+    assert_eq!(right.list("notes").unwrap().len(), 2);
+    assert!(!left.entry("notes/right.txt").unwrap().local);
+    assert!(!right.entry("notes/left.txt").unwrap().local);
+}
+
+fn exchange(
+    left: &mut FileSystem<InMemoryStorage<TestPeer>>,
+    right: &mut FileSystem<InMemoryStorage<TestPeer>>,
+    left_requests: &mut tokio::sync::mpsc::Receiver<SyncRequest<TestPeer>>,
+    right_requests: &mut tokio::sync::mpsc::Receiver<SyncRequest<TestPeer>>,
+) {
+    for _ in 0..8 {
+        while let Ok(request) = left_requests.try_recv() {
+            match request {
+                SyncRequest::Broadcast(data) => right.receive(TestPeer(1), data).unwrap(),
+                SyncRequest::Send { peer, data } => right.receive(peer, data).unwrap(),
+            }
+        }
+        while let Ok(request) = right_requests.try_recv() {
+            match request {
+                SyncRequest::Broadcast(data) => left.receive(TestPeer(2), data).unwrap(),
+                SyncRequest::Send { peer, data } => left.receive(peer, data).unwrap(),
+            }
+        }
+    }
 }

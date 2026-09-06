@@ -1,10 +1,11 @@
 use alloc::{collections::BTreeSet, vec::Vec};
 
-use crate::{ChunkStream, ContentHash, FileEntry};
+use crate::{ChunkStream, ContentHash, FileEntry, PeerCodec};
 
 pub trait Storage {
     type Error;
     type PeerId: Ord + Clone;
+    type PeerCodec: PeerCodec<PeerId = Self::PeerId>;
 
     fn write(&mut self, path: &str, content: &[u8])
     -> Result<FileEntry<Self::PeerId>, Self::Error>;

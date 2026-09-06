@@ -13,10 +13,11 @@ description = "Local-first, eventually consistent file system primitives"
 name = "file_system"
 
 [features]
-default = ["native"]
-in-memory = []
-native = ["std", "dep:automerge"]
+default = ["native", "in-memory"]
+in-memory = ["sync"]
+native = ["std", "sync"]
 std = ["blake3/std"]
+sync = ["std", "dep:automerge", "dep:tokio"]
 
 [dependencies]
 # Metadata
@@ -28,3 +29,4 @@ blake3 = { version = "1.8", default-features = false, features = [] }
 
 # Async
 futures-core = { version = "0.3", default-features = false, features = [] }
+tokio = { version = "1.52", default-features = false, features = ["sync"], optional = true }

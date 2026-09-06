@@ -9,18 +9,11 @@ use automerge::{
     AutoCommit, ObjType, ROOT, ReadDoc, ScalarValue, Value, transaction::Transactable,
 };
 
-use crate::{ChunkStream, ContentHash, FileEntry, MergeStrategy, Storage};
+use crate::{ChunkStream, ContentHash, FileEntry, MergeStrategy, PeerCodec, Storage};
 
 const BLOBS_DIRECTORY: &str = ".lidp/blobs";
 const METADATA_DIRECTORY: &str = ".lidp/metadata";
 const ROOT_DOCUMENT: &str = "root.automerge";
-
-pub trait PeerCodec {
-    type PeerId: Ord + Clone;
-
-    fn encode(peer: &Self::PeerId) -> Vec<u8>;
-    fn decode(bytes: &[u8]) -> io::Result<Self::PeerId>;
-}
 
 pub struct NativeStorage<C: PeerCodec> {
     root: PathBuf,
@@ -223,6 +216,7 @@ impl<C: PeerCodec> NativeStorage<C> {
 impl<C: PeerCodec> Storage for NativeStorage<C> {
     type Error = io::Error;
     type PeerId = C::PeerId;
+    type PeerCodec = C;
 
     fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<C::PeerId>, Self::Error> {
         Self::write(self, path, content)
@@ -330,7 +324,7 @@ fn decode_providers<C: PeerCodec>(bytes: &[u8]) -> io::Result<BTreeSet<C::PeerId
         let peer = bytes
             .get(..length)
             .ok_or_else(|| invalid_data("invalid provider list"))?;
-        providers.insert(C::decode(peer)?);
+        providers.insert(C::decode(peer).map_err(|_| invalid_data("invalid provider"))?);
         bytes = &bytes[length..];
     }
     Ok(providers)
@@ -388,6 +382,7 @@ mod tests {
     struct TestCodec;
 
     impl PeerCodec for TestCodec {
+        type Error = io::Error;
         type PeerId = [u8; 32];
 
         fn encode(peer: &Self::PeerId) -> Vec<u8> {
