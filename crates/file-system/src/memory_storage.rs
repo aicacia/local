@@ -86,7 +86,7 @@ impl<C: PeerCodec<PeerId = C> + Ord + Clone> InMemoryStorage<C> {
             .unwrap_or_default())
     }
 
-    pub fn read(&self, path: &str) -> Result<Vec<u8>, Error> {
+    pub fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
         let entry = self.entry(path)?;
         if !entry.local {
             return Err(Error::ContentUnavailable);
@@ -105,7 +105,7 @@ impl<C: PeerCodec<PeerId = C> + Ord + Clone> InMemoryStorage<C> {
         if chunk_size == 0 {
             return Err(Error::InvalidChunkSize);
         }
-        Ok(ChunkStream::new(self.read(path)?, chunk_size))
+        Ok(ChunkStream::new(self.read_file(path)?, chunk_size))
     }
 }
 
@@ -136,8 +136,8 @@ impl<C: PeerCodec<PeerId = C> + Ord + Clone> Storage for InMemoryStorage<C> {
         Self::list(self, folder)
     }
 
-    fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
-        Self::read(self, path)
+    fn read_file(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
+        Self::read_file(self, path)
     }
 
     fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, Self::Error> {
@@ -205,7 +205,10 @@ mod tests {
         assert_eq!(entry.hash, ContentHash::of(b"hello"));
         assert_eq!(entry.size, 5);
         assert!(entry.local);
-        assert_eq!(file_system.read("documents/note.txt").unwrap(), b"hello");
+        assert_eq!(
+            file_system.read_file("documents/note.txt").unwrap(),
+            b"hello"
+        );
         assert_eq!(file_system.list("documents").unwrap(), vec![entry]);
     }
 
@@ -219,7 +222,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            file_system.read("remote.bin"),
+            file_system.read_file("remote.bin"),
             Err(Error::ContentUnavailable)
         );
     }

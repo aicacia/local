@@ -1,8 +1,13 @@
 #![cfg(feature = "in-memory")]
 
-use core::convert::Infallible;
+use core::{
+    convert::Infallible,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
 
 use file_system::{FileSystem, InMemoryStorage, PeerCodec, SyncRequest};
+use futures_core::Stream;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct TestPeer(u8);
@@ -45,6 +50,113 @@ fn syncs_a_file_created_on_another_node() {
 }
 
 #[test]
+fn reads_passthrough_content_from_a_provider() {
+    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
+    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
+    let mut left_requests = left.take_sync_requests().unwrap();
+    let mut right_requests = right.take_sync_requests().unwrap();
+
+    left.write("notes/today.txt", b"hello").unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
+    );
+    let mut read = right.start_read("notes/today.txt").unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
+    );
+
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert_eq!(
+        Pin::new(&mut read).poll(&mut context),
+        Poll::Ready(Ok(b"hello".to_vec()))
+    );
+    assert!(!right.entry("notes/today.txt").unwrap().local);
+}
+
+#[test]
+fn streams_passthrough_content_in_verified_order() {
+    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
+    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
+    let mut left_requests = left.take_sync_requests().unwrap();
+    let mut right_requests = right.take_sync_requests().unwrap();
+
+    left.write("notes/today.txt", b"abcdef").unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
+    );
+    let mut stream = right.start_stream("notes/today.txt", 2).unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
+    );
+
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert_eq!(
+        Pin::new(&mut stream).poll_next(&mut context),
+        Poll::Ready(Some(Ok(b"ab".to_vec())))
+    );
+    assert_eq!(
+        Pin::new(&mut stream).poll_next(&mut context),
+        Poll::Ready(Some(Ok(b"cd".to_vec())))
+    );
+    assert_eq!(
+        Pin::new(&mut stream).poll_next(&mut context),
+        Poll::Ready(Some(Ok(b"ef".to_vec())))
+    );
+    assert_eq!(
+        Pin::new(&mut stream).poll_next(&mut context),
+        Poll::Ready(None)
+    );
+    assert!(!right.entry("notes/today.txt").unwrap().local);
+}
+
+#[test]
+fn rejects_a_corrupt_passthrough_chunk() {
+    let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
+    let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
+    let mut left_requests = left.take_sync_requests().unwrap();
+    let mut right_requests = right.take_sync_requests().unwrap();
+
+    left.write("notes/today.txt", b"hello").unwrap();
+    exchange(
+        &mut left,
+        &mut right,
+        &mut left_requests,
+        &mut right_requests,
+    );
+    let mut stream = right.start_stream("notes/today.txt", 2).unwrap();
+    let SyncRequest::Send { data, .. } = right_requests.try_recv().unwrap() else {
+        panic!("expected a content request");
+    };
+    left.receive(TestPeer(2), data).unwrap();
+    let SyncRequest::Send { mut data, .. } = left_requests.try_recv().unwrap() else {
+        panic!("expected a content response");
+    };
+    *data.last_mut().unwrap() ^= 1;
+    right.receive(TestPeer(1), data).unwrap();
+
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(
+        Pin::new(&mut stream).poll_next(&mut context),
+        Poll::Ready(Some(Err(_)))
+    ));
+}
+
+#[test]
 fn merges_files_created_offline_in_the_same_folder() {
     let mut left = FileSystem::new(InMemoryStorage::new(TestPeer(1)));
     let mut right = FileSystem::new(InMemoryStorage::new(TestPeer(2)));
@@ -76,13 +188,19 @@ fn exchange(
         while let Ok(request) = left_requests.try_recv() {
             match request {
                 SyncRequest::Broadcast(data) => right.receive(TestPeer(1), data).unwrap(),
-                SyncRequest::Send { peer, data } => right.receive(peer, data).unwrap(),
+                SyncRequest::Send { peer, data } => {
+                    assert_eq!(peer, TestPeer(2));
+                    right.receive(TestPeer(1), data).unwrap();
+                }
             }
         }
         while let Ok(request) = right_requests.try_recv() {
             match request {
                 SyncRequest::Broadcast(data) => left.receive(TestPeer(2), data).unwrap(),
-                SyncRequest::Send { peer, data } => left.receive(peer, data).unwrap(),
+                SyncRequest::Send { peer, data } => {
+                    assert_eq!(peer, TestPeer(1));
+                    left.receive(TestPeer(2), data).unwrap();
+                }
             }
         }
     }

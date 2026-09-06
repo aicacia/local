@@ -19,7 +19,7 @@ mod transport;
 
 pub use error::Error;
 #[cfg(feature = "sync")]
-pub use file_system::{FileSystem, SyncError, SyncRequest};
+pub use file_system::{FileSystem, ReadError, ReadFuture, ReadStream, SyncError, SyncRequest};
 pub use hash::ContentHash;
 #[cfg(feature = "in-memory")]
 pub use memory_storage::InMemoryStorage;

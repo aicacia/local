@@ -18,6 +18,6 @@ pub trait Storage {
     ) -> Result<FileEntry<Self::PeerId>, Self::Error>;
     fn entry(&self, path: &str) -> Result<FileEntry<Self::PeerId>, Self::Error>;
     fn list(&self, folder: &str) -> Result<Vec<FileEntry<Self::PeerId>>, Self::Error>;
-    fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error>;
+    fn read_file(&self, path: &str) -> Result<Vec<u8>, Self::Error>;
     fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, Self::Error>;
 }
