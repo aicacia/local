@@ -1,8 +1,8 @@
 use iroh::{Endpoint, EndpointId, SecretKey, endpoint::presets};
+use iroh_chain::TUNNEL_ALPN;
 use lidp_service::repo::RawKeyringRepo;
 
 const DEVICE_IROH_KEY: &str = "lidp-device-iroh-key";
-const LIDP_VAULT_ALPN: &[u8] = b"lidp-vault/1";
 
 pub struct DeviceIdentity {
     endpoint: Endpoint,
@@ -30,7 +30,7 @@ impl DeviceIdentity {
         };
         let endpoint = Endpoint::builder(presets::N0)
             .secret_key(secret_key)
-            .alpns(vec![LIDP_VAULT_ALPN.to_vec()])
+            .alpns(vec![TUNNEL_ALPN.to_vec()])
             .bind()
             .await
             .map_err(|error| error.to_string())?;
@@ -39,6 +39,10 @@ impl DeviceIdentity {
 
     pub fn endpoint_id(&self) -> EndpointId {
         self.endpoint.id()
+    }
+
+    pub fn endpoint_address(&self) -> Result<String, String> {
+        serde_json::to_string(&self.endpoint.addr()).map_err(|error| error.to_string())
     }
 }
 

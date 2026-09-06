@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    future::Future,
     io::{Error, ErrorKind},
     pin::Pin,
     sync::{Arc, Mutex},
@@ -20,6 +21,35 @@ const MAX_FRAME_SIZE: usize = 1024 * 1024;
 
 type Message = (EndpointId, Vec<u8>);
 
+pub trait TunnelAuthorizationProvider: Send + Sync + 'static {
+    fn authorization(
+        &self,
+        vault_id: VaultId,
+        local_id: EndpointId,
+        remote_id: EndpointId,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>>;
+}
+
+#[derive(Clone)]
+pub struct StaticTunnelAuthorization(Vec<u8>);
+
+impl StaticTunnelAuthorization {
+    pub fn new(authorization: Vec<u8>) -> Self {
+        Self(authorization)
+    }
+}
+
+impl TunnelAuthorizationProvider for StaticTunnelAuthorization {
+    fn authorization(
+        &self,
+        _: VaultId,
+        _: EndpointId,
+        _: EndpointId,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
+        Box::pin(async { Ok(self.0.clone()) })
+    }
+}
+
 pub struct ScopedIrohIncoming(mpsc::Receiver<Message>);
 
 impl futures_core::Stream for ScopedIrohIncoming {
@@ -30,35 +60,38 @@ impl futures_core::Stream for ScopedIrohIncoming {
     }
 }
 
-pub struct ScopedIrohTransport<A, V>
+pub struct ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
+    P: TunnelAuthorizationProvider,
 {
-    inner: Arc<ScopedIrohTransportInner<A, V>>,
+    inner: Arc<ScopedIrohTransportInner<A, V, P>>,
     task: JoinHandle<()>,
 }
 
-struct ScopedIrohTransportInner<A, V>
+struct ScopedIrohTransportInner<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
+    P: TunnelAuthorizationProvider,
 {
     manager: TunnelManager<A, V>,
     vault_id: VaultId,
-    authorization: Vec<u8>,
+    authorization: P,
     peers: Mutex<BTreeMap<EndpointId, Tunnel>>,
     incoming: AsyncMutex<Option<ScopedIrohIncoming>>,
     incoming_tx: mpsc::Sender<Message>,
     peer_events: broadcast::Sender<EndpointId>,
 }
 
-impl<A, V> ScopedIrohTransport<A, V>
+impl<A, V, P> ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
+    P: TunnelAuthorizationProvider,
 {
-    pub fn new(manager: TunnelManager<A, V>, vault_id: VaultId, authorization: Vec<u8>) -> Self {
+    pub fn new(manager: TunnelManager<A, V>, vault_id: VaultId, authorization: P) -> Self {
         let (incoming_tx, incoming_rx) = mpsc::channel(INCOMING_CAPACITY);
         let (peer_events, _) = broadcast::channel(INCOMING_CAPACITY);
         let inner = Arc::new(ScopedIrohTransportInner {
@@ -87,10 +120,20 @@ where
     }
 
     pub async fn connect(&self, endpoint: impl Into<EndpointAddr>) -> Result<EndpointId, Error> {
+        let endpoint = endpoint.into();
+        let authorization = self
+            .inner
+            .authorization
+            .authorization(
+                self.inner.vault_id,
+                self.inner.manager.endpoint().id(),
+                endpoint.id,
+            )
+            .await?;
         let tunnel = self
             .inner
             .manager
-            .connect(self.inner.vault_id, endpoint, &self.inner.authorization)
+            .connect(self.inner.vault_id, endpoint, &authorization)
             .await?;
         let peer_id = tunnel.remote_id();
         add_tunnel(&self.inner, tunnel).await;
@@ -100,22 +143,36 @@ where
     pub fn subscribe_peers(&self) -> broadcast::Receiver<EndpointId> {
         self.inner.peer_events.subscribe()
     }
+
+    pub async fn disconnect(&self, peer_id: EndpointId) -> bool {
+        self.inner
+            .peers
+            .lock()
+            .expect("peer lock poisoned")
+            .remove(&peer_id);
+        self.inner
+            .manager
+            .close_tunnel(self.inner.vault_id, peer_id)
+            .await
+    }
 }
 
-impl<A, V> Drop for ScopedIrohTransport<A, V>
+impl<A, V, P> Drop for ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
+    P: TunnelAuthorizationProvider,
 {
     fn drop(&mut self) {
         self.task.abort();
     }
 }
 
-impl<A, V> Transport for ScopedIrohTransport<A, V>
+impl<A, V, P> Transport for ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
+    P: TunnelAuthorizationProvider,
 {
     type Error = Error;
     type PeerId = EndpointId;
@@ -170,10 +227,11 @@ where
     }
 }
 
-async fn add_tunnel<A, V>(inner: &Arc<ScopedIrohTransportInner<A, V>>, tunnel: Tunnel)
+async fn add_tunnel<A, V, P>(inner: &Arc<ScopedIrohTransportInner<A, V, P>>, tunnel: Tunnel)
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
+    P: TunnelAuthorizationProvider,
 {
     let peer_id = tunnel.remote_id();
     if inner
@@ -187,25 +245,36 @@ where
     }
     let _ = inner.peer_events.send(peer_id);
     let incoming_tx = inner.incoming_tx.clone();
+    let task_inner = Arc::clone(inner);
     tokio::spawn(async move {
         let mut reader = tunnel.reader().await;
         loop {
             let mut length = [0_u8; 4];
             if reader.read_exact(&mut length).await.is_err() {
-                return;
+                break;
             }
             let length = usize::try_from(u32::from_be_bytes(length)).expect("u32 fits usize");
             if length > MAX_FRAME_SIZE {
-                return;
+                break;
             }
             let mut data = vec![0; length];
             if reader.read_exact(&mut data).await.is_err() {
-                return;
+                break;
             }
             if incoming_tx.send((peer_id, data)).await.is_err() {
-                return;
+                break;
             }
         }
+        drop(reader);
+        task_inner
+            .peers
+            .lock()
+            .expect("peer lock poisoned")
+            .remove(&peer_id);
+        task_inner
+            .manager
+            .close_tunnel(task_inner.vault_id, peer_id)
+            .await;
     });
 }
 

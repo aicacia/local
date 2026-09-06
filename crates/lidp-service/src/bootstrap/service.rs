@@ -204,6 +204,7 @@ where
             "profile".to_owned(),
             "address".to_owned(),
             "offline".to_owned(),
+            "storage".to_owned(),
             "email".to_owned(),
             "phone".to_owned(),
         ];

@@ -10,10 +10,22 @@ use lidp_model::contract::StorageSession;
 const TOKEN_BYTES: usize = 32;
 const TOKEN_TTL: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct StorageScope {
     pub user_sub: String,
     pub client_id: String,
+    pub access_token: String,
+}
+
+impl std::fmt::Debug for StorageScope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("StorageScope")
+            .field("user_sub", &self.user_sub)
+            .field("client_id", &self.client_id)
+            .field("access_token", &"[redacted]")
+            .finish()
+    }
 }
 
 pub struct StorageSessionService {
@@ -76,6 +88,7 @@ mod tests {
             .issue(StorageScope {
                 user_sub: "user".into(),
                 client_id: "client".into(),
+                access_token: "token".into(),
             })
             .unwrap();
 
@@ -84,8 +97,19 @@ mod tests {
             Some(StorageScope {
                 user_sub: "user".into(),
                 client_id: "client".into(),
+                access_token: "token".into(),
             })
         );
         assert_eq!(sessions.take(&issued.token), None);
+    }
+
+    #[test]
+    fn redacts_access_tokens_from_debug_output() {
+        let scope = StorageScope {
+            user_sub: "user".into(),
+            client_id: "client".into(),
+            access_token: "secret".into(),
+        };
+        assert!(!format!("{scope:?}").contains("secret"));
     }
 }

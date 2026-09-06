@@ -1,12 +1,13 @@
 use std::{fmt::Display, io::Error, time::Duration};
 
-use file_system::{FileSystem, InMemoryStorage};
+use file_system::{FileSystem, InMemoryStorage, Transport};
 use iroh::{Endpoint, RelayMode, endpoint::presets};
 use iroh_chain::{InMemoryEndpointIdStore, TUNNEL_ALPN, TunnelAuthorizer, TunnelManager, VaultId};
-use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport};
+use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, StaticTunnelAuthorization};
 use tokio::{spawn, time::timeout};
 
-type ScopedTransport = ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer>;
+type ScopedTransport =
+    ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticTunnelAuthorization>;
 type TestFileSystem = FileSystem<InMemoryStorage, EndpointIdCodec, ScopedTransport>;
 
 #[derive(Clone)]
@@ -36,8 +37,16 @@ async fn syncs_over_an_authorized_scoped_tunnel() -> Result<(), Error> {
     let listener_a = spawn_listener(manager_a.clone());
     let listener_b = spawn_listener(manager_b.clone());
     let vault_id = VaultId::new([7; 32]);
-    let transport_a = ScopedIrohTransport::new(manager_a.clone(), vault_id, b"authorized".to_vec());
-    let transport_b = ScopedIrohTransport::new(manager_b.clone(), vault_id, b"authorized".to_vec());
+    let transport_a = ScopedIrohTransport::new(
+        manager_a.clone(),
+        vault_id,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
+    let transport_b = ScopedIrohTransport::new(
+        manager_b.clone(),
+        vault_id,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
     let mut peers_a = transport_a.subscribe_peers();
     let mut peers_b = transport_b.subscribe_peers();
 
@@ -119,6 +128,98 @@ async fn rejects_an_invalid_tunnel_authorization() -> Result<(), Error> {
 }
 
 #[tokio::test]
+async fn disconnects_a_scoped_tunnel_before_reconnecting() -> Result<(), Error> {
+    let endpoint_a = endpoint().await?;
+    let endpoint_b = endpoint().await?;
+    let allowed = InMemoryEndpointIdStore::new();
+    allowed.add(endpoint_a.id());
+    allowed.add(endpoint_b.id());
+    let manager_a = TunnelManager::new(endpoint_a, allowed.clone(), TestAuthorizer);
+    let manager_b = TunnelManager::new(endpoint_b, allowed, TestAuthorizer);
+    let listener_a = spawn_listener(manager_a.clone());
+    let listener_b = spawn_listener(manager_b.clone());
+    let vault_id = VaultId::new([8; 32]);
+    let transport_a = ScopedIrohTransport::new(
+        manager_a.clone(),
+        vault_id,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
+    let transport_b = ScopedIrohTransport::new(
+        manager_b.clone(),
+        vault_id,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
+    let mut peers_a = transport_a.subscribe_peers();
+    let mut peers_b = transport_b.subscribe_peers();
+
+    transport_b.connect(manager_a.endpoint().addr()).await?;
+    let _ = receive_peer(&mut peers_a).await?;
+    let peer_b = receive_peer(&mut peers_b).await?;
+    assert!(transport_b.disconnect(peer_b).await);
+    assert!(transport_b.send(peer_b, vec![1]).await.is_err());
+
+    timeout(Duration::from_secs(5), async {
+        loop {
+            if transport_b
+                .connect(manager_a.endpoint().addr())
+                .await
+                .is_ok()
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .map_err(other)?;
+
+    manager_a.close().await;
+    manager_b.close().await;
+    listener_a.await.map_err(other)?;
+    listener_b.await.map_err(other)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejects_new_streams_after_allowlist_removal() -> Result<(), Error> {
+    let endpoint_a = endpoint().await?;
+    let endpoint_b = endpoint().await?;
+    let allowed_a = InMemoryEndpointIdStore::new();
+    let allowed_b = InMemoryEndpointIdStore::new();
+    allowed_a.add(endpoint_b.id());
+    allowed_b.add(endpoint_a.id());
+    let manager_a = TunnelManager::new(endpoint_a, allowed_a.clone(), TestAuthorizer);
+    let manager_b = TunnelManager::new(endpoint_b, allowed_b, TestAuthorizer);
+    let listener_a = spawn_listener(manager_a.clone());
+    let listener_b = spawn_listener(manager_b.clone());
+
+    manager_b
+        .connect(
+            VaultId::new([9; 32]),
+            manager_a.endpoint().addr(),
+            b"authorized",
+        )
+        .await?;
+    assert!(allowed_a.remove(manager_b.endpoint().id()));
+    assert!(
+        manager_b
+            .connect(
+                VaultId::new([10; 32]),
+                manager_a.endpoint().addr(),
+                b"authorized",
+            )
+            .await
+            .is_err()
+    );
+
+    manager_a.close().await;
+    manager_b.close().await;
+    listener_a.await.map_err(other)?;
+    listener_b.await.map_err(other)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn keeps_scopes_on_separate_streams() -> Result<(), Error> {
     let endpoint_a = endpoint().await?;
     let endpoint_b = endpoint().await?;
@@ -131,10 +232,26 @@ async fn keeps_scopes_on_separate_streams() -> Result<(), Error> {
     let listener_b = spawn_listener(manager_b.clone());
     let vault_a = VaultId::new([1; 32]);
     let vault_b = VaultId::new([2; 32]);
-    let transport_a1 = ScopedIrohTransport::new(manager_a.clone(), vault_a, b"authorized".to_vec());
-    let transport_b1 = ScopedIrohTransport::new(manager_b.clone(), vault_a, b"authorized".to_vec());
-    let transport_a2 = ScopedIrohTransport::new(manager_a.clone(), vault_b, b"authorized".to_vec());
-    let transport_b2 = ScopedIrohTransport::new(manager_b.clone(), vault_b, b"authorized".to_vec());
+    let transport_a1 = ScopedIrohTransport::new(
+        manager_a.clone(),
+        vault_a,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
+    let transport_b1 = ScopedIrohTransport::new(
+        manager_b.clone(),
+        vault_a,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
+    let transport_a2 = ScopedIrohTransport::new(
+        manager_a.clone(),
+        vault_b,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
+    let transport_b2 = ScopedIrohTransport::new(
+        manager_b.clone(),
+        vault_b,
+        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+    );
     let mut peers_a1 = transport_a1.subscribe_peers();
     let mut peers_b1 = transport_b1.subscribe_peers();
     let mut peers_a2 = transport_a2.subscribe_peers();

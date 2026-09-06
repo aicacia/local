@@ -123,8 +123,7 @@ pub async fn run() -> io::Result<()> {
         .merge(storage_router(storage_sessions, file_systems))
         .layer(CorsLayer::very_permissive().allow_private_network(true))
         .layer(TraceLayer::new_for_http())
-        .layer(CompressionLayer::new().gzip(app_config.server.gzip))
-        .into();
+        .layer(CompressionLayer::new().gzip(app_config.server.gzip));
 
     let run_serve = |host: Option<IpAddr>, port: Option<u16>| {
         let addr = SocketAddr::from((

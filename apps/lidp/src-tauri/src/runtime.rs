@@ -22,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![
             app::get_device_endpoint_id,
+            app::get_device_endpoint_address,
             app::get_localhost_server_base_url,
         ])
         .setup(|app| {

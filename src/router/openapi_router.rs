@@ -8,10 +8,8 @@ pub(crate) struct ApiDoc;
 pub fn openapi_router(
     lidp_router: OpenApiRouter,
     management_router: OpenApiRouter,
-    storage_router: OpenApiRouter,
 ) -> OpenApiRouter {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .merge(lidp_router)
         .merge(management_router)
-        .merge(storage_router)
 }

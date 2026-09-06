@@ -20,6 +20,7 @@ where
 {
     pub principal: Box<dyn Principal>,
     pub claims: T,
+    pub token: String,
     _phantom_data: PhantomData<T>,
 }
 
@@ -38,6 +39,7 @@ where
             return Ok(Authorization {
                 principal: authorization.principal,
                 claims: authorization.claims,
+                token: authorization.token,
                 _phantom_data: PhantomData,
             });
         }
@@ -85,6 +87,7 @@ pub async fn authorize_bearer(
     Ok(Authorization {
         principal,
         claims,
+        token: authorization_string.to_owned(),
         _phantom_data: PhantomData,
     })
 }

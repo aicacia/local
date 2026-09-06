@@ -1,7 +1,7 @@
 use std::{
     io,
     net::{IpAddr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -18,8 +18,10 @@ use lidp_service::{
     repo::{
         KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo,
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
+        LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
+    scoped_file_system::ScopedFileSystemRuntime,
+    storage_session::StorageSessionService,
 };
 use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
@@ -99,11 +101,22 @@ pub async fn run() -> io::Result<()> {
         oauth2_config,
     ));
 
+    let storage_sessions = Arc::new(StorageSessionService::new());
+    let storage_root = PathBuf::from(&args.config)
+        .parent()
+        .unwrap_or(Path::new("."))
+        .to_path_buf();
+    let file_systems = Arc::new(
+        ScopedFileSystemRuntime::new(storage_root, &app_config.oauth2.issuer)
+            .map_err(io::Error::other)?,
+    );
     let lidp_router_state = lidp_server::RouterState::new(
         &app_config.lidp_ui_public_uri,
         &app_config.api_public_base_uri,
         database.clone(),
         oauth2_service.clone(),
+        storage_sessions.clone(),
+        Arc::new(LibSqlUserDeviceRepo::new(database.clone())),
     );
     let lidp_router = lidp_server::openapi_router(lidp_router_state, "/lidp");
 
@@ -121,14 +134,13 @@ pub async fn run() -> io::Result<()> {
     let management_router =
         lidp_management_server::openapi_router(management_router_state, "/lidp-management");
 
-    let storage_router_state = storage_server::RouterState::new(&app_config.api_public_base_uri);
-    let storage_router = storage_server::openapi_router(storage_router_state, "/storage");
-
-    let router = openapi_router(lidp_router, management_router, storage_router)
+    let router = openapi_router(lidp_router, management_router)
+        .split_for_parts()
+        .0
+        .merge(lidp_server::storage_router(storage_sessions, file_systems))
         .layer(CorsLayer::very_permissive().allow_private_network(true))
         .layer(TraceLayer::new_for_http())
-        .layer(CompressionLayer::new().gzip(app_config.server.gzip))
-        .into();
+        .layer(CompressionLayer::new().gzip(app_config.server.gzip));
 
     let run_serve = |host: Option<IpAddr>, port: Option<u16>| {
         let addr = SocketAddr::from((

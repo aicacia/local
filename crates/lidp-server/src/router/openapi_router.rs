@@ -6,7 +6,11 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::RouterState;
 
 use super::openapi::{__path_openapi_json, openapi_json};
-use super::routes::devices::{__path_trusted_devices, trusted_devices};
+use super::routes::devices::{
+    __path_approve_device, __path_enroll_device, __path_list_devices, __path_revoke_device,
+    __path_trusted_devices, __path_update_device, approve_device, enroll_device, list_devices,
+    revoke_device, trusted_devices, update_device,
+};
 use super::routes::health::{__path_health, health};
 use super::routes::oauth2::approvals::{
     __path_approve_for_user, __path_is_allowed_for_user, approve_for_user, is_allowed_for_user,
@@ -49,6 +53,11 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
         OpenApiRouter::new()
             .routes(routes!(health))
             .routes(routes!(trusted_devices))
+            .routes(routes!(enroll_device))
+            .routes(routes!(approve_device))
+            .routes(routes!(list_devices))
+            .routes(routes!(update_device))
+            .routes(routes!(revoke_device))
             .routes(routes!(authorize_json))
             .routes(routes!(authorize_query))
             .routes(routes!(is_allowed_for_user))
@@ -93,7 +102,7 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
         routes!(@resolve_types openapi_json : schemas);
 
     openapi_spec.paths.add_path_operation(
-        openapi_json_path.to_string(),
+        &openapi_json_path,
         openapi_json_types,
         openapi_json_item,
     );

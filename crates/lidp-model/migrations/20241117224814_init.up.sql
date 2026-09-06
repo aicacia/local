@@ -57,6 +57,8 @@ CREATE TABLE user_devices (
     `name` TEXT NOT NULL,
     `public_key` TEXT NOT NULL,
     `address` TEXT NOT NULL,
+    `enrollment_code_hash` BLOB,
+    `enrollment_expires_at` INTEGER,
     `state` INTEGER NOT NULL CHECK (`state` IN (0, 1, 2)),
 
     `created_at` INTEGER NOT NULL DEFAULT (unixepoch()),

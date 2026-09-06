@@ -103,6 +103,10 @@ android-native-keyring-store = { version = "1.0", default-features = false, feat
 ] }
 
 [dev-dependencies]
+lidp-model = { path = "../lidp-model", default-features = false, features = [
+  "migrate",
+  "std",
+] }
 tokio = { version = "1.4", default-features = false, features = [
   "macros",
   "rt",

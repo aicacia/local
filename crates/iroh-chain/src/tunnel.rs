@@ -7,7 +7,7 @@ use std::{
 };
 
 use iroh::{Endpoint, EndpointAddr, EndpointId, endpoint::Connection};
-use noq::{RecvStream, SendStream};
+use noq::{RecvStream, SendStream, VarInt};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     sync::{Mutex, MutexGuard, broadcast},
@@ -79,6 +79,11 @@ impl Tunnel {
         TunnelWriter {
             guard: self.inner.send.lock().await,
         }
+    }
+
+    pub async fn close(&self) {
+        let _ = self.inner.send.lock().await.reset(VarInt::from_u32(1));
+        let _ = self.inner.recv.lock().await.stop(VarInt::from_u32(1));
     }
 }
 
@@ -235,7 +240,25 @@ where
 
     pub async fn close(&self) {
         self.inner.endpoint.close().await;
-        self.inner.tunnels.lock().await.clear();
+        let tunnels = std::mem::take(&mut *self.inner.tunnels.lock().await);
+        for tunnel in tunnels.into_values() {
+            tunnel.close().await;
+        }
+    }
+
+    pub async fn close_tunnel(&self, vault_id: VaultId, remote_id: EndpointId) -> bool {
+        let tunnel = self
+            .inner
+            .tunnels
+            .lock()
+            .await
+            .remove(&(remote_id, vault_id));
+        if let Some(tunnel) = tunnel {
+            tunnel.close().await;
+            true
+        } else {
+            false
+        }
     }
 
     async fn accept_connection(&self, connection: Connection) {
@@ -244,6 +267,11 @@ where
             return;
         }
         while let Ok((mut send, mut recv)) = connection.accept_bi().await {
+            if !self.inner.allowed.allowed(remote_id).await {
+                let _ = send.write_u8(0).await;
+                let _ = send.flush().await;
+                continue;
+            }
             let Ok((vault_id, initiating_id, authorization)) = read_handshake(&mut recv).await
             else {
                 return;

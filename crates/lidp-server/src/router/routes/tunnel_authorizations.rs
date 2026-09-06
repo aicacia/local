@@ -20,6 +20,9 @@ pub(crate) async fn create_tunnel_authorization(
     }: StandardAuthorization,
     Json(request): Json<TunnelAuthorizationRequest>,
 ) -> Result<Json<TunnelAuthorization>, ErrorResponse> {
+    if !claims.scope.iter().any(|scope| scope == "storage") {
+        return Err(ErrorResponse::new(ErrorCode::AccessDenied));
+    }
     if request.vault_id_hash.is_empty()
         || request.local_public_key.is_empty()
         || request.remote_public_key.is_empty()

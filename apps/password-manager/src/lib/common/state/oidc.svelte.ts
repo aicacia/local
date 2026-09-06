@@ -21,7 +21,7 @@ const oidcClient = $derived.by(() =>
                 },
                 clientId: CLIENT_ID,
                 clientName: "Password Manager",
-                scope: "openid profile address offline email phone",
+                scope: "openid profile address offline email phone storage",
                 redirectUris: [`${env.PUBLIC_URL}/callback`],
                 postLogoutRedirectUris: [`${env.PUBLIC_URL}/logout`],
                 logoUri: `${env.PUBLIC_URL}${icon256x256Png}`,

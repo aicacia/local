@@ -53,10 +53,6 @@ lidp-service = { path = "./crates/lidp-service", default-features = false, featu
   "std",
 ] }
 
-# Storage
-storage-server = { path = "./crates/storage-server", default-features = false, features = [
-] }
-
 # Database`
 libsql = { version = "0.9", default-features = false, features = [] }
 

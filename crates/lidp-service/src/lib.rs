@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod bootstrap;
+pub mod device_enrollment;
 pub mod management;
 pub mod oauth2;
 mod password_config;
