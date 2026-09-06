@@ -1,88 +1,122 @@
 import {
-  Configuration,
-  type ConfigurationParameters,
-  DefaultApi,
+    Configuration,
+    type ConfigurationParameters,
+    DefaultApi,
 } from "@aicacia/lidp-client";
+import { createStorage } from "@aicacia/svelte-headless";
+import { isTauri } from "@tauri-apps/api/core";
 import { goto } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
-import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
-import { createStorage } from "@aicacia/svelte-headless";
 import { env } from "$env/dynamic/public";
+import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
+import {
+    ensureLocalhostBaseUrl,
+    loadLocalhostBaseUrl,
+} from "./localhostBaseUrl.svelte";
 import { getOidcClient } from "./oidc.svelte";
-import { isTauri } from "@tauri-apps/api/core";
-import { fetch as tauriFetch } from "tauri-plugin-fetch-api";
 
 const lidpApiUrl = createStorage<string | null>(
-  "lidp-api-url",
-  (isTauri() ? "lidp://app" : env.PUBLIC_LIDP_BASE_URL) ?? null,
+    "lidp-api-url",
+    (isTauri() ? null : env.PUBLIC_LIDP_BASE_URL) ?? null,
 );
-let lidpApiIsNative = $derived.by(() => lidpApiUrl.item?.startsWith("lidp:"));
+
+async function hydrateTauriApiUrl(): Promise<void> {
+    if (!isTauri()) {
+        return;
+    }
+
+    const baseUrl = await loadLocalhostBaseUrl();
+    if (baseUrl) {
+        lidpApiUrl.item = baseUrl;
+    }
+}
+
+void hydrateTauriApiUrl();
+
+function readAccessToken(): string {
+    const oidcClient = getOidcClient();
+    if (!oidcClient) {
+        return "";
+    }
+    return oidcClient.getStoredTokenResponse()?.access_token ?? "";
+}
+
+function readBasePath(): string | undefined {
+    const basePath = lidpApiUrl.item;
+    return basePath === null ? undefined : basePath;
+}
 
 export const defaultConfigurationParameters: ConfigurationParameters = {
-  middleware: [
-    {
-      pre: async (context) => ({
-        ...context,
-        init: {
-          ...context.init,
-          mode: "cors",
+    middleware: [
+        {
+            pre: async (context) => ({
+                ...context,
+                init: {
+                    ...context.init,
+                    mode: "cors",
+                },
+            }),
         },
-      }),
+        {
+            post: async (context) => {
+                if (context.response.status === 401) {
+                    afterSigninRedirect.setURL(page.url);
+                    await goto(resolve("/signin"));
+                }
+                return context.response;
+            },
+        },
+    ],
+    get fetchApi() {
+        return fetch;
     },
-    {
-      post: async (context) => {
-        if (context.response.status === 401) {
-          afterSigninRedirect.setURL(page.url);
-          await goto(resolve("/signin"));
-        }
-        return context.response;
-      },
+    accessToken(_name, _scopes): string {
+        return readAccessToken();
     },
-  ],
-  get fetchApi() {
-    return lidpApiIsNative ? tauriFetch : fetch;
-  },
-  accessToken(_name, _scopes) {
-    return getOidcClient().getStoredTokenResponse().access_token;
-  },
-  get basePath() {
-    return lidpApiUrl.item;
-  },
-  credentials: "same-origin",
+    get basePath(): string | undefined {
+        return readBasePath();
+    },
+    credentials: "same-origin",
 };
 
 export const lidpConfiguration = new Configuration(
-  defaultConfigurationParameters,
+    defaultConfigurationParameters,
 );
 
 export const lidpApi = new DefaultApi(lidpConfiguration);
 
 export function setLidpApiUrl(newLidpApiUrl: string) {
-  lidpApiUrl.item = newLidpApiUrl;
+    lidpApiUrl.item = newLidpApiUrl;
 }
 export function getLidpApiUrl(): string | null {
-  return lidpApiUrl.item;
+    return lidpApiUrl.item;
 }
 
-export function isLidpApiNative(): boolean {
-  return lidpApiIsNative;
+export async function ensureTauriLidpApiUrl(): Promise<string | null> {
+    if (!isTauri()) {
+        return lidpApiUrl.item;
+    }
+
+    const baseUrl = await ensureLocalhostBaseUrl();
+    lidpApiUrl.item = baseUrl;
+    return lidpApiUrl.item;
 }
 
 export async function validateLidpApiUrl(basePath: string): Promise<boolean> {
-  if (!basePath) {
-    return false;
-  }
-  const configuration = new Configuration({
-    ...defaultConfigurationParameters,
-    basePath,
-  });
-  const api = new DefaultApi(configuration);
+    if (!basePath) {
+        return false;
+    }
+    const configuration = new Configuration({
+        ...defaultConfigurationParameters,
+        basePath,
+    });
+    const api = new DefaultApi(configuration);
 
-  try {
-    const version = await api.version();
-    return version.name === "lidp-server";
-  } catch {
-    return false;
-  }
+    try {
+        const version = await api.version();
+        return version.name === "lidp-server";
+    } catch {
+        return false;
+    }
 }

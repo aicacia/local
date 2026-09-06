@@ -4,12 +4,11 @@ use axum::Router;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-pub async fn serve(
+pub async fn serve_listener(
     router: Router,
-    addr: SocketAddr,
+    listener: TcpListener,
     cancellation_token: CancellationToken,
 ) -> io::Result<()> {
-    let listener = TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
     log::info!("listening on {}", local_addr);
 
@@ -26,4 +25,13 @@ pub async fn serve(
     .await?;
 
     Ok(())
+}
+
+pub async fn serve(
+    router: Router,
+    addr: SocketAddr,
+    cancellation_token: CancellationToken,
+) -> io::Result<()> {
+    let listener = TcpListener::bind(addr).await?;
+    serve_listener(router, listener, cancellation_token).await
 }

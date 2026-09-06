@@ -1,53 +1,58 @@
 import { StorageClient } from "@aicacia/storage-client";
-import { invoke } from "@tauri-apps/api/core";
 
-function normalizeStorageBridgeUrl(url: string | null): string | null {
+import {
+    getLocalhostBaseUrlCached,
+    loadLocalhostBaseUrl,
+} from "./localhostBaseUrl.svelte";
+
+function normalizeStorageUrl(url: string | null): string | null {
     return url ? url.trim().replace(/\/$/, "") : null;
 }
 
-async function fetchStorageBridgeUrl(): Promise<string | null> {
-    const bridgeUrl = await invoke<string>("get_storage_bridge_url");
-    return normalizeStorageBridgeUrl(bridgeUrl);
+function storageUrlFromBaseUrl(baseUrl: string): string {
+    return `${baseUrl.replace(/^https:/i, "wss:")}/storage`;
 }
 
-export type StorageBridgeConfig = {
-    storageBridgeUrl: string;
+async function fetchStorageUrl(): Promise<string | null> {
+    const cachedBaseUrl = getLocalhostBaseUrlCached();
+    if (cachedBaseUrl) {
+        return normalizeStorageUrl(storageUrlFromBaseUrl(cachedBaseUrl));
+    }
+
+    const baseUrl = await loadLocalhostBaseUrl();
+    return baseUrl ? normalizeStorageUrl(storageUrlFromBaseUrl(baseUrl)) : null;
+}
+
+export type LocalStorageConfig = {
+    storageUrl: string;
 };
 
-export async function getStorageBridgeConfig(): Promise<StorageBridgeConfig | null> {
-    const storageBridgeUrl = await fetchStorageBridgeUrl();
-    return storageBridgeUrl ? { storageBridgeUrl } : null;
+export async function getLocalStorageConfig(): Promise<LocalStorageConfig | null> {
+    const storageUrl = await fetchStorageUrl();
+    return storageUrl ? { storageUrl } : null;
 }
 
-export async function getStorageBridgeUrl(): Promise<string | null> {
-    const storageBridgeConfig = await getStorageBridgeConfig();
-    return storageBridgeConfig?.storageBridgeUrl ?? null;
+export async function getLocalStorageUrl(): Promise<string | null> {
+    const localStorageConfig = await getLocalStorageConfig();
+    return localStorageConfig?.storageUrl ?? null;
 }
 
 export async function getStorageClient(): Promise<StorageClient | null> {
-    const storageBridgeUrl = await getStorageBridgeUrl();
-    return storageBridgeUrl
-        ? StorageClient.create({ url: storageBridgeUrl })
-        : null;
+    const storageUrl = await getLocalStorageUrl();
+    return storageUrl ? StorageClient.create({ url: storageUrl }) : null;
 }
 
-export async function openStorageBridgeTrustPage(): Promise<void> {
-    await invoke("open_storage_bridge_trust_page");
-}
-
-export function isStorageBridgeNative(url: string): boolean {
-    const normalized = normalizeStorageBridgeUrl(url);
+export function isLocalStorageNative(url: string): boolean {
+    const normalized = normalizeStorageUrl(url);
     return normalized
-        ? /^wss:\/\/(127\.0\.0\.1|localhost|storage\.localhost)(:\d+)?$/i.test(
-              normalized,
-          )
+        ? /^wss:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(normalized)
         : false;
 }
 
-export async function validateStorageBridgeUrl(
+export async function validateLocalStorageUrl(
     baseUrl: string,
 ): Promise<boolean> {
-    const normalizedBaseUrl = normalizeStorageBridgeUrl(baseUrl);
+    const normalizedBaseUrl = normalizeStorageUrl(baseUrl);
 
     if (!normalizedBaseUrl) {
         return false;
@@ -62,7 +67,7 @@ export async function validateStorageBridgeUrl(
     }
 
     const host = parsedUrl.hostname.toLowerCase();
-    const allowedHosts = ["127.0.0.1", "localhost", "storage.localhost"];
+    const allowedHosts = ["127.0.0.1", "localhost"];
 
     if (parsedUrl.protocol !== "wss:") {
         return false;

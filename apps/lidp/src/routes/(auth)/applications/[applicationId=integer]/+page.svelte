@@ -79,7 +79,7 @@
     const applicationClients = $derived(
         application
             ? clients.filter(
-                  (client) => client.applicationUri === application.uri,
+                  (client) => client.application.uri === application!.uri,
               )
             : [],
     );

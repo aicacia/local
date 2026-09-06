@@ -21,12 +21,15 @@
 
 <script lang="ts">
     import { createForm } from "@aicacia/svelte-forms";
+    import { isTauri } from "@tauri-apps/api/core";
     import Issues from "$lib/common/components/Issues.svelte";
     import { afterSigninRedirect } from "$lib/common/state/afterSigninRedirect.svelte";
-    import { lidpApi } from "$lib/common/state/lidpClient.svelte";
-    import { isTauri } from "@tauri-apps/api/core";
-    import { getOidcClient } from "$lib/common/state/oidc.svelte";
+    import {
+        ensureTauriLidpApiUrl,
+        lidpApi,
+    } from "$lib/common/state/lidpClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
+    import { getOidcClient } from "$lib/common/state/oidc.svelte";
 
     const form = createForm(SignInSchema(), {
         username: "",
@@ -42,31 +45,38 @@
             return;
         }
         try {
-          const token = await lidpApi.token({
-              grantType: "password",
-              clientId: isTauri()
-                  ? "lidp-management-desktop"
-                  : "lidp-management-web",
-              username: output.username,
-              password: output.password,
-              scope: "openid profile email",
-          });
+            if (isTauri()) {
+                await ensureTauriLidpApiUrl();
+            }
 
-          getOidcClient().setToken({
-              token_type: token.tokenType,
-              iss: token.iss,
-              scope: token.scope ?? undefined,
-              access_token: token.accessToken,
-              refresh_token: token.refreshToken,
-              refresh_token_expires_in: token.refreshTokenExpiresIn ?? undefined,
-              id_token: token.idToken,
-              expires_in: token.expiresIn ?? undefined,
-          });
+            const token = await lidpApi.token({
+                grantType: "password",
+                clientId: isTauri()
+                    ? "lidp-management-desktop"
+                    : "lidp-management-web",
+                username: output.username,
+                password: output.password,
+                scope: "openid profile email",
+            });
 
-          await afterSigninRedirect.onReturn();
+            getOidcClient().setToken({
+                token_type: token.tokenType,
+                iss: token.iss,
+                scope: token.scope ?? undefined,
+                access_token: token.accessToken,
+                refresh_token: token.refreshToken,
+                refresh_token_expires_in:
+                    token.refreshTokenExpiresIn ?? undefined,
+                id_token: token.idToken,
+                expires_in: token.expiresIn ?? undefined,
+            });
+
+            await afterSigninRedirect.onReturn();
         } catch (e) {
-          console.error("Error during sign-in:", e);
-          notifications.add(`${m.errors_name_application()}: ${m.errors_message_internal()}`);
+            console.error("Error during sign-in:", e);
+            notifications.add(
+                `${m.errors_name_application()}: ${m.errors_message_internal()}`,
+            );
         }
     }
 </script>

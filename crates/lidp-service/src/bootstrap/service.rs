@@ -96,7 +96,7 @@ where
                     &lidp_application,
                     "lidp-desktop".to_string(),
                     "Local IdP Desktop".to_string(),
-                    "lidp://app".to_string(),
+                    self.config.lidp_url.clone(),
                     ClientProfile::Native,
                 )
                 .await?;
@@ -145,7 +145,7 @@ where
                     &lidp_management_application,
                     "lidp-management-desktop".to_string(),
                     "Local IdP Management Desktop".to_string(),
-                    "lidp-management://app".to_string(),
+                    self.config.lidp_management_url.clone(),
                     ClientProfile::Native,
                 )
                 .await?;

@@ -1,4 +1,4 @@
-use tauri::{Manager, Window, WindowEvent, async_runtime::Mutex};
+use tauri::{Manager, Window, WindowEvent, Wry};
 #[cfg(any(windows, target_os = "linux"))]
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -20,10 +20,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![
-            app::get_storage_bridge_url,
-            app::open_storage_bridge_trust_page,
-        ])
+        .invoke_handler(tauri::generate_handler![app::get_localhost_server_base_url,])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -41,20 +38,26 @@ pub fn run() {
 
             let app_config =
                 app::init_app_config(app.handle(), app.handle().path().app_config_dir()?)?;
-            tauri::async_runtime::block_on(app::init_storage_bridge(app.handle()))?;
+
+            tauri::async_runtime::block_on(app::init_local_storage(app.handle()))?;
 
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let database = app::init_datebase(app_handle.clone(), app_config.clone())
+                let (listener, base_url) = app::reserve_unified_localhost_server(&app_handle)
+                    .await
+                    .expect("unified localhost server must reserve");
+                app::set_localhost_server_state(&app_handle, base_url.clone(), false).await;
+                let runtime_config = app::app_config_for_localhost_base_url(app_config, &base_url);
+
+                let database = app::init_datebase(app_handle.clone(), runtime_config.clone())
                     .await
                     .expect("database must initialize");
                 let router =
-                    app::init_router(app_config, database).expect("router must initialize");
-                app_handle.manage(Mutex::new(router));
+                    app::init_router(runtime_config, database).expect("router must initialize");
+                app::init_unified_localhost_server(&app_handle, router, listener, base_url)
+                    .await
+                    .expect("unified localhost server must initialize");
             });
-
-            app.handle()
-                .plugin(tauri_plugin_fetch_api::init(app::request_handler))?;
             Ok(())
         })
         .on_window_event(on_window_event)
@@ -62,7 +65,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-fn on_window_event(window: &Window, event: &WindowEvent) {
+fn on_window_event(window: &Window<Wry>, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
         let app_handle = window.app_handle().clone();

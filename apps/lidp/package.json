@@ -52,7 +52,6 @@
     "@tauri-apps/plugin-deep-link": "^2.4.9",
     "@tauri-apps/plugin-log": "^2.9.0",
     "@tauri-apps/plugin-opener": "^2.5.4",
-    "tauri-plugin-fetch-api": "workspace:*",
     "valibot": "^1.4.2"
   }
 }

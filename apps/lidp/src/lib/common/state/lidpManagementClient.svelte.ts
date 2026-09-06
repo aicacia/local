@@ -4,19 +4,45 @@ import {
     DefaultApi,
 } from "@aicacia/lidp-management-client";
 import { createStorage } from "@aicacia/svelte-headless";
+import { isTauri } from "@tauri-apps/api/core";
 import { goto } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
-import { isTauri } from "@tauri-apps/api/core";
-import { fetch as tauriFetch } from "tauri-plugin-fetch-api";
 import { env } from "$env/dynamic/public";
 import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
+import { loadLocalhostBaseUrl } from "./localhostBaseUrl.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
 const lidpManagementApiUrl = createStorage<string | null>(
     "lidp-management-api-url",
-    (isTauri() ? "lidp://app/lidp-management" : env.PUBLIC_LIDP_MANAGEMENT_BASE_URL) ?? null,
+    (isTauri() ? null : env.PUBLIC_LIDP_MANAGEMENT_BASE_URL) ?? null,
 );
+
+async function hydrateTauriManagementApiUrl(): Promise<void> {
+    if (!isTauri()) {
+        return;
+    }
+
+    const baseUrl = await loadLocalhostBaseUrl();
+    if (baseUrl) {
+        lidpManagementApiUrl.item = `${baseUrl}/lidp-management`;
+    }
+}
+
+void hydrateTauriManagementApiUrl();
+
+function readAccessToken(): string {
+    const oidcClient = getOidcClient();
+    if (!oidcClient) {
+        return "";
+    }
+    return oidcClient.getStoredTokenResponse()?.access_token ?? "";
+}
+
+function readBasePath(): string | undefined {
+    const basePath = lidpManagementApiUrl.item;
+    return basePath === null ? undefined : basePath;
+}
 
 const defaultConfigurationParameters: ConfigurationParameters = {
     middleware: [
@@ -39,14 +65,14 @@ const defaultConfigurationParameters: ConfigurationParameters = {
             },
         },
     ],
-    accessToken() {
-        return getOidcClient().getStoredTokenResponse().access_token;
+    accessToken(): string {
+        return readAccessToken();
     },
-    get basePath() {
-        return lidpManagementApiUrl.item;
+    get basePath(): string | undefined {
+        return readBasePath();
     },
     get fetchApi() {
-        return isTauri() ? tauriFetch : fetch;
+        return fetch;
     },
     credentials: "same-origin",
 };

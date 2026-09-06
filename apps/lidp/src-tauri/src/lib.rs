@@ -1,6 +1,7 @@
 mod app;
-mod bridge;
-mod bridge_trust;
+mod local_storage;
+mod localhost_server;
+mod localhost_trust;
 mod runtime;
 
 pub use runtime::run;

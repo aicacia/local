@@ -4,4 +4,4 @@ mod serve;
 
 pub use config::{Environment, ServerConfig};
 pub use openapi::SecurityAddon;
-pub use serve::serve;
+pub use serve::{serve, serve_listener};

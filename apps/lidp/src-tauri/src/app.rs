@@ -1,6 +1,6 @@
-use std::{fs, io, path::Path, sync::Arc, time::Duration};
+use std::{fs, io, path::Path, sync::Arc};
 
-use axum::{Router, http::StatusCode, response::IntoResponse};
+use axum::Router;
 use db::{close_database, open_database};
 use libsql::Database;
 use lidp_server::{AppConfig, RouterState};
@@ -14,14 +14,20 @@ use lidp_service::{
         LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
 };
-use tauri::{AppHandle, Manager, async_runtime::Mutex};
-use tauri_plugin_fetch_api::{Request, Response};
-use tauri_plugin_opener::OpenerExt;
-use tower_service::Service;
+use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
+use tokio::net::TcpListener;
+use tower_http::cors::CorsLayer;
 
-use crate::bridge::{
-    StorageBridge, bridge_trust_prompted_path, bridge_trust_url, ensure_storage_bridge_certificate,
+use crate::local_storage::LocalStorage;
+use crate::localhost_server::{
+    localhost_server_base_url, reserve_localhost_listener, start_unified_localhost_server,
 };
+
+#[derive(Clone, Default)]
+pub struct LocalhostServerState {
+    pub base_url: String,
+    pub ready: bool,
+}
 
 pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::Result<Router> {
     let key_service = Arc::new(KeyService::new(
@@ -46,8 +52,8 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
 
     let lidp_router = lidp_server::openapi_router(
         RouterState::new(
-            "lidp://app",
-            "lidp://app",
+            &app_config.ui_public_uri,
+            &app_config.api_public_uri,
             database.clone(),
             oauth2_service.clone(),
         ),
@@ -60,7 +66,7 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
     ));
     let management_router = lidp_management_server::openapi_router(
         lidp_management_server::RouterState::new(
-            "lidp://app",
+            &app_config.api_public_uri,
             database,
             management_service,
             oauth2_service,
@@ -71,11 +77,12 @@ pub fn init_router(app_config: Arc<AppConfig>, database: Arc<Database>) -> io::R
     Ok(lidp_router
         .split_for_parts()
         .0
-        .merge(management_router.split_for_parts().0))
+        .merge(management_router.split_for_parts().0)
+        .layer(CorsLayer::very_permissive().allow_private_network(true)))
 }
 
 pub async fn init_datebase(
-    app_handle: AppHandle,
+    app_handle: AppHandle<Wry>,
     app_config: Arc<AppConfig>,
 ) -> io::Result<Arc<Database>> {
     let database = Arc::new(open_database(&app_config.database).await.map_err(|e| {
@@ -117,7 +124,7 @@ pub async fn init_datebase(
 }
 
 pub fn init_app_config(
-    app_handle: &AppHandle,
+    app_handle: &AppHandle<Wry>,
     data_dir: impl AsRef<Path>,
 ) -> tauri::Result<Arc<AppConfig>> {
     if !data_dir.as_ref().exists() {
@@ -137,9 +144,9 @@ pub fn init_app_config(
             "file://{}",
             data_dir.as_ref().join("lidp.db").to_string_lossy()
         );
-        default_config.oauth2.issuer = "lidp://app".to_owned();
-        default_config.ui_public_uri = "lidp://app".to_owned();
-        default_config.api_public_uri = "lidp://app".to_owned();
+        default_config.oauth2.issuer = "https://localhost".to_owned();
+        default_config.ui_public_uri = "https://localhost".to_owned();
+        default_config.api_public_uri = "https://localhost".to_owned();
         fs::write(
             &config_path,
             yaml_serde::to_string(&default_config)
@@ -153,103 +160,90 @@ pub fn init_app_config(
     Ok(app_config)
 }
 
-pub async fn request_handler(app_handle: AppHandle, request: Request) -> Response {
-    let router_state = app_handle.state::<Mutex<Router>>();
-    let mut router = router_state.lock().await;
-
-    log::debug!("handling request: {:?}", request);
-
-    match router.call(request).await {
-        Ok(response) => {
-            log::debug!("request handled successfully: {:?}", response);
-            response
-        }
-        Err(err) => {
-            log::error!("error handling request: {err}");
-            let mut response = format!("Internal Server Error: {err}").into_response();
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            response
-        }
-    }
+#[tauri::command]
+pub async fn get_localhost_server_base_url(app_handle: AppHandle<Wry>) -> String {
+    localhost_server_base_url_for(&app_handle).await
 }
 
-async fn bridge_url_for(app_handle: &AppHandle) -> String {
-    if let Some(bridge_state) = app_handle.try_state::<Mutex<StorageBridge>>() {
-        bridge_state.lock().await.url().await
+pub async fn localhost_server_base_url_for(app_handle: &AppHandle<Wry>) -> String {
+    if let Some(state) = app_handle.try_state::<Mutex<LocalhostServerState>>() {
+        let state = state.lock().await;
+        if state.ready {
+            state.base_url.clone()
+        } else {
+            String::new()
+        }
     } else {
         String::new()
     }
 }
 
-#[tauri::command]
-pub async fn get_storage_bridge_url(app_handle: AppHandle) -> String {
-    bridge_url_for(&app_handle).await
-}
-
-#[tauri::command]
-pub async fn open_storage_bridge_trust_page(app_handle: AppHandle) -> Result<(), String> {
-    let trust_url = bridge_trust_url(&bridge_url_for(&app_handle).await)
-        .ok_or("storage bridge URL is not available yet")?;
-    app_handle
-        .opener()
-        .open_url(trust_url, None::<&str>)
-        .map_err(|err| err.to_string())
-}
-
-async fn prompt_bridge_cert_trust_if_needed(app_handle: AppHandle, data_dir: std::path::PathBuf) {
-    let prompted_path = bridge_trust_prompted_path(&data_dir);
-    for _ in 0..50 {
-        let wss_url = bridge_url_for(&app_handle).await;
-        if wss_url.is_empty() {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            continue;
-        }
-        if prompted_path.exists() {
-            return;
-        }
-        let Some(trust_url) = bridge_trust_url(&wss_url) else {
-            return;
-        };
-        if app_handle
-            .opener()
-            .open_url(trust_url, None::<&str>)
-            .is_err()
-        {
-            return;
-        }
-        let _ = fs::write(prompted_path, b"");
-        return;
+pub async fn set_localhost_server_state(
+    app_handle: &AppHandle<Wry>,
+    base_url: String,
+    ready: bool,
+) {
+    if let Some(state) = app_handle.try_state::<Mutex<LocalhostServerState>>() {
+        *state.lock().await = LocalhostServerState { base_url, ready };
+    } else {
+        app_handle.manage(Mutex::new(LocalhostServerState { base_url, ready }));
     }
 }
 
-pub async fn init_storage_bridge(app_handle: &AppHandle) -> tauri::Result<()> {
+pub async fn init_local_storage(app_handle: &AppHandle<Wry>) -> tauri::Result<()> {
     let data_dir = app_handle.path().app_data_dir()?;
-    ensure_storage_bridge_certificate(&data_dir)
-        .await
-        .map_err(|err| tauri::Error::Io(io::Error::other(err)))?;
     let files_dir = data_dir.join("files");
     if !files_dir.exists() {
         fs::create_dir_all(&files_dir)?;
     }
 
-    let bridge = StorageBridge::new(files_dir).await;
-    let server_bridge = bridge.clone();
-    let bridge_data_dir = data_dir.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(err) = server_bridge.start_server(&bridge_data_dir).await {
-            log::error!("storage websocket bridge failed to start: {err}");
-        }
-    });
-    app_handle.manage(Mutex::new(bridge));
-
-    let prompt_handle = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
-        prompt_bridge_cert_trust_if_needed(prompt_handle, data_dir).await;
-    });
+    let storage = LocalStorage::new(files_dir).await;
+    app_handle.manage(Mutex::new(storage));
     Ok(())
 }
 
-pub async fn close(app_handle: &AppHandle) -> io::Result<()> {
+pub async fn init_unified_localhost_server(
+    app_handle: &AppHandle<Wry>,
+    router: Router,
+    listener: TcpListener,
+    base_url: String,
+) -> tauri::Result<String> {
+    let data_dir = app_handle.path().app_data_dir()?;
+    let storage_state = app_handle
+        .try_state::<Mutex<LocalStorage>>()
+        .ok_or_else(|| tauri::Error::Io(io::Error::other("local storage state is missing")))?;
+    let storage = storage_state.lock().await.clone();
+
+    start_unified_localhost_server(router, storage, listener, &data_dir);
+
+    set_localhost_server_state(app_handle, base_url.clone(), true).await;
+    Ok(base_url)
+}
+
+pub async fn reserve_unified_localhost_server(
+    app_handle: &AppHandle<Wry>,
+) -> tauri::Result<(TcpListener, String)> {
+    let app_data_dir = app_handle.path().app_data_dir()?;
+    let (listener, port) = reserve_localhost_listener(&app_data_dir)
+        .await
+        .map_err(|err| tauri::Error::Io(io::Error::other(err)))?;
+    Ok((listener, localhost_server_base_url(port)))
+}
+
+pub fn app_config_for_localhost_base_url(
+    app_config: Arc<AppConfig>,
+    base_url: &str,
+) -> Arc<AppConfig> {
+    let mut config = app_config.as_ref().clone();
+    config.oauth2.issuer = base_url.to_owned();
+    config.ui_public_uri = base_url.to_owned();
+    config.api_public_uri = base_url.to_owned();
+    config.bootstrap.lidp_url = base_url.to_owned();
+    config.bootstrap.lidp_management_url = format!("{base_url}/lidp-management");
+    Arc::new(config)
+}
+
+pub async fn close(app_handle: &AppHandle<Wry>) -> io::Result<()> {
     if let Some(database) = app_handle.try_state::<Database>() {
         close_database(database.inner())
             .await

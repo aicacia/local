@@ -18,30 +18,54 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 serde_json = "1.0"
-async-trait = { version = "0.1", default-features = false, features = [] }
 yaml_serde = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tower-service = "0.3"
 axum = { version = "0.8", default-features = false, features = ["ws"] }
 libsql = { version = "0.9", default-features = false, features = [] }
-rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+rcgen = { version = "0.14", default-features = false, features = [
+  "pem",
+  "ring",
+] }
 rustls = { version = "0.23", default-features = false, features = [] }
-tokio = { version = "1.52", default-features = false, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+tokio = { version = "1.52", default-features = false, features = [
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+  "ring",
+] }
+tower-http = { version = "0.7", default-features = false, features = ["cors"] }
 
-db = { path = "../../../crates/db", default-features = false, features = ["migrate"] }
-lidp-management-server = { path = "../../../crates/lidp-management-server", default-features = false, features = [] }
-lidp-model = { path = "../../../crates/lidp-model", default-features = false, features = ["std", "migrate"] }
-lidp-server = { path = "../../../crates/lidp-server", default-features = false, features = [] }
-lidp-service = { path = "../../../crates/lidp-service", default-features = false, features = ["std"] }
-storage-iroh = { path = "../../../crates/storage-iroh", default-features = false, features = [] }
-storage-model = { path = "../../../crates/storage-model", default-features = false, features = ["migrate"] }
-storage-service = { path = "../../../crates/storage-service", default-features = false, features = [] }
+db = { path = "../../../crates/db", default-features = false, features = [
+  "migrate",
+] }
+lidp-management-server = { path = "../../../crates/lidp-management-server", default-features = false, features = [
+] }
+lidp-model = { path = "../../../crates/lidp-model", default-features = false, features = [
+  "std",
+  "migrate",
+] }
+lidp-server = { path = "../../../crates/lidp-server", default-features = false, features = [
+] }
+lidp-service = { path = "../../../crates/lidp-service", default-features = false, features = [
+  "std",
+] }
+storage-iroh = { path = "../../../crates/storage-iroh", default-features = false, features = [
+] }
+storage-service = { path = "../../../crates/storage-service", default-features = false, features = [
+] }
 
-tauri = { version = "2", default-features = false, features = ["tray-icon"] }
+tauri = { version = "2", default-features = false, features = [
+  "tray-icon",
+  "wry",
+] }
 tauri-plugin-log = "2"
-tauri-plugin-single-instance = { version = "2", default-features = false, features = ["deep-link"] }
+tauri-plugin-single-instance = { version = "2", default-features = false, features = [
+  "deep-link",
+] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-opener = { version = "2", default-features = false, features = [] }
-tauri-plugin-fetch-api = { path = "../../../crates/tauri-plugin-fetch-api" }
