@@ -54,7 +54,7 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    async fn scan(&self, path: &str) -> Result<Vec<String>, Self::Error> {
+    async fn list(&self, path: &str) -> Result<Vec<String>, Self::Error> {
         validate_directory_path(path)?;
         let prefix = if path.is_empty() {
             String::new()
@@ -117,7 +117,7 @@ mod tests {
             storage.read("notes/tomorrow.txt").await.unwrap(),
             b"hello world"
         );
-        assert_eq!(storage.scan("notes").await.unwrap(), ["notes/tomorrow.txt"]);
+        assert_eq!(storage.list("notes").await.unwrap(), ["notes/tomorrow.txt"]);
         storage.remove("notes/tomorrow.txt").await.unwrap();
         assert_eq!(
             storage.read("notes/tomorrow.txt").await,

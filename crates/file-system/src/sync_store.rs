@@ -34,7 +34,7 @@ impl<'a, S: Storage> SyncStore<'a, S> {
         let documents_prefix = format!("{DOCUMENTS_DIRECTORY}/");
         for path in self
             .storage
-            .scan(DOCUMENTS_DIRECTORY)
+            .list(DOCUMENTS_DIRECTORY)
             .await
             .map_err(SyncStoreError::Storage)?
         {
@@ -52,7 +52,7 @@ impl<'a, S: Storage> SyncStore<'a, S> {
         let dirty_prefix = format!("{DIRTY_DIRECTORY}/");
         let dirty = self
             .storage
-            .scan(DIRTY_DIRECTORY)
+            .list(DIRTY_DIRECTORY)
             .await
             .map_err(SyncStoreError::Storage)?
             .into_iter()

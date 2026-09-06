@@ -61,7 +61,7 @@ impl Storage for NativeStorage {
         fs::rename(from, to)
     }
 
-    async fn scan(&self, path: &str) -> Result<Vec<String>, Self::Error> {
+    async fn list(&self, path: &str) -> Result<Vec<String>, Self::Error> {
         validate_directory_path(path)?;
         let root = if path.is_empty() {
             self.root.clone()

@@ -21,5 +21,5 @@ pub trait Storage {
         from: &str,
         to: &str,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    fn scan(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Self::Error>> + Send;
+    fn list(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Self::Error>> + Send;
 }
