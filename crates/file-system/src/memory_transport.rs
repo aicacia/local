@@ -3,6 +3,7 @@ use core::{
     convert::Infallible,
     future::{Future, ready},
     pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
 use std::sync::Mutex;
@@ -26,16 +27,65 @@ impl<P> Stream for MemoryIncoming<P> {
     }
 }
 
+struct Endpoint<P> {
+    online: AtomicBool,
+    sender: Sender<P>,
+    pending: Mutex<Vec<Message<P>>>,
+}
+
+impl<P> Endpoint<P> {
+    fn receive(&self, message: Message<P>) {
+        if self.online.load(Ordering::Acquire) {
+            let _ = self.sender.send(message);
+        } else {
+            self.pending
+                .lock()
+                .expect("memory transport lock poisoned")
+                .push(message);
+        }
+    }
+
+    fn set_online(&self, online: bool) {
+        self.online.store(online, Ordering::Release);
+        if !online {
+            return;
+        }
+        let pending =
+            core::mem::take(&mut *self.pending.lock().expect("memory transport lock poisoned"));
+        for message in pending {
+            let _ = self.sender.send(message);
+        }
+    }
+}
+
+struct MemoryTransportState<P> {
+    endpoint: Arc<Endpoint<P>>,
+    peers: Vec<(P, Arc<Endpoint<P>>)>,
+    incoming: Mutex<Option<MemoryIncoming<P>>>,
+    outbound: Mutex<Vec<(P, Vec<u8>)>>,
+    mutator: Option<MemoryTransportMutator>,
+}
+
 pub struct MemoryTransport<P> {
     peer: P,
-    peers: Vec<(P, Sender<P>)>,
-    incoming: Mutex<Option<MemoryIncoming<P>>>,
-    mutator: Option<MemoryTransportMutator>,
+    state: Arc<MemoryTransportState<P>>,
+}
+
+impl<P> Clone for MemoryTransport<P>
+where
+    P: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            peer: self.peer.clone(),
+            state: Arc::clone(&self.state),
+        }
+    }
 }
 
 impl<P> MemoryTransport<P>
 where
-    P: Clone + Eq + Send + 'static,
+    P: Clone + Eq + Send + Sync + 'static,
 {
     #[must_use]
     pub fn pair(left_peer: P, right_peer: P) -> (Self, Self) {
@@ -51,37 +101,86 @@ where
     ) -> (Self, Self) {
         let (left_sender, left_receiver) = mpsc::unbounded_channel();
         let (right_sender, right_receiver) = mpsc::unbounded_channel();
+        let left_endpoint = Arc::new(Endpoint {
+            online: AtomicBool::new(true),
+            sender: left_sender,
+            pending: Mutex::new(Vec::new()),
+        });
+        let right_endpoint = Arc::new(Endpoint {
+            online: AtomicBool::new(true),
+            sender: right_sender,
+            pending: Mutex::new(Vec::new()),
+        });
         let left = Self {
             peer: left_peer.clone(),
-            peers: vec![(right_peer.clone(), right_sender)],
-            incoming: Mutex::new(Some(MemoryIncoming(left_receiver))),
-            mutator: left_mutator,
+            state: Arc::new(MemoryTransportState {
+                endpoint: Arc::clone(&left_endpoint),
+                peers: vec![(right_peer.clone(), Arc::clone(&right_endpoint))],
+                incoming: Mutex::new(Some(MemoryIncoming(left_receiver))),
+                outbound: Mutex::new(Vec::new()),
+                mutator: left_mutator,
+            }),
         };
         let right = Self {
             peer: right_peer.clone(),
-            peers: vec![(left_peer, left_sender)],
-            incoming: Mutex::new(Some(MemoryIncoming(right_receiver))),
-            mutator: right_mutator,
+            state: Arc::new(MemoryTransportState {
+                endpoint: right_endpoint,
+                peers: vec![(left_peer, left_endpoint)],
+                incoming: Mutex::new(Some(MemoryIncoming(right_receiver))),
+                outbound: Mutex::new(Vec::new()),
+                mutator: right_mutator,
+            }),
         };
         (left, right)
     }
 
+    pub fn set_online(&self, online: bool) {
+        self.state.endpoint.set_online(online);
+        if !online {
+            return;
+        }
+        let outbound = core::mem::take(
+            &mut *self
+                .state
+                .outbound
+                .lock()
+                .expect("memory transport lock poisoned"),
+        );
+        for (peer, data) in outbound {
+            self.deliver(peer, data);
+        }
+    }
+
+    #[must_use]
+    pub fn is_online(&self) -> bool {
+        self.state.endpoint.online.load(Ordering::Acquire)
+    }
+
     fn deliver(&self, peer: P, mut data: Vec<u8>) {
-        if let Some(mutator) = &self.mutator {
+        if !self.is_online() {
+            self.state
+                .outbound
+                .lock()
+                .expect("memory transport lock poisoned")
+                .push((peer, data));
+            return;
+        }
+        if let Some(mutator) = &self.state.mutator {
             mutator(&mut data);
         }
-        let sender = self
+        let endpoint = self
+            .state
             .peers
             .iter()
-            .find_map(|(candidate, sender)| (*candidate == peer).then_some(sender))
+            .find_map(|(candidate, endpoint)| (*candidate == peer).then_some(endpoint))
             .expect("unknown memory transport peer");
-        let _ = sender.send((self.peer.clone(), data));
+        endpoint.receive((self.peer.clone(), data));
     }
 }
 
 impl<P> Transport for MemoryTransport<P>
 where
-    P: Clone + Eq + Send + 'static,
+    P: Clone + Eq + Send + Sync + 'static,
 {
     type Error = Infallible;
     type PeerId = P;
@@ -97,7 +196,7 @@ where
     }
 
     fn broadcast(&self, data: Vec<u8>) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        for (peer, _) in &self.peers {
+        for (peer, _) in &self.state.peers {
             self.deliver(peer.clone(), data.clone());
         }
         ready(Ok(()))
@@ -105,6 +204,7 @@ where
 
     fn subscribe(&self) -> impl Future<Output = Result<Self::Incoming, Self::Error>> + Send {
         ready(Ok(self
+            .state
             .incoming
             .lock()
             .expect("memory transport lock poisoned")

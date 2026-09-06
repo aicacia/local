@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "sync")]
+mod content_store;
 mod error;
 #[cfg(feature = "sync")]
 mod file_system;
@@ -17,11 +19,15 @@ mod native_storage;
 mod peer;
 mod storage;
 mod stream;
+#[cfg(feature = "sync")]
+mod sync_store;
 mod transport;
 
 pub use error::Error;
 #[cfg(feature = "sync")]
-pub use file_system::{FileSystem, FileSystemError, ReadError, ReadFuture, ReadStream, SyncError};
+pub use file_system::{
+    FileSystem, FileSystemError, FileSystemInitError, ReadError, ReadFuture, ReadStream, SyncError,
+};
 pub use hash::ContentHash;
 #[cfg(feature = "in-memory")]
 pub use memory_storage::InMemoryStorage;

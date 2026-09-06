@@ -19,7 +19,11 @@ use automerge::{
 use futures_core::Stream;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::{ChunkStream, ContentHash, FileEntry, PeerCodec, Storage, Transport};
+use crate::{
+    ChunkStream, ContentHash, FileEntry, PeerCodec, Storage, Transport,
+    content_store::ContentStore,
+    sync_store::{SyncStore, SyncStoreError},
+};
 
 const PROTOCOL_VERSION: u8 = 1;
 const METADATA_MESSAGE: u8 = 0;
@@ -116,6 +120,25 @@ impl<StorageError> Stream for ReadStream<StorageError> {
 }
 
 #[derive(Debug)]
+pub enum FileSystemInitError<StorageError, TransportError> {
+    Storage(StorageError),
+    Transport(TransportError),
+    Metadata(automerge::AutomergeError),
+}
+
+impl<StorageError: fmt::Display, TransportError: fmt::Display> fmt::Display
+    for FileSystemInitError<StorageError, TransportError>
+{
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Storage(error) => error.fmt(formatter),
+            Self::Transport(error) => error.fmt(formatter),
+            Self::Metadata(error) => error.fmt(formatter),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum FileSystemError<StorageError> {
     Storage(StorageError),
     NotFound,
@@ -165,9 +188,10 @@ pub struct FileSystem<S: Storage, C: PeerCodec, T: Transport<PeerId = C::PeerId>
 }
 
 struct FileSystemState<S: Storage, C: PeerCodec> {
-    storage: S,
+    content_store: ContentStore<S>,
     local_peer: C::PeerId,
     documents: BTreeMap<String, AutoCommit>,
+    dirty_folders: BTreeSet<String>,
     broadcast_states: BTreeMap<String, State>,
     peer_states: BTreeMap<(C::PeerId, String), State>,
     sync_sender: mpsc::Sender<SyncRequest<C::PeerId>>,
@@ -178,14 +202,17 @@ struct FileSystemState<S: Storage, C: PeerCodec> {
 
 impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
     fn new(
-        storage: S,
+        content_store: ContentStore<S>,
         local_peer: C::PeerId,
+        documents: BTreeMap<String, AutoCommit>,
+        dirty_folders: BTreeSet<String>,
         sync_sender: mpsc::Sender<SyncRequest<C::PeerId>>,
     ) -> Self {
         Self {
-            storage,
+            content_store,
             local_peer,
-            documents: BTreeMap::new(),
+            documents,
+            dirty_folders,
             broadcast_states: BTreeMap::new(),
             peer_states: BTreeMap::new(),
             sync_sender,
@@ -202,7 +229,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
     ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
         let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
         let hash = self
-            .storage
+            .content_store
             .write(path, content)
             .map_err(FileSystemError::Storage)?;
         let mut providers = BTreeSet::new();
@@ -223,6 +250,8 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
                 .generate_sync_message(state)
                 .map(|message| encode_envelope(folder, message.encode()))
         };
+        self.persist_dirty(folder)
+            .map_err(FileSystemError::Storage)?;
         if let Some(data) = message {
             let _ = self.emit(SyncRequest::Broadcast(data));
         }
@@ -236,12 +265,12 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
     ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
         let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
         let hash = self
-            .storage
+            .content_store
             .append(path, content)
             .map_err(FileSystemError::Storage)?;
         let content = self
-            .storage
-            .read_file(path)
+            .content_store
+            .read(path)
             .map_err(FileSystemError::Storage)?;
         let mut providers = BTreeSet::new();
         providers.insert(self.local_peer.clone());
@@ -261,6 +290,8 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
                 .generate_sync_message(state)
                 .map(|message| encode_envelope(folder, message.encode()))
         };
+        self.persist_dirty(folder)
+            .map_err(FileSystemError::Storage)?;
         if let Some(data) = message {
             let _ = self.emit(SyncRequest::Broadcast(data));
         }
@@ -307,14 +338,14 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
     }
 
     pub fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
-        self.storage.read_file(path)
+        self.content_store.read(path)
     }
 
     pub fn start_read(&mut self, path: &str) -> Result<ReadFuture<S::Error>, ReadError<S::Error>> {
         let entry = self.entry(path).map_err(metadata_read_error)?;
         let (sender, receiver) = oneshot::channel();
         if entry.local {
-            let _ = sender.send(self.storage.read_file(path).map_err(ReadError::Storage));
+            let _ = sender.send(self.content_store.read(path).map_err(ReadError::Storage));
             return Ok(ReadFuture(receiver));
         }
         let peer = entry
@@ -349,7 +380,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
     }
 
     pub fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, S::Error> {
-        self.storage.stream(path, chunk_size)
+        Ok(ChunkStream::new(self.content_store.read(path)?, chunk_size))
     }
 
     pub fn start_stream(
@@ -363,7 +394,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         let entry = self.entry(path).map_err(metadata_read_error)?;
         let (sender, receiver) = mpsc::unbounded_channel();
         if entry.local {
-            let content = self.storage.read_file(path).map_err(ReadError::Storage)?;
+            let content = self.content_store.read(path).map_err(ReadError::Storage)?;
             for chunk in content.chunks(chunk_size) {
                 let _ = sender.send(Ok(chunk.to_vec()));
             }
@@ -432,10 +463,12 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
             (entries, reply)
         };
 
+        self.persist_dirty(&folder).map_err(SyncError::Storage)?;
+
         for entry in entries {
             let path = join_path(&folder, &entry.name);
             if !entry.providers.contains(&self.local_peer) {
-                self.storage
+                self.content_store
                     .register_passthrough(&path)
                     .map_err(SyncError::Storage)?;
             }
@@ -453,7 +486,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         data: &[u8],
     ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
         let (id, path, hash, offset, chunk_size) = decode_blob_request(data)?;
-        let content = self.storage.read_file(&path).map_err(SyncError::Storage)?;
+        let content = self.content_store.read(&path).map_err(SyncError::Storage)?;
         if ContentHash::of(&content) != hash {
             return Err(SyncError::InvalidMessage);
         }
@@ -553,6 +586,18 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         self.emit(SyncRequest::Send { peer, data })
     }
 
+    fn persist_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
+        let document = self
+            .documents
+            .get_mut(folder)
+            .expect("changed folder must have a document");
+        let mut sync_store = SyncStore::new(self.content_store.storage_mut());
+        sync_store.persist(folder, document)?;
+        sync_store.mark_dirty(folder)?;
+        self.dirty_folders.insert(folder.to_string());
+        Ok(())
+    }
+
     fn emit(
         &self,
         request: SyncRequest<C::PeerId>,
@@ -573,15 +618,58 @@ where
     T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
     T::Incoming: 'static,
 {
-    pub async fn new(storage: S, local_peer: C::PeerId, transport: T) -> Result<Self, T::Error> {
+    pub async fn new(
+        storage: S,
+        local_peer: C::PeerId,
+        transport: T,
+    ) -> Result<Self, FileSystemInitError<S::Error, T::Error>> {
+        let mut content_store = ContentStore::new(storage);
+        let sync_state = match SyncStore::new(content_store.storage_mut()).load() {
+            Ok(value) => value,
+            Err(SyncStoreError::Storage(error)) => return Err(FileSystemInitError::Storage(error)),
+            Err(SyncStoreError::Metadata(error)) => {
+                return Err(FileSystemInitError::Metadata(error));
+            }
+        };
         let transport = Arc::new(transport);
-        let incoming = Box::pin(transport.subscribe().await?);
+        let incoming = Box::pin(
+            transport
+                .subscribe()
+                .await
+                .map_err(FileSystemInitError::Transport)?,
+        );
         let (outbound, mut requests) = mpsc::channel(REQUEST_CAPACITY);
         let state = Arc::new(Mutex::new(FileSystemState::new(
-            storage,
+            content_store,
             local_peer,
+            sync_state.documents,
+            sync_state.dirty_folders,
             outbound.clone(),
         )));
+        {
+            let mut state = state.lock().expect("file system state lock poisoned");
+            let folders: Vec<_> = state.dirty_folders.iter().cloned().collect();
+            for folder in folders {
+                let message = {
+                    let FileSystemState {
+                        documents,
+                        broadcast_states,
+                        ..
+                    } = &mut *state;
+                    let document = documents
+                        .get_mut(&folder)
+                        .expect("dirty folder must have a document");
+                    let sync_state = broadcast_states.entry(folder.clone()).or_default();
+                    document
+                        .sync()
+                        .generate_sync_message(sync_state)
+                        .map(|message| encode_envelope(&folder, message.encode()))
+                };
+                if let Some(data) = message {
+                    let _ = state.emit(SyncRequest::Broadcast(data));
+                }
+            }
+        }
         let task_state = Arc::clone(&state);
         let task_transport = Arc::clone(&transport);
         let task = tokio::spawn(async move {
@@ -618,12 +706,12 @@ where
 
     pub fn with_storage<R>(&self, f: impl FnOnce(&S) -> R) -> R {
         let state = self.state.lock().expect("file system state lock poisoned");
-        f(&state.storage)
+        f(state.content_store.storage())
     }
 
     pub fn with_storage_mut<R>(&self, f: impl FnOnce(&mut S) -> R) -> R {
         let mut state = self.state.lock().expect("file system state lock poisoned");
-        f(&mut state.storage)
+        f(state.content_store.storage_mut())
     }
 
     pub fn write(

@@ -13,7 +13,7 @@ pub struct ChunkStream {
     offset: usize,
 }
 
-#[cfg(any(feature = "in-memory", feature = "native"))]
+#[cfg(feature = "sync")]
 impl ChunkStream {
     pub(crate) fn new(content: Vec<u8>, chunk_size: usize) -> Self {
         Self {

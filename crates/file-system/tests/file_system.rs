@@ -2,7 +2,11 @@
 
 use core::{convert::Infallible, pin::Pin};
 use std::sync::Arc;
+#[cfg(feature = "native")]
+use std::{env, fs};
 
+#[cfg(feature = "native")]
+use file_system::NativeStorage;
 use file_system::{
     FileEntry, FileSystem, InMemoryStorage, MemoryTransport, MemoryTransportMutator, PeerCodec,
 };
@@ -25,8 +29,17 @@ impl PeerCodec for TestPeer {
 }
 
 type TestFileSystem = FileSystem<InMemoryStorage, TestPeer, MemoryTransport<TestPeer>>;
+#[cfg(feature = "native")]
+type NativeTestFileSystem = FileSystem<NativeStorage, TestPeer, MemoryTransport<TestPeer>>;
 
-async fn file_system_pair(corrupt_left_responses: bool) -> (TestFileSystem, TestFileSystem) {
+async fn file_system_pair(
+    corrupt_left_responses: bool,
+) -> (
+    TestFileSystem,
+    TestFileSystem,
+    MemoryTransport<TestPeer>,
+    MemoryTransport<TestPeer>,
+) {
     let left_mutator: Option<MemoryTransportMutator> = corrupt_left_responses.then(|| {
         Arc::new(|data: &mut Vec<u8>| {
             if data.get(1) == Some(&2) {
@@ -36,13 +49,15 @@ async fn file_system_pair(corrupt_left_responses: bool) -> (TestFileSystem, Test
     });
     let (left_transport, right_transport) =
         MemoryTransport::pair_with_mutators(TestPeer(1), TestPeer(2), left_mutator, None);
+    let left_control = left_transport.clone();
+    let right_control = right_transport.clone();
     let left = FileSystem::new(InMemoryStorage::new(), TestPeer(1), left_transport)
         .await
         .unwrap();
     let right = FileSystem::new(InMemoryStorage::new(), TestPeer(2), right_transport)
         .await
         .unwrap();
-    (left, right)
+    (left, right, left_control, right_control)
 }
 
 async fn entry(file_system: &TestFileSystem, path: &str) -> FileEntry<TestPeer> {
@@ -73,7 +88,7 @@ async fn entry_with_size(
 
 #[tokio::test]
 async fn syncs_a_file_created_on_another_node() {
-    let (left, right) = file_system_pair(false).await;
+    let (left, right, _, _) = file_system_pair(false).await;
 
     left.write("notes/today.txt", b"hello").unwrap();
 
@@ -88,7 +103,7 @@ async fn syncs_a_file_created_on_another_node() {
 
 #[tokio::test]
 async fn appends_content_and_syncs_the_updated_file() {
-    let (left, right) = file_system_pair(false).await;
+    let (left, right, _, _) = file_system_pair(false).await;
 
     left.write("notes/today.txt", b"hello").unwrap();
     entry(&right, "notes/today.txt").await;
@@ -106,7 +121,7 @@ async fn appends_content_and_syncs_the_updated_file() {
 
 #[tokio::test]
 async fn streams_passthrough_content_in_verified_order() {
-    let (left, right) = file_system_pair(false).await;
+    let (left, right, _, _) = file_system_pair(false).await;
 
     left.write("notes/today.txt", b"abcdef").unwrap();
     entry(&right, "notes/today.txt").await;
@@ -121,7 +136,7 @@ async fn streams_passthrough_content_in_verified_order() {
 
 #[tokio::test]
 async fn rejects_a_corrupt_passthrough_chunk() {
-    let (left, right) = file_system_pair(true).await;
+    let (left, right, _, _) = file_system_pair(true).await;
 
     left.write("notes/today.txt", b"hello").unwrap();
     entry(&right, "notes/today.txt").await;
@@ -132,7 +147,7 @@ async fn rejects_a_corrupt_passthrough_chunk() {
 
 #[tokio::test]
 async fn merges_files_created_offline_in_the_same_folder() {
-    let (left, right) = file_system_pair(false).await;
+    let (left, right, _, _) = file_system_pair(false).await;
 
     left.write("notes/left.txt", b"left").unwrap();
     right.write("notes/right.txt", b"right").unwrap();
@@ -148,6 +163,60 @@ async fn merges_files_created_offline_in_the_same_folder() {
     assert_eq!(right.list("notes").unwrap().len(), 2);
     assert!(!left.entry("notes/right.txt").unwrap().local);
     assert!(!right.entry("notes/left.txt").unwrap().local);
+}
+
+#[tokio::test]
+async fn syncs_changes_made_by_each_node_while_offline() {
+    let (left, right, left_transport, right_transport) = file_system_pair(false).await;
+
+    right_transport.set_online(false);
+    right.write("notes/right.txt", b"right").unwrap();
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(left.entry("notes/right.txt").is_err());
+
+    right_transport.set_online(true);
+    assert!(right_transport.is_online());
+    entry(&left, "notes/right.txt").await;
+
+    left_transport.set_online(false);
+    left.write("notes/left.txt", b"left").unwrap();
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert!(right.entry("notes/left.txt").is_err());
+
+    left_transport.set_online(true);
+    assert!(left_transport.is_online());
+    entry(&right, "notes/left.txt").await;
+}
+
+#[cfg(feature = "native")]
+#[tokio::test]
+async fn persists_offline_metadata_across_a_native_restart() {
+    let root = env::temp_dir().join(format!("file-system-restart-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let (transport, _remote) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
+    transport.set_online(false);
+    let file_system: NativeTestFileSystem =
+        FileSystem::new(NativeStorage::new(&root).unwrap(), TestPeer(1), transport)
+            .await
+            .unwrap();
+    file_system.write("notes/offline.txt", b"offline").unwrap();
+    drop(file_system);
+
+    let (transport, _remote) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
+    let file_system: NativeTestFileSystem =
+        FileSystem::new(NativeStorage::new(&root).unwrap(), TestPeer(1), transport)
+            .await
+            .unwrap();
+    let entry = file_system.entry("notes/offline.txt").unwrap();
+    assert_eq!(entry.size, 7);
+    assert!(entry.local);
+    assert_eq!(file_system.read("notes/offline.txt").unwrap(), b"offline");
+    drop(file_system);
+    let _ = fs::remove_dir_all(root);
 }
 
 async fn next(
