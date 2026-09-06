@@ -1,20 +1,22 @@
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::{collections::BTreeSet, vec::Vec};
 
-use crate::ContentHash;
+use crate::{ChunkStream, ContentHash, FileEntry};
 
-#[derive(Debug, Default)]
-pub(crate) struct BlobStore {
-    blobs: BTreeMap<ContentHash, Vec<u8>>,
-}
+pub trait Storage {
+    type Error;
+    type PeerId: Ord + Clone;
 
-impl BlobStore {
-    pub(crate) fn insert(&mut self, content: &[u8]) -> ContentHash {
-        let hash = ContentHash::of(content);
-        self.blobs.entry(hash).or_insert_with(|| content.to_vec());
-        hash
-    }
-
-    pub(crate) fn get(&self, hash: ContentHash) -> Option<&[u8]> {
-        self.blobs.get(&hash).map(Vec::as_slice)
-    }
+    fn write(&mut self, path: &str, content: &[u8])
+    -> Result<FileEntry<Self::PeerId>, Self::Error>;
+    fn register_passthrough(
+        &mut self,
+        path: &str,
+        hash: ContentHash,
+        size: u64,
+        providers: BTreeSet<Self::PeerId>,
+    ) -> Result<FileEntry<Self::PeerId>, Self::Error>;
+    fn entry(&self, path: &str) -> Result<FileEntry<Self::PeerId>, Self::Error>;
+    fn list(&self, folder: &str) -> Result<Vec<FileEntry<Self::PeerId>>, Self::Error>;
+    fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error>;
+    fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, Self::Error>;
 }

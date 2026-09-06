@@ -3,9 +3,6 @@ use core::future::Future;
 
 use futures_core::Stream;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PeerId(pub [u8; 32]);
-
 pub trait Transport {
     type Error;
     type PeerId;

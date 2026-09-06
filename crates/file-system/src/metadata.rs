@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeSet, string::String};
 
-use crate::{ContentHash, PeerId};
+use crate::ContentHash;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MergeStrategy {
@@ -20,22 +20,22 @@ impl MergeStrategy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FileEntry {
+pub struct FileEntry<P> {
     pub name: String,
     pub hash: ContentHash,
     pub size: u64,
-    pub providers: BTreeSet<PeerId>,
+    pub providers: BTreeSet<P>,
     pub local: bool,
     pub merge_strategy: MergeStrategy,
 }
 
-impl FileEntry {
+impl<P> FileEntry<P> {
     #[must_use]
     pub fn new(
         name: String,
         hash: ContentHash,
         size: u64,
-        providers: BTreeSet<PeerId>,
+        providers: BTreeSet<P>,
         local: bool,
     ) -> Self {
         let merge_strategy = MergeStrategy::for_name(&name);

@@ -4,27 +4,25 @@
 extern crate alloc;
 
 mod error;
-#[cfg(feature = "in-memory")]
 mod file_system;
 mod hash;
+#[cfg(feature = "in-memory")]
+mod memory_storage;
 mod metadata;
 #[cfg(feature = "native")]
-mod native;
-#[cfg(feature = "in-memory")]
+mod native_storage;
 mod storage;
 mod stream;
 mod transport;
 
 pub use error::Error;
-#[cfg(feature = "in-memory")]
-pub use file_system::InMemoryFileSystem;
-#[cfg(feature = "native")]
-pub use native::NativeFileSystem;
-pub use stream::ChunkStream;
-#[cfg(feature = "native")]
-pub type FileSystem = NativeFileSystem;
-#[cfg(all(not(feature = "native"), feature = "in-memory"))]
-pub type FileSystem = InMemoryFileSystem;
+pub use file_system::FileSystem;
 pub use hash::ContentHash;
+#[cfg(feature = "in-memory")]
+pub use memory_storage::InMemoryStorage;
 pub use metadata::{FileEntry, MergeStrategy};
-pub use transport::{PeerId, Transport};
+#[cfg(feature = "native")]
+pub use native_storage::{NativeStorage, PeerCodec};
+pub use storage::Storage;
+pub use stream::ChunkStream;
+pub use transport::Transport;

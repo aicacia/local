@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeSet,
     fs, io,
+    marker::PhantomData,
     path::{Path, PathBuf},
 };
 
@@ -8,27 +9,38 @@ use automerge::{
     AutoCommit, ObjType, ROOT, ReadDoc, ScalarValue, Value, transaction::Transactable,
 };
 
-use crate::{ChunkStream, ContentHash, FileEntry, MergeStrategy, PeerId};
+use crate::{ChunkStream, ContentHash, FileEntry, MergeStrategy, Storage};
 
 const BLOBS_DIRECTORY: &str = ".lidp/blobs";
 const METADATA_DIRECTORY: &str = ".lidp/metadata";
 const ROOT_DOCUMENT: &str = "root.automerge";
 
-#[derive(Debug)]
-pub struct NativeFileSystem {
-    root: PathBuf,
-    local_peer: PeerId,
+pub trait PeerCodec {
+    type PeerId: Ord + Clone;
+
+    fn encode(peer: &Self::PeerId) -> Vec<u8>;
+    fn decode(bytes: &[u8]) -> io::Result<Self::PeerId>;
 }
 
-impl NativeFileSystem {
-    pub fn new(root: impl AsRef<Path>, local_peer: PeerId) -> io::Result<Self> {
+pub struct NativeStorage<C: PeerCodec> {
+    root: PathBuf,
+    local_peer: C::PeerId,
+    codec: PhantomData<C>,
+}
+
+impl<C: PeerCodec> NativeStorage<C> {
+    pub fn new(root: impl AsRef<Path>, local_peer: C::PeerId) -> io::Result<Self> {
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(root.join(BLOBS_DIRECTORY))?;
         fs::create_dir_all(root.join(METADATA_DIRECTORY))?;
-        Ok(Self { root, local_peer })
+        Ok(Self {
+            root,
+            local_peer,
+            codec: PhantomData,
+        })
     }
 
-    pub fn write(&self, path: &str, content: &[u8]) -> io::Result<FileEntry> {
+    pub fn write(&self, path: &str, content: &[u8]) -> io::Result<FileEntry<C::PeerId>> {
         let (folder, name) = split_path(path)?;
         let hash = ContentHash::of(content);
         let blob_path = self.blob_path(hash);
@@ -37,18 +49,31 @@ impl NativeFileSystem {
         }
         let size = u64::try_from(content.len()).map_err(|_| invalid_data("content exceeds u64"))?;
         let mut providers = BTreeSet::new();
-        providers.insert(self.local_peer);
+        providers.insert(self.local_peer.clone());
         let entry = FileEntry::new(name.into(), hash, size, providers, true);
         self.store_entry(folder, &entry)?;
         Ok(entry)
     }
 
-    pub fn entry(&self, path: &str) -> io::Result<FileEntry> {
+    pub fn register_passthrough(
+        &self,
+        path: &str,
+        hash: ContentHash,
+        size: u64,
+        providers: BTreeSet<C::PeerId>,
+    ) -> io::Result<FileEntry<C::PeerId>> {
+        let (folder, name) = split_path(path)?;
+        let entry = FileEntry::new(name.into(), hash, size, providers, false);
+        self.store_entry(folder, &entry)?;
+        Ok(entry)
+    }
+
+    pub fn entry(&self, path: &str) -> io::Result<FileEntry<C::PeerId>> {
         let (folder, name) = split_path(path)?;
         self.load_entry(folder, name)
     }
 
-    pub fn list(&self, folder: &str) -> io::Result<Vec<FileEntry>> {
+    pub fn list(&self, folder: &str) -> io::Result<Vec<FileEntry<C::PeerId>>> {
         validate_folder(folder)?;
         let document = self.load_document(folder)?;
         document
@@ -95,7 +120,7 @@ impl NativeFileSystem {
         self.root.join(BLOBS_DIRECTORY).join(hash.to_string())
     }
 
-    fn store_entry(&self, folder: &str, entry: &FileEntry) -> io::Result<()> {
+    fn store_entry(&self, folder: &str, entry: &FileEntry<C::PeerId>) -> io::Result<()> {
         let mut document = self.load_document(folder)?;
         let object = match document.get(ROOT, &entry.name).map_err(metadata_error)? {
             Some((Value::Object(ObjType::Map), object)) => object,
@@ -126,17 +151,25 @@ impl NativeFileSystem {
             )
             .map_err(metadata_error)?;
         document
-            .put(&object, "providers", encode_providers(&entry.providers))
+            .put(
+                &object,
+                "providers",
+                encode_providers::<C>(&entry.providers)?,
+            )
             .map_err(metadata_error)?;
         self.save_document(folder, &mut document)
     }
 
-    fn load_entry(&self, folder: &str, name: &str) -> io::Result<FileEntry> {
+    fn load_entry(&self, folder: &str, name: &str) -> io::Result<FileEntry<C::PeerId>> {
         let document = self.load_document(folder)?;
         self.load_entry_from_document(&document, name)
     }
 
-    fn load_entry_from_document(&self, document: &AutoCommit, name: &str) -> io::Result<FileEntry> {
+    fn load_entry_from_document(
+        &self,
+        document: &AutoCommit,
+        name: &str,
+    ) -> io::Result<FileEntry<C::PeerId>> {
         let Some((Value::Object(ObjType::Map), object)) =
             document.get(ROOT, name).map_err(metadata_error)?
         else {
@@ -151,7 +184,7 @@ impl NativeFileSystem {
             .map_err(|_| invalid_data("invalid content hash"))?;
         let size = scalar_uint(document, &object, "size")?;
         let local = scalar_bool(document, &object, "local")?;
-        let providers = decode_providers(&scalar_bytes(document, &object, "providers")?)?;
+        let providers = decode_providers::<C>(&scalar_bytes(document, &object, "providers")?)?;
         let strategy = scalar_string(document, &object, "merge_strategy")?;
         let merge_strategy = match strategy.as_str() {
             "lww" => MergeStrategy::Lww,
@@ -184,6 +217,41 @@ impl NativeFileSystem {
             .ok_or_else(|| invalid_data("metadata path has no parent"))?;
         fs::create_dir_all(parent)?;
         fs::write(path, document.save())
+    }
+}
+
+impl<C: PeerCodec> Storage for NativeStorage<C> {
+    type Error = io::Error;
+    type PeerId = C::PeerId;
+
+    fn write(&mut self, path: &str, content: &[u8]) -> Result<FileEntry<C::PeerId>, Self::Error> {
+        Self::write(self, path, content)
+    }
+
+    fn register_passthrough(
+        &mut self,
+        path: &str,
+        hash: ContentHash,
+        size: u64,
+        providers: BTreeSet<C::PeerId>,
+    ) -> Result<FileEntry<C::PeerId>, Self::Error> {
+        Self::register_passthrough(self, path, hash, size, providers)
+    }
+
+    fn entry(&self, path: &str) -> Result<FileEntry<C::PeerId>, Self::Error> {
+        Self::entry(self, path)
+    }
+
+    fn list(&self, folder: &str) -> Result<Vec<FileEntry<C::PeerId>>, Self::Error> {
+        Self::list(self, folder)
+    }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, Self::Error> {
+        Self::read(self, path)
+    }
+
+    fn stream(&self, path: &str, chunk_size: usize) -> Result<ChunkStream, Self::Error> {
+        Self::stream(self, path, chunk_size)
     }
 }
 
@@ -235,16 +303,37 @@ fn scalar_string(
     }
 }
 
-fn encode_providers(providers: &BTreeSet<PeerId>) -> Vec<u8> {
-    providers.iter().flat_map(|peer| peer.0).collect()
+fn encode_providers<C: PeerCodec>(providers: &BTreeSet<C::PeerId>) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    for peer in providers {
+        let encoded = C::encode(peer);
+        let length = u32::try_from(encoded.len())
+            .map_err(|_| invalid_data("encoded provider exceeds u32"))?;
+        bytes.extend_from_slice(&length.to_be_bytes());
+        bytes.extend_from_slice(&encoded);
+    }
+    Ok(bytes)
 }
 
-fn decode_providers(bytes: &[u8]) -> io::Result<BTreeSet<PeerId>> {
-    let (chunks, remainder) = bytes.as_chunks::<32>();
-    if !remainder.is_empty() {
-        return Err(invalid_data("invalid provider list"));
+fn decode_providers<C: PeerCodec>(bytes: &[u8]) -> io::Result<BTreeSet<C::PeerId>> {
+    let mut providers = BTreeSet::new();
+    let mut bytes = bytes;
+    while !bytes.is_empty() {
+        let length: [u8; 4] = bytes
+            .get(..4)
+            .ok_or_else(|| invalid_data("invalid provider list"))?
+            .try_into()
+            .map_err(|_| invalid_data("invalid provider list"))?;
+        let length = usize::try_from(u32::from_be_bytes(length))
+            .map_err(|_| invalid_data("invalid provider list"))?;
+        bytes = &bytes[4..];
+        let peer = bytes
+            .get(..length)
+            .ok_or_else(|| invalid_data("invalid provider list"))?;
+        providers.insert(C::decode(peer)?);
+        bytes = &bytes[length..];
     }
-    Ok(chunks.iter().copied().map(PeerId).collect())
+    Ok(providers)
 }
 
 fn merge_strategy_name(strategy: MergeStrategy) -> &'static str {
@@ -292,17 +381,32 @@ fn metadata_error(error: automerge::AutomergeError) -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::{env, fs, io};
 
-    use super::NativeFileSystem;
-    use crate::PeerId;
+    use super::{NativeStorage, PeerCodec};
+
+    struct TestCodec;
+
+    impl PeerCodec for TestCodec {
+        type PeerId = [u8; 32];
+
+        fn encode(peer: &Self::PeerId) -> Vec<u8> {
+            peer.to_vec()
+        }
+
+        fn decode(bytes: &[u8]) -> io::Result<Self::PeerId> {
+            bytes
+                .try_into()
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid peer ID"))
+        }
+    }
 
     #[test]
     fn persists_blobs_and_folder_metadata() {
         let root = env::temp_dir().join(format!("file-system-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        let peer = PeerId([4; 32]);
-        let file_system = NativeFileSystem::new(&root, peer).unwrap();
+        let peer = [4; 32];
+        let file_system = NativeStorage::<TestCodec>::new(&root, peer).unwrap();
         let written = file_system.write("notes/today.txt", b"hello").unwrap();
         let metadata_path = file_system.metadata_path("notes").unwrap();
 
@@ -310,7 +414,7 @@ mod tests {
         assert_eq!(file_system.read("notes/today.txt").unwrap(), b"hello");
         drop(file_system);
 
-        let reopened = NativeFileSystem::new(&root, peer).unwrap();
+        let reopened = NativeStorage::<TestCodec>::new(&root, peer).unwrap();
         assert_eq!(reopened.entry("notes/today.txt").unwrap(), written);
         let _ = fs::remove_dir_all(root);
     }
