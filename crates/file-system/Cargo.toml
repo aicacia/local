@@ -17,12 +17,13 @@ default = ["native", "in-memory"]
 in-memory = ["sync"]
 native = ["std", "sync"]
 std = ["blake3/std"]
-sync = ["std", "dep:automerge", "dep:tokio"]
+sync = ["std", "dep:automerge", "dep:percent-encoding", "dep:tokio"]
 
 [dependencies]
 # Metadata
 # Automerge documents persist per-folder file metadata and drive metadata synchronization.
 automerge = { version = "0.11", default-features = false, features = [], optional = true }
+percent-encoding = { version = "2.3", default-features = false, features = [], optional = true }
 
 # Storage
 blake3 = { version = "1.8", default-features = false, features = [] }

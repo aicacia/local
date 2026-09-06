@@ -231,6 +231,73 @@ async fn persists_offline_metadata_across_a_native_restart() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(feature = "native")]
+#[tokio::test]
+async fn persists_root_and_nested_folder_metadata_across_a_native_restart() {
+    let root = env::temp_dir().join(format!("file-system-folders-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let (transport, _remote) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
+    transport.set_online(false).await;
+    let file_system: NativeTestFileSystem =
+        FileSystem::new(NativeStorage::new(&root).unwrap(), TestPeer(1), transport)
+            .await
+            .unwrap();
+
+    file_system.write("root.txt", b"root").await.unwrap();
+    file_system
+        .write("notes/projects/lidp.txt", b"nested")
+        .await
+        .unwrap();
+    drop(file_system);
+
+    let (left_transport, right_transport) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
+    let file_system: NativeTestFileSystem = FileSystem::new(
+        NativeStorage::new(&root).unwrap(),
+        TestPeer(1),
+        left_transport,
+    )
+    .await
+    .unwrap();
+    let remote: TestFileSystem =
+        FileSystem::new(InMemoryStorage::new(), TestPeer(2), right_transport)
+            .await
+            .unwrap();
+
+    assert_eq!(file_system.read("root.txt").await.unwrap(), b"root");
+    assert_eq!(
+        file_system.read("notes/projects/lidp.txt").await.unwrap(),
+        b"nested"
+    );
+    assert_eq!(file_system.list("").await.unwrap().len(), 1);
+    assert_eq!(file_system.list("notes/projects").await.unwrap().len(), 1);
+
+    for _ in 0..100 {
+        if remote.entry("root.txt").await.is_ok()
+            && remote.entry("notes/projects/lidp.txt").await.is_ok()
+        {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        remote.start_read("root.txt").await.unwrap().await.unwrap(),
+        b"root"
+    );
+    assert_eq!(
+        remote
+            .start_read("notes/projects/lidp.txt")
+            .await
+            .unwrap()
+            .await
+            .unwrap(),
+        b"nested"
+    );
+
+    drop(remote);
+    drop(file_system);
+    let _ = fs::remove_dir_all(root);
+}
+
 async fn next(
     stream: &mut file_system::ReadStream<file_system::Error>,
 ) -> Option<Result<Vec<u8>, file_system::ReadError<file_system::Error>>> {

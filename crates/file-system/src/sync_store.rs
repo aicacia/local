@@ -4,11 +4,13 @@ use alloc::{
 };
 
 use automerge::AutoCommit;
+use percent_encoding::{NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 
 use crate::Storage;
 
 const DOCUMENTS_DIRECTORY: &str = ".sync/documents";
 const DIRTY_DIRECTORY: &str = ".sync/dirty";
+const ROOT_FOLDER_KEY: &str = "@root";
 
 pub(crate) enum SyncStoreError<E> {
     Storage(E),
@@ -38,7 +40,10 @@ impl<'a, S: Storage> SyncStore<'a, S> {
             .await
             .map_err(SyncStoreError::Storage)?
         {
-            let Some(folder) = path.strip_prefix(&documents_prefix) else {
+            let Some(key) = path.strip_prefix(&documents_prefix) else {
+                continue;
+            };
+            let Some(folder) = decode_folder_key(key) else {
                 continue;
             };
             let bytes = self
@@ -47,7 +52,7 @@ impl<'a, S: Storage> SyncStore<'a, S> {
                 .await
                 .map_err(SyncStoreError::Storage)?;
             let document = AutoCommit::load(&bytes).map_err(SyncStoreError::Metadata)?;
-            documents.insert(folder.to_string(), document);
+            documents.insert(folder, document);
         }
         let dirty_prefix = format!("{DIRTY_DIRECTORY}/");
         let dirty = self
@@ -56,7 +61,7 @@ impl<'a, S: Storage> SyncStore<'a, S> {
             .await
             .map_err(SyncStoreError::Storage)?
             .into_iter()
-            .filter_map(|path| path.strip_prefix(&dirty_prefix).map(ToString::to_string))
+            .filter_map(|path| path.strip_prefix(&dirty_prefix).and_then(decode_folder_key))
             .collect();
         Ok(SyncState {
             documents,
@@ -80,9 +85,23 @@ impl<'a, S: Storage> SyncStore<'a, S> {
 }
 
 fn document_path(folder: &str) -> String {
-    format!("{DOCUMENTS_DIRECTORY}/{folder}")
+    format!("{DOCUMENTS_DIRECTORY}/{}", encode_folder_key(folder))
 }
 
 fn dirty_path(folder: &str) -> String {
-    format!("{DIRTY_DIRECTORY}/{folder}")
+    format!("{DIRTY_DIRECTORY}/{}", encode_folder_key(folder))
+}
+
+fn encode_folder_key(folder: &str) -> String {
+    if folder.is_empty() {
+        return ROOT_FOLDER_KEY.to_string();
+    }
+    utf8_percent_encode(folder, NON_ALPHANUMERIC).to_string()
+}
+
+fn decode_folder_key(key: &str) -> Option<String> {
+    if key == ROOT_FOLDER_KEY {
+        return Some(String::new());
+    }
+    String::from_utf8(percent_decode_str(key).collect()).ok()
 }
