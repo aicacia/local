@@ -4,3 +4,4 @@
 !/.env.example
 /lidp.db
 /.keys
+/vaults

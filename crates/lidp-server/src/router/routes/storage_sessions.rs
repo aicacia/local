@@ -11,7 +11,7 @@ use crate::router::{RouterState, authorize_bearer};
     responses((status = 200, description = "Storage session", body = StorageSession)),
     security(("authorization" = []))
 )]
-pub(crate) async fn create_storage_session(
+pub async fn create_storage_session(
     State(state): State<RouterState>,
     headers: HeaderMap,
 ) -> Result<Json<StorageSession>, ErrorResponse> {

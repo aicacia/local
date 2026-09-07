@@ -10,4 +10,5 @@ pub use cli::run;
 pub use config::AppConfig;
 pub use router::{
     RouterState, StorageScopeResolver, authorize_bearer, openapi_router, storage_router,
+    storage_session_openapi_router,
 };

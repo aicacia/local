@@ -118,6 +118,8 @@ pub async fn run() -> io::Result<()> {
         storage_sessions.clone(),
         Arc::new(LibSqlUserDeviceRepo::new(database.clone())),
     );
+    let storage_session_router =
+        lidp_server::storage_session_openapi_router(lidp_router_state.clone());
     let lidp_router = lidp_server::openapi_router(lidp_router_state, "/lidp");
 
     let management_service = Arc::new(ManagementService::new(
@@ -134,7 +136,7 @@ pub async fn run() -> io::Result<()> {
     let management_router =
         lidp_management_server::openapi_router(management_router_state, "/lidp-management");
 
-    let router = openapi_router(lidp_router, management_router)
+    let router = openapi_router(lidp_router, management_router, storage_session_router)
         .split_for_parts()
         .0
         .merge(lidp_server::storage_router(storage_sessions, file_systems))

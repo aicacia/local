@@ -45,6 +45,12 @@ use super::routes::well_known::{
 )]
 pub(crate) struct ApiDoc;
 
+pub fn storage_session_openapi_router(router_state: RouterState) -> OpenApiRouter {
+    OpenApiRouter::new()
+        .routes(routes!(create_storage_session))
+        .with_state(router_state)
+}
+
 pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter {
     let prefix = if prefix == "/" { "" } else { prefix };
     let api_base_uri = router_state.api_base_uri.clone();
