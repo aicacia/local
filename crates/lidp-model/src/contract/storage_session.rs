@@ -6,4 +6,5 @@ use serde::{Deserialize, Serialize};
 pub struct StorageSession {
     pub token: String,
     pub expires_at: i64,
+    pub application_id: i64,
 }

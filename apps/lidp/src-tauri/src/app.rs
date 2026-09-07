@@ -24,6 +24,7 @@ use crate::localhost_server::{
 };
 use crate::{
     device_identity::DeviceIdentity,
+    hosted_control_plane::HostedControlPlane,
     scoped_transport::{AppFileSystemRuntime, IrohTransportFactory, TunnelContext},
     tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer},
 };
@@ -38,6 +39,7 @@ pub fn init_router(
     app_config: Arc<AppConfig>,
     database: Arc<Database>,
     file_systems: Arc<AppFileSystemRuntime>,
+    control_plane: Option<Arc<HostedControlPlane>>,
 ) -> io::Result<(Router, Arc<RouterState>)> {
     let key_service = Arc::new(KeyService::new(
         LibSqlKeyRepo::new(database.clone()),
@@ -60,14 +62,18 @@ pub fn init_router(
     ));
 
     let storage_sessions = Arc::new(StorageSessionService::new());
-    let router_state = Arc::new(RouterState::new(
+    let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,
         database.clone(),
         oauth2_service.clone(),
         storage_sessions.clone(),
         Arc::new(LibSqlUserDeviceRepo::new(database.clone())),
-    ));
+    );
+    let router_state = Arc::new(match control_plane {
+        Some(control_plane) => router_state.with_storage_scope_resolver(control_plane),
+        None => router_state,
+    });
     let lidp_router = lidp_server::openapi_router(router_state.as_ref().clone(), "");
     let management_service = Arc::new(ManagementService::new(
         LibSqlApplicationRepo::new(database.clone()),
@@ -223,7 +229,7 @@ pub async fn set_localhost_server_state(
 
 pub async fn init_scoped_file_system_runtime(
     app_handle: &AppHandle<Wry>,
-    app_config: &AppConfig,
+    _: &AppConfig,
 ) -> tauri::Result<()> {
     let data_dir = app_handle.path().app_data_dir()?;
     let context = TunnelContext::default();
@@ -233,7 +239,6 @@ pub async fn init_scoped_file_system_runtime(
         .endpoint_id();
     let runtime = AppFileSystemRuntime::new(
         data_dir,
-        &app_config.oauth2.issuer,
         local_peer,
         IrohTransportFactory::new(context.clone()),
     )
@@ -257,6 +262,7 @@ pub async fn init_device_identity(
 pub fn init_tunnel_manager(
     app_handle: &AppHandle<Wry>,
     state: Arc<RouterState>,
+    control_plane: Option<Arc<HostedControlPlane>>,
 ) -> tauri::Result<()> {
     let identity = app_handle
         .try_state::<Arc<DeviceIdentity>>()
@@ -265,7 +271,7 @@ pub fn init_tunnel_manager(
     let manager = Arc::new(DeviceTunnelManager::new(
         identity.endpoint(),
         allowlist.clone(),
-        LidpTunnelAuthorizer::new(state.clone()),
+        LidpTunnelAuthorizer::new(state.clone(), control_plane.clone()),
     ));
     let listener = Arc::clone(&manager);
     tauri::async_runtime::spawn(async move {
@@ -275,7 +281,12 @@ pub fn init_tunnel_manager(
     app_handle
         .try_state::<TunnelContext>()
         .ok_or_else(|| tauri::Error::Io(io::Error::other("tunnel context is missing")))?
-        .set(Arc::clone(&manager), Arc::clone(&allowlist), state);
+        .set(
+            Arc::clone(&manager),
+            Arc::clone(&allowlist),
+            state,
+            control_plane,
+        );
     app_handle.manage(allowlist);
     app_handle.manage(manager);
     Ok(())
@@ -309,7 +320,6 @@ pub fn app_config_for_localhost_base_url(
     base_url: &str,
 ) -> Arc<AppConfig> {
     let mut config = app_config.as_ref().clone();
-    config.oauth2.issuer = base_url.to_owned();
     config.ui_public_uri = base_url.to_owned();
     config.api_public_uri = base_url.to_owned();
     config.bootstrap.lidp_url = base_url.to_owned();

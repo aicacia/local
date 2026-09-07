@@ -6,17 +6,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use file_system::{EncryptedStorage, FileSystem, NativeStorage};
 use iroh::{EndpointAddr, EndpointId};
 use iroh_chain::{DynamicEndpointIdStore, VaultId};
 use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, TunnelAuthorizationProvider};
 use lidp_model::contract::TunnelAuthorizationRequest;
 use lidp_service::{
     repo::UserDeviceRepo,
-    scoped_file_system::{ScopedFileSystemRuntime, ScopedTransportFactory},
+    scoped_file_system::{ScopedFileSystem, ScopedFileSystemRuntime, ScopedTransportFactory},
     storage_session::StorageScope,
 };
 
+use crate::hosted_control_plane::HostedControlPlane;
 use crate::tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer};
 
 type AppTransport =
@@ -27,6 +27,7 @@ type TunnelParts = (
     Arc<DeviceTunnelManager>,
     Arc<DynamicEndpointIdStore>,
     Arc<lidp_server::RouterState>,
+    Option<Arc<HostedControlPlane>>,
 );
 
 #[derive(Clone, Default)]
@@ -40,9 +41,10 @@ impl TunnelContext {
         manager: Arc<DeviceTunnelManager>,
         allowlist: Arc<DynamicEndpointIdStore>,
         state: Arc<lidp_server::RouterState>,
+        control_plane: Option<Arc<HostedControlPlane>>,
     ) {
         *self.inner.lock().expect("tunnel context lock poisoned") =
-            Some((manager, allowlist, state));
+            Some((manager, allowlist, state, control_plane));
     }
 
     fn get(&self) -> Result<TunnelParts, String> {
@@ -73,7 +75,7 @@ impl IrohTransportFactory {
 
 impl ScopedTransportFactory<EndpointIdCodec, AppTransport> for IrohTransportFactory {
     fn create(&self, scope: &StorageScope) -> Result<AppTransport, String> {
-        let (manager, _, state) = self.context.get()?;
+        let (manager, _, state, control_plane) = self.context.get()?;
         let vault_id = VaultId::from_application(&scope.user_sub, scope.application_id);
         let transport = AppTransport::new(
             (*manager).clone(),
@@ -81,6 +83,7 @@ impl ScopedTransportFactory<EndpointIdCodec, AppTransport> for IrohTransportFact
             LidpTunnelAuthorization {
                 state,
                 scope: scope.clone(),
+                control_plane,
             },
         );
         self.transports
@@ -93,9 +96,7 @@ impl ScopedTransportFactory<EndpointIdCodec, AppTransport> for IrohTransportFact
     fn synchronize(
         &self,
         scope: StorageScope,
-        file_system: Arc<
-            FileSystem<EncryptedStorage<NativeStorage>, EndpointIdCodec, AppTransport>,
-        >,
+        file_system: Arc<ScopedFileSystem<EndpointIdCodec, AppTransport>>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>> {
         let context = self.context.clone();
         let scope_key = scope_key(&scope);
@@ -111,11 +112,14 @@ impl ScopedTransportFactory<EndpointIdCodec, AppTransport> for IrohTransportFact
             .expect("transport listeners lock poisoned")
             .insert(scope_key.clone());
         Box::pin(async move {
-            let (manager, allowlist, _) = context.get()?;
+            let (manager, allowlist, _, control_plane) = context.get()?;
             let transport = transport.ok_or_else(|| "transport is missing".to_owned())?;
             let local_id = manager.endpoint().id();
-            let endpoints = scope
-                .trusted_devices
+            let trusted_devices = match control_plane {
+                Some(control_plane) => control_plane.trusted_devices(&scope.access_token).await?,
+                None => scope.trusted_devices,
+            };
+            let endpoints = trusted_devices
                 .iter()
                 .filter_map(|device| {
                     let endpoint = serde_json::from_str::<EndpointAddr>(&device.address).ok()?;
@@ -155,6 +159,7 @@ impl ScopedTransportFactory<EndpointIdCodec, AppTransport> for IrohTransportFact
 pub(crate) struct LidpTunnelAuthorization {
     state: Arc<lidp_server::RouterState>,
     scope: StorageScope,
+    control_plane: Option<Arc<HostedControlPlane>>,
 }
 
 impl TunnelAuthorizationProvider for LidpTunnelAuthorization {
@@ -166,7 +171,22 @@ impl TunnelAuthorizationProvider for LidpTunnelAuthorization {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
         let state = Arc::clone(&self.state);
         let scope = self.scope.clone();
+        let control_plane = self.control_plane.clone();
         Box::pin(async move {
+            if let Some(control_plane) = control_plane {
+                let authorization = control_plane
+                    .tunnel_authorization(
+                        &scope.access_token,
+                        TunnelAuthorizationRequest {
+                            vault_id_hash: vault_id.hash(),
+                            local_public_key: local_id.to_string(),
+                            remote_public_key: remote_id.to_string(),
+                        },
+                    )
+                    .await
+                    .map_err(|_| Error::new(ErrorKind::PermissionDenied, "grant was rejected"))?;
+                return Ok(authorization.token.into_bytes());
+            }
             let approved = state
                 .user_devices
                 .are_approved_by_user_id(

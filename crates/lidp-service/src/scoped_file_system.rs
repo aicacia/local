@@ -9,13 +9,11 @@ use std::{
     task::{Context, Poll},
 };
 
-use file_system::{EncryptedStorage, FileSystem, NativeStorage, PeerCodec, Transport};
+use file_system::{FileSystem, NativeStorage, PeerCodec, Transport};
 use futures_core::Stream;
 use tokio::sync::{Mutex, mpsc};
 
-use crate::{repo::RawKeyringRepo, storage_session::StorageScope};
-
-const VAULT_KEY_NAME: &str = "vault-key";
+use crate::storage_session::StorageScope;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct StorageScopeId {
@@ -23,7 +21,7 @@ struct StorageScopeId {
     application_id: i64,
 }
 
-pub type ScopedFileSystem<C, T> = FileSystem<EncryptedStorage<NativeStorage>, C, T>;
+pub type ScopedFileSystem<C, T> = FileSystem<NativeStorage, C, T>;
 pub type LocalScopedFileSystem = ScopedFileSystem<LocalPeerCodec, LocalTransport>;
 pub type LocalScopedFileSystemRuntime =
     ScopedFileSystemRuntime<LocalPeerCodec, LocalTransport, LocalTransportFactory>;
@@ -49,7 +47,6 @@ where
     F: ScopedTransportFactory<C, T>,
 {
     root: PathBuf,
-    keyring: RawKeyringRepo,
     local_peer: C::PeerId,
     transport_factory: F,
     file_systems: Mutex<BTreeMap<StorageScopeId, Arc<ScopedFileSystem<C, T>>>>,
@@ -65,16 +62,10 @@ where
     T::Incoming: Send + 'static,
     F: ScopedTransportFactory<C, T>,
 {
-    pub fn new(
-        root: PathBuf,
-        keyring_service_name: impl Into<String>,
-        local_peer: C::PeerId,
-        transport_factory: F,
-    ) -> io::Result<Self> {
+    pub fn new(root: PathBuf, local_peer: C::PeerId, transport_factory: F) -> io::Result<Self> {
         std::fs::create_dir_all(&root)?;
         Ok(Self {
             root,
-            keyring: RawKeyringRepo::new(keyring_service_name),
             local_peer,
             transport_factory,
             file_systems: Mutex::new(BTreeMap::new()),
@@ -92,7 +83,6 @@ where
                 .await?;
             return Ok(file_system);
         }
-        let key = self.load_or_create_key(&id)?;
         let storage = NativeStorage::new(
             self.root
                 .join("vaults")
@@ -102,7 +92,7 @@ where
         .map_err(|error| error.to_string())?;
         let file_system = Arc::new(
             FileSystem::new(
-                EncryptedStorage::new(storage, key),
+                storage,
                 self.local_peer.clone(),
                 self.transport_factory.create(scope)?,
             )
@@ -115,25 +105,6 @@ where
             .synchronize(scope.clone(), Arc::clone(&file_system))
             .await?;
         Ok(file_system)
-    }
-
-    fn load_or_create_key(&self, id: &StorageScopeId) -> Result<[u8; 32], String> {
-        let application_id = id.application_id.to_string();
-        if let Some(key) = self
-            .keyring
-            .load(&id.user_sub, &application_id, VAULT_KEY_NAME)
-            .map_err(|error| error.to_string())?
-        {
-            return key
-                .try_into()
-                .map_err(|_| "invalid vault key length".to_string());
-        }
-        let mut key = [0_u8; 32];
-        getrandom::fill(&mut key).map_err(|error| error.to_string())?;
-        self.keyring
-            .store(&id.user_sub, &application_id, VAULT_KEY_NAME, &key)
-            .map_err(|error| error.to_string())?;
-        Ok(key)
     }
 }
 
@@ -225,5 +196,56 @@ impl Transport for LocalTransport {
             .await
             .take()
             .expect("local transport subscribed twice"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs};
+
+    use super::{LocalPeer, LocalScopedFileSystemRuntime, LocalTransportFactory};
+    use crate::storage_session::StorageScope;
+
+    fn scope() -> StorageScope {
+        StorageScope {
+            user_sub: "user".into(),
+            application_id: 1,
+            principal_key_id: 1,
+            trusted_devices: Vec::new(),
+            access_token: "token".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn persists_scoped_native_storage_without_a_keyring() {
+        let root = env::temp_dir().join(format!("scoped-file-system-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let scope = scope();
+        let runtime =
+            LocalScopedFileSystemRuntime::new(root.clone(), LocalPeer, LocalTransportFactory)
+                .unwrap();
+        runtime
+            .open(&scope)
+            .await
+            .unwrap()
+            .write("notes/today.txt", b"hello")
+            .await
+            .unwrap();
+        drop(runtime);
+
+        let runtime =
+            LocalScopedFileSystemRuntime::new(root.clone(), LocalPeer, LocalTransportFactory)
+                .unwrap();
+        assert_eq!(
+            runtime
+                .open(&scope)
+                .await
+                .unwrap()
+                .read("notes/today.txt")
+                .await
+                .unwrap(),
+            b"hello"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

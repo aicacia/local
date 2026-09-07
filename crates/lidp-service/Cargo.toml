@@ -26,7 +26,7 @@ std = [
   "serde/std",
   "serde_json/std",
   "log/std",
-  "file-system/crypto",
+
   "file-system/native",
   "file-system/sync",
 ]

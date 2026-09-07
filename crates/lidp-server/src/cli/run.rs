@@ -105,13 +105,8 @@ pub async fn run() -> io::Result<()> {
         .unwrap_or(Path::new("."))
         .to_path_buf();
     let file_systems = Arc::new(
-        LocalScopedFileSystemRuntime::new(
-            storage_root,
-            &app_config.oauth2.issuer,
-            LocalPeer,
-            LocalTransportFactory,
-        )
-        .map_err(io::Error::other)?,
+        LocalScopedFileSystemRuntime::new(storage_root, LocalPeer, LocalTransportFactory)
+            .map_err(io::Error::other)?,
     );
     let router_state = RouterState::new(
         &app_config.ui_public_uri,

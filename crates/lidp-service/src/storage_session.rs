@@ -52,6 +52,7 @@ impl StorageSessionService {
 
     pub fn issue(&self, scope: StorageScope) -> Result<StorageSession, getrandom::Error> {
         let expires_at = now().saturating_add(TOKEN_TTL.as_secs() as i64);
+        let application_id = scope.application_id;
         let mut bytes = [0_u8; TOKEN_BYTES];
         getrandom::fill(&mut bytes)?;
         let token = URL_SAFE_NO_PAD.encode(bytes);
@@ -61,7 +62,11 @@ impl StorageSessionService {
             .expect("storage sessions lock poisoned");
         sessions.retain(|_, (_, expiration)| *expiration > now());
         sessions.insert(token.clone(), (scope, expires_at));
-        Ok(StorageSession { token, expires_at })
+        Ok(StorageSession {
+            token,
+            expires_at,
+            application_id,
+        })
     }
 
     pub fn take(&self, token: &str) -> Option<StorageScope> {
@@ -97,6 +102,7 @@ mod tests {
                 access_token: "token".into(),
             })
             .unwrap();
+        assert_eq!(issued.application_id, 1);
 
         assert_eq!(
             sessions.take(&issued.token),

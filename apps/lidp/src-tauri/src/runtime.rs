@@ -3,6 +3,7 @@ use tauri::{Manager, Window, WindowEvent, Wry};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::app;
+use crate::hosted_control_plane::HostedControlPlane;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -56,6 +57,13 @@ pub fn run() {
                     .expect("unified localhost server must reserve");
                 app::set_localhost_server_state(&app_handle, base_url.clone(), false).await;
                 let runtime_config = app::app_config_for_localhost_base_url(app_config, &base_url);
+                let control_plane = runtime_config
+                    .control_plane_uri
+                    .as_deref()
+                    .map(HostedControlPlane::new)
+                    .transpose()
+                    .expect("control plane URI must be valid")
+                    .map(std::sync::Arc::new);
 
                 let database = app::init_datebase(app_handle.clone(), runtime_config.clone())
                     .await
@@ -65,10 +73,14 @@ pub fn run() {
                     .expect("vault runtime must initialize")
                     .inner()
                     .clone();
-                let (router, router_state) =
-                    app::init_router(runtime_config, database, file_systems)
-                        .expect("router must initialize");
-                app::init_tunnel_manager(&app_handle, router_state)
+                let (router, router_state) = app::init_router(
+                    runtime_config,
+                    database,
+                    file_systems,
+                    control_plane.clone(),
+                )
+                .expect("router must initialize");
+                app::init_tunnel_manager(&app_handle, router_state, control_plane)
                     .expect("tunnel manager must initialize");
                 app::init_unified_localhost_server(&app_handle, router, listener, base_url)
                     .await

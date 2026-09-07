@@ -10,17 +10,21 @@ use lidp_service::oauth2::{decode_jwt, verify_tunnel_authorization};
 
 use lidp_server::RouterState;
 
+use crate::hosted_control_plane::HostedControlPlane;
+
 pub struct LidpTunnelAuthorizer {
     state: Arc<RouterState>,
+    control_plane: Option<Arc<HostedControlPlane>>,
     used: std::sync::Mutex<BTreeMap<String, i64>>,
 }
 
 pub type DeviceTunnelManager = Server<DynamicEndpointIdStore, LidpTunnelAuthorizer>;
 
 impl LidpTunnelAuthorizer {
-    pub const fn new(state: Arc<RouterState>) -> Self {
+    pub fn new(state: Arc<RouterState>, control_plane: Option<Arc<HostedControlPlane>>) -> Self {
         Self {
             state,
+            control_plane,
             used: std::sync::Mutex::new(BTreeMap::new()),
         }
     }
@@ -37,6 +41,18 @@ impl TunnelAuthorizer for LidpTunnelAuthorizer {
         let Ok(token) = std::str::from_utf8(authorization) else {
             return false;
         };
+        if let Some(control_plane) = &self.control_plane {
+            let Ok(claims) = control_plane
+                .verifies_tunnel_authorization(token, &vault_id.hash(), initiating_id, accepting_id)
+                .await
+            else {
+                return false;
+            };
+            let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+                return false;
+            };
+            return consume(&self.used, token, claims.exp, now.as_secs() as i64);
+        }
         let Ok((header, claims)) = decode_jwt::<TunnelAuthorizationClaims>(token) else {
             return false;
         };

@@ -20,7 +20,7 @@ use lidp_service::{
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
         LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
-    scoped_file_system::ScopedFileSystemRuntime,
+    scoped_file_system::{LocalPeer, LocalScopedFileSystemRuntime, LocalTransportFactory},
     storage_session::StorageSessionService,
 };
 use tokio::{select, spawn, time::sleep};
@@ -107,7 +107,7 @@ pub async fn run() -> io::Result<()> {
         .unwrap_or(Path::new("."))
         .to_path_buf();
     let file_systems = Arc::new(
-        ScopedFileSystemRuntime::new(storage_root, &app_config.oauth2.issuer)
+        LocalScopedFileSystemRuntime::new(storage_root, LocalPeer, LocalTransportFactory)
             .map_err(io::Error::other)?,
     );
     let lidp_router_state = lidp_server::RouterState::new(
