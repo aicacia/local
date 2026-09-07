@@ -7,9 +7,11 @@ use crate::RouterState;
 
 use super::openapi::{__path_openapi_json, openapi_json};
 use super::routes::devices::{
-    __path_approve_device, __path_enroll_device, __path_list_devices, __path_revoke_device,
-    __path_trusted_devices, __path_update_device, approve_device, enroll_device, list_devices,
-    revoke_device, trusted_devices, update_device,
+    __path_approve_device, __path_create_pairing_invitation, __path_enroll_device,
+    __path_list_devices, __path_pairing_approval_payload, __path_redeem_pairing_invitation,
+    __path_revoke_device, __path_trusted_devices, __path_update_device, approve_device,
+    create_pairing_invitation, enroll_device, list_devices, pairing_approval_payload,
+    redeem_pairing_invitation, revoke_device, trusted_devices, update_device,
 };
 use super::routes::health::{__path_health, health};
 use super::routes::oauth2::approvals::{
@@ -60,6 +62,9 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(health))
             .routes(routes!(trusted_devices))
             .routes(routes!(enroll_device))
+            .routes(routes!(create_pairing_invitation))
+            .routes(routes!(redeem_pairing_invitation))
+            .routes(routes!(pairing_approval_payload))
             .routes(routes!(approve_device))
             .routes(routes!(list_devices))
             .routes(routes!(update_device))

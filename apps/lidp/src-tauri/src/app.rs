@@ -202,6 +202,14 @@ pub fn get_device_endpoint_address(app_handle: AppHandle<Wry>) -> Result<String,
         .endpoint_address()
 }
 
+#[tauri::command]
+pub fn sign_device_message(app_handle: AppHandle<Wry>, message: String) -> Result<String, String> {
+    app_handle
+        .try_state::<Arc<DeviceIdentity>>()
+        .map(|identity| identity.sign(message.as_bytes()))
+        .ok_or_else(|| "device identity is missing".to_owned())
+}
+
 pub async fn localhost_server_base_url_for(app_handle: &AppHandle<Wry>) -> String {
     if let Some(state) = app_handle.try_state::<Mutex<LocalhostServerState>>() {
         let state = state.lock().await;

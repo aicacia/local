@@ -16,6 +16,7 @@ mod device_authorization_request;
 mod device_enrollment;
 mod device_enrollment_request;
 mod device_info;
+mod device_pairing;
 mod entity_type;
 mod error_code;
 mod error_response;
@@ -69,6 +70,11 @@ pub use device_authorization_request::DeviceAuthorizationRequest;
 pub use device_enrollment::DeviceEnrollment;
 pub use device_enrollment_request::DeviceEnrollmentRequest;
 pub use device_info::DeviceInfo;
+pub use device_pairing::{
+    DevicePairingApprovalPayload, DevicePairingApprovalRequest, DevicePairingInvitation,
+    DevicePairingInvitationRequest, DevicePairingRedemptionRequest,
+    device_pairing_approval_payload,
+};
 pub use entity_type::EntityType;
 pub use error_code::ErrorCode;
 pub use error_response::{ErrorResponse, ErrorResponseResult};

@@ -72,6 +72,22 @@ CREATE UNIQUE INDEX `idx_user_devices_user_public_key`
 CREATE INDEX `idx_user_devices_user_state`
     ON `user_devices`(`user_id`, `state`);
 
+CREATE TABLE device_pairing_invitations (
+    `id` INTEGER PRIMARY KEY,
+    `user_id` INTEGER NOT NULL
+        REFERENCES `users`(`id`) ON DELETE CASCADE,
+    `initiating_public_key` TEXT NOT NULL,
+    `secret_hash` BLOB NOT NULL UNIQUE,
+    `expires_at` INTEGER NOT NULL,
+    `redeemed_at` INTEGER,
+    `enrollment_device_id` INTEGER UNIQUE
+        REFERENCES `user_devices`(`id`) ON DELETE SET NULL,
+    `created_at` INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT;
+
+CREATE INDEX `idx_device_pairing_invitations_enrollment`
+    ON `device_pairing_invitations`(`enrollment_device_id`);
+
 CREATE TABLE user_phone_numbers (
     `id` INTEGER PRIMARY KEY,
 

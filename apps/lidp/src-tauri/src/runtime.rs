@@ -25,6 +25,7 @@ pub fn run() {
             app::get_device_endpoint_id,
             app::get_device_endpoint_address,
             app::get_localhost_server_base_url,
+            app::sign_device_message,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

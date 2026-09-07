@@ -4403,6 +4403,7 @@ name = "lidp"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "db",
  "file-system",
  "futures-core",
@@ -4539,6 +4540,7 @@ dependencies = [
  "file-system",
  "futures-core",
  "getrandom 0.3.4",
+ "iroh",
  "k256",
  "key",
  "keyring-core",
