@@ -3,9 +3,9 @@ import {
     type ConfigurationParameters,
     DefaultApi,
 } from "@aicacia/lidp-client";
-import { createNativeFetch } from "@aicacia/native-fetch";
+
 import { createStorage } from "@aicacia/svelte-headless";
-import { isTauri } from "@tauri-apps/api/core";
+
 import { goto } from "$app/navigation";
 import { resolve } from "$app/paths";
 import { page } from "$app/state";
@@ -13,11 +13,12 @@ import { env } from "$env/dynamic/public";
 import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
-const lidpApiUrl = createStorage<string>(
-    "lidp-api-url",
-    (isTauri() ? "lidp://app" : env.PUBLIC_LIDP_BASE_URL) ?? "lidp://app",
-);
-let lidpApiIsNative = $derived.by(() => lidpApiUrl.item?.startsWith("lidp:"));
+const defaultLidpApiUrl = env.PUBLIC_LIDP_BASE_URL ?? "";
+const lidpApiUrl = createStorage<string>("lidp-api-url", defaultLidpApiUrl);
+
+if (!isHttpUrl(lidpApiUrl.item)) {
+    lidpApiUrl.item = isHttpUrl(defaultLidpApiUrl) ? defaultLidpApiUrl : "";
+}
 
 export const defaultConfigurationParameters: ConfigurationParameters = {
     middleware: [
@@ -40,11 +41,7 @@ export const defaultConfigurationParameters: ConfigurationParameters = {
             },
         },
     ],
-    get fetchApi() {
-        return lidpApiIsNative
-            ? createNativeFetch(lidpApiUrl.item ?? "lidp://app")
-            : fetch;
-    },
+    fetchApi: fetch,
     accessToken(_name, _scopes) {
         return getOidcClient().getStoredTokenResponse()?.access_token ?? "";
     },
@@ -61,14 +58,26 @@ export const lidpConfiguration = new Configuration(
 export const lidpApi = new DefaultApi(lidpConfiguration);
 
 export function setLidpApiUrl(newLidpApiUrl: string) {
+    if (!isHttpUrl(newLidpApiUrl)) {
+        throw new Error("LIDP API URL must use HTTP or HTTPS");
+    }
     lidpApiUrl.item = newLidpApiUrl;
 }
+
 export function getLidpApiUrl(): string | null {
-    return lidpApiUrl.item;
+    return isHttpUrl(lidpApiUrl.item) ? lidpApiUrl.item : null;
 }
 
-export function isLidpApiNative(): boolean {
-    return lidpApiIsNative;
+function isHttpUrl(value: string | null | undefined): value is string {
+    if (!value) {
+        return false;
+    }
+    try {
+        const url = new URL(value);
+        return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+        return false;
+    }
 }
 
 export async function validateLidpApiUrl(basePath: string): Promise<boolean> {

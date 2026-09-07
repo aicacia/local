@@ -120,9 +120,6 @@ importers:
       '@aicacia/lidp-management-client':
         specifier: workspace:*
         version: link:../../packages/lidp-management-client
-      '@aicacia/native-fetch':
-        specifier: workspace:*
-        version: link:../../packages/native-fetch
       '@aicacia/oidc-client':
         specifier: workspace:*
         version: link:../../packages/oidc-client
@@ -169,9 +166,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.3(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0)(yaml@2.9.0))
-      '@tauri-apps/api':
-        specifier: ^2.11.1
-        version: 2.11.1
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.2

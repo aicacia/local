@@ -23,13 +23,6 @@ async function signIn(authority: string): Promise<void> {
     }
 }
 
-async function signInWithDesktopApp(event: Event): Promise<void> {
-    event.preventDefault();
-    error = null;
-
-    await signIn("lidp://app");
-}
-
 async function signInWithRemoteServer(event: Event): Promise<void> {
     event.preventDefault();
     const authority = remoteUrl.trim();
@@ -42,14 +35,10 @@ async function signInWithRemoteServer(event: Event): Promise<void> {
 </script>
 
 <form class="flex flex-col">
-	<button class="btn primary mt-4" type="button" onclick={signInWithDesktopApp}>
-		Sign in with desktop app
-	</button>
-
-	<label class="mt-4" for="remote-url">Remote identity provider URL</label>
-	<input id="remote-url" bind:value={remoteUrl} type="url" placeholder="https://example.com/lidp" />
+	<label for="remote-url">LIDP server URL</label>
+	<input id="remote-url" bind:value={remoteUrl} required type="url" placeholder="https://example.com/lidp" />
 	<button class="btn primary mt-2" type="button" onclick={signInWithRemoteServer}>
-		Sign in with remote server
+		Sign in
 	</button>
 	{#if error}
 		<p class="mt-2 text-sm text-red-600" role="alert">{error}</p>
