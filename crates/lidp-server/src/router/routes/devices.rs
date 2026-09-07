@@ -19,8 +19,13 @@ use crate::router::{RouterState, middleware::StandardAuthorization};
 )]
 pub(crate) async fn trusted_devices(
     State(state): State<RouterState>,
-    StandardAuthorization { principal, .. }: StandardAuthorization,
+    StandardAuthorization {
+        claims, principal, ..
+    }: StandardAuthorization,
 ) -> Result<Json<Vec<TrustedDevice>>, ErrorResponse> {
+    if !claims.scope.iter().any(|scope| scope == "storage") {
+        return Err(ErrorResponse::new(ErrorCode::AccessDenied));
+    }
     let devices = state
         .user_devices
         .list_approved_by_user_id(principal.get_entity_id())

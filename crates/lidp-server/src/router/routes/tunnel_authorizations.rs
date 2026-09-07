@@ -42,9 +42,13 @@ pub(crate) async fn create_tunnel_authorization(
     if !approved {
         return Err(ErrorResponse::new(ErrorCode::AccessDenied));
     }
+    let application_id = state
+        .oauth2_service
+        .application_id_for_client(&claims.aud)
+        .await?;
     state
         .oauth2_service
-        .issue_tunnel_authorization(principal.as_ref(), claims.aud, request)
+        .issue_tunnel_authorization(principal.as_ref(), application_id, request)
         .await
         .map(Json)
 }

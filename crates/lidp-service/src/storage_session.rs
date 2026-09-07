@@ -5,7 +5,7 @@ use std::{
 };
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use lidp_model::contract::StorageSession;
+use lidp_model::contract::{StorageSession, TrustedDevice};
 
 const TOKEN_BYTES: usize = 32;
 const TOKEN_TTL: Duration = Duration::from_secs(60);
@@ -13,7 +13,9 @@ const TOKEN_TTL: Duration = Duration::from_secs(60);
 #[derive(Clone, Eq, PartialEq)]
 pub struct StorageScope {
     pub user_sub: String,
-    pub client_id: String,
+    pub application_id: i64,
+    pub principal_key_id: u32,
+    pub trusted_devices: Vec<TrustedDevice>,
     pub access_token: String,
 }
 
@@ -22,7 +24,9 @@ impl std::fmt::Debug for StorageScope {
         formatter
             .debug_struct("StorageScope")
             .field("user_sub", &self.user_sub)
-            .field("client_id", &self.client_id)
+            .field("application_id", &self.application_id)
+            .field("principal_key_id", &self.principal_key_id)
+            .field("trusted_devices", &self.trusted_devices)
             .field("access_token", &"[redacted]")
             .finish()
     }
@@ -87,7 +91,9 @@ mod tests {
         let issued = sessions
             .issue(StorageScope {
                 user_sub: "user".into(),
-                client_id: "client".into(),
+                application_id: 1,
+                principal_key_id: 1,
+                trusted_devices: Vec::new(),
                 access_token: "token".into(),
             })
             .unwrap();
@@ -96,7 +102,9 @@ mod tests {
             sessions.take(&issued.token),
             Some(StorageScope {
                 user_sub: "user".into(),
-                client_id: "client".into(),
+                application_id: 1,
+                principal_key_id: 1,
+                trusted_devices: Vec::new(),
                 access_token: "token".into(),
             })
         );
@@ -107,7 +115,9 @@ mod tests {
     fn redacts_access_tokens_from_debug_output() {
         let scope = StorageScope {
             user_sub: "user".into(),
-            client_id: "client".into(),
+            application_id: 1,
+            principal_key_id: 1,
+            trusted_devices: Vec::new(),
             access_token: "secret".into(),
         };
         assert!(!format!("{scope:?}").contains("secret"));

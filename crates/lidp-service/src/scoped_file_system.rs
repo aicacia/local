@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     convert::Infallible,
+    future::Future,
     io,
     path::PathBuf,
     pin::Pin,
@@ -19,59 +20,108 @@ const VAULT_KEY_NAME: &str = "vault-key";
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct StorageScopeId {
     user_sub: String,
-    client_id: String,
+    application_id: i64,
 }
 
-pub type ScopedFileSystem =
-    FileSystem<EncryptedStorage<NativeStorage>, LocalPeerCodec, LocalTransport>;
+pub type ScopedFileSystem<C, T> = FileSystem<EncryptedStorage<NativeStorage>, C, T>;
+pub type LocalScopedFileSystem = ScopedFileSystem<LocalPeerCodec, LocalTransport>;
+pub type LocalScopedFileSystemRuntime =
+    ScopedFileSystemRuntime<LocalPeerCodec, LocalTransport, LocalTransportFactory>;
 
-pub struct ScopedFileSystemRuntime {
+pub trait ScopedTransportFactory<C, T>: Send + Sync + 'static
+where
+    C: PeerCodec,
+    T: Transport<PeerId = C::PeerId>,
+{
+    fn create(&self, scope: &StorageScope) -> Result<T, String>;
+
+    fn synchronize(
+        &self,
+        scope: StorageScope,
+        file_system: Arc<ScopedFileSystem<C, T>>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>>;
+}
+
+pub struct ScopedFileSystemRuntime<C, T, F>
+where
+    C: PeerCodec,
+    T: Transport<PeerId = C::PeerId>,
+    F: ScopedTransportFactory<C, T>,
+{
     root: PathBuf,
     keyring: RawKeyringRepo,
-    file_systems: Mutex<BTreeMap<StorageScopeId, Arc<ScopedFileSystem>>>,
+    local_peer: C::PeerId,
+    transport_factory: F,
+    file_systems: Mutex<BTreeMap<StorageScopeId, Arc<ScopedFileSystem<C, T>>>>,
 }
 
-impl ScopedFileSystemRuntime {
-    pub fn new(root: PathBuf, keyring_service_name: impl Into<String>) -> io::Result<Self> {
+impl<C, T, F> ScopedFileSystemRuntime<C, T, F>
+where
+    C: PeerCodec + Send + Sync + 'static,
+    C::Error: Send + 'static,
+    C::PeerId: Clone + Send + Sync + 'static,
+    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T::Error: std::fmt::Display,
+    T::Incoming: Send + 'static,
+    F: ScopedTransportFactory<C, T>,
+{
+    pub fn new(
+        root: PathBuf,
+        keyring_service_name: impl Into<String>,
+        local_peer: C::PeerId,
+        transport_factory: F,
+    ) -> io::Result<Self> {
         std::fs::create_dir_all(&root)?;
         Ok(Self {
             root,
             keyring: RawKeyringRepo::new(keyring_service_name),
+            local_peer,
+            transport_factory,
             file_systems: Mutex::new(BTreeMap::new()),
         })
     }
 
-    pub async fn open(&self, scope: &StorageScope) -> Result<Arc<ScopedFileSystem>, String> {
+    pub async fn open(&self, scope: &StorageScope) -> Result<Arc<ScopedFileSystem<C, T>>, String> {
         let id = storage_scope_id(scope)?;
         let mut file_systems = self.file_systems.lock().await;
         if let Some(file_system) = file_systems.get(&id) {
-            return Ok(Arc::clone(file_system));
+            let file_system = Arc::clone(file_system);
+            drop(file_systems);
+            self.transport_factory
+                .synchronize(scope.clone(), Arc::clone(&file_system))
+                .await?;
+            return Ok(file_system);
         }
         let key = self.load_or_create_key(&id)?;
         let storage = NativeStorage::new(
             self.root
                 .join("vaults")
                 .join(&id.user_sub)
-                .join(&id.client_id),
+                .join(id.application_id.to_string()),
         )
         .map_err(|error| error.to_string())?;
         let file_system = Arc::new(
             FileSystem::new(
                 EncryptedStorage::new(storage, key),
-                LocalPeer,
-                LocalTransport::new(),
+                self.local_peer.clone(),
+                self.transport_factory.create(scope)?,
             )
             .await
             .map_err(|error| error.to_string())?,
         );
         file_systems.insert(id, Arc::clone(&file_system));
+        drop(file_systems);
+        self.transport_factory
+            .synchronize(scope.clone(), Arc::clone(&file_system))
+            .await?;
         Ok(file_system)
     }
 
     fn load_or_create_key(&self, id: &StorageScopeId) -> Result<[u8; 32], String> {
+        let application_id = id.application_id.to_string();
         if let Some(key) = self
             .keyring
-            .load(&id.user_sub, &id.client_id, VAULT_KEY_NAME)
+            .load(&id.user_sub, &application_id, VAULT_KEY_NAME)
             .map_err(|error| error.to_string())?
         {
             return key
@@ -81,7 +131,7 @@ impl ScopedFileSystemRuntime {
         let mut key = [0_u8; 32];
         getrandom::fill(&mut key).map_err(|error| error.to_string())?;
         self.keyring
-            .store(&id.user_sub, &id.client_id, VAULT_KEY_NAME, &key)
+            .store(&id.user_sub, &application_id, VAULT_KEY_NAME, &key)
             .map_err(|error| error.to_string())?;
         Ok(key)
     }
@@ -89,7 +139,6 @@ impl ScopedFileSystemRuntime {
 
 fn storage_scope_id(scope: &StorageScope) -> Result<StorageScopeId, String> {
     let user_sub = &scope.user_sub;
-    let client_id = &scope.client_id;
     let valid = |value: &str| {
         !value.is_empty()
             && value
@@ -99,12 +148,13 @@ fn storage_scope_id(scope: &StorageScope) -> Result<StorageScopeId, String> {
     if !valid(user_sub) {
         return Err("invalid user subject".to_string());
     }
-    if !valid(client_id) {
-        return Err("invalid client id".to_string());
+    if scope.application_id <= 0 {
+        return Err("invalid application id".to_string());
     }
+
     Ok(StorageScopeId {
         user_sub: user_sub.to_owned(),
-        client_id: client_id.to_owned(),
+        application_id: scope.application_id,
     })
 }
 
@@ -131,6 +181,23 @@ impl Stream for LocalIncoming {
 pub struct LocalTransport {
     _sender: mpsc::UnboundedSender<(LocalPeer, Vec<u8>)>,
     incoming: Mutex<Option<LocalIncoming>>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct LocalTransportFactory;
+
+impl ScopedTransportFactory<LocalPeerCodec, LocalTransport> for LocalTransportFactory {
+    fn create(&self, _: &StorageScope) -> Result<LocalTransport, String> {
+        Ok(LocalTransport::new())
+    }
+
+    fn synchronize(
+        &self,
+        _: StorageScope,
+        _: Arc<LocalScopedFileSystem>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
 }
 impl LocalTransport {
     fn new() -> Self {

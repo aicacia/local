@@ -24,7 +24,7 @@ pub struct TunnelAuthorization {
 pub struct TunnelAuthorizationClaims {
     pub iss: String,
     pub sub: String,
-    pub aud: String,
+    pub application_id: i64,
     pub vault_id_hash: String,
     pub local_public_key: String,
     pub remote_public_key: String,
@@ -38,7 +38,7 @@ impl TunnelAuthorizationClaims {
         &self,
         issuer: &str,
         user_sub: &str,
-        client_id: &str,
+        application_id: i64,
         vault_id_hash: &str,
         local_public_key: &str,
         remote_public_key: &str,
@@ -46,10 +46,11 @@ impl TunnelAuthorizationClaims {
     ) -> bool {
         self.iss == issuer
             && self.sub == user_sub
-            && self.aud == client_id
+            && self.application_id == application_id
             && self.vault_id_hash == vault_id_hash
             && self.local_public_key == local_public_key
             && self.remote_public_key == remote_public_key
+            && self.iat <= now
             && self.nbf <= now
             && self.exp > now
     }
@@ -63,7 +64,7 @@ mod tests {
         TunnelAuthorizationClaims {
             iss: "https://lidp.example".into(),
             sub: "1".into(),
-            aud: "password-manager".into(),
+            application_id: 1,
             vault_id_hash: "vault".into(),
             local_public_key: "local".into(),
             remote_public_key: "remote".into(),
@@ -78,7 +79,7 @@ mod tests {
         assert!(claims().valid_for(
             "https://lidp.example",
             "1",
-            "password-manager",
+            1,
             "vault",
             "local",
             "remote",
@@ -87,7 +88,7 @@ mod tests {
         assert!(!claims().valid_for(
             "https://lidp.example",
             "1",
-            "password-manager",
+            1,
             "other-vault",
             "local",
             "remote",
@@ -96,11 +97,23 @@ mod tests {
         assert!(!claims().valid_for(
             "https://lidp.example",
             "1",
-            "password-manager",
+            1,
             "vault",
             "local",
             "remote",
             101,
+        ));
+
+        let mut future = claims();
+        future.iat = 101;
+        assert!(!future.valid_for(
+            "https://lidp.example",
+            "1",
+            1,
+            "vault",
+            "local",
+            "remote",
+            100,
         ));
     }
 }

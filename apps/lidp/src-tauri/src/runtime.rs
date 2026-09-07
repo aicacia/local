@@ -43,11 +43,11 @@ pub fn run() {
             let app_config =
                 app::init_app_config(app.handle(), app.handle().path().app_config_dir()?)?;
 
+            tauri::async_runtime::block_on(app::init_device_identity(app.handle(), &app_config))?;
             tauri::async_runtime::block_on(app::init_scoped_file_system_runtime(
                 app.handle(),
                 &app_config,
             ))?;
-            tauri::async_runtime::block_on(app::init_device_identity(app.handle(), &app_config))?;
 
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -61,13 +61,15 @@ pub fn run() {
                     .await
                     .expect("database must initialize");
                 let file_systems = app_handle
-                    .try_state::<std::sync::Arc<lidp_service::scoped_file_system::ScopedFileSystemRuntime>>()
+                    .try_state::<std::sync::Arc<crate::scoped_transport::AppFileSystemRuntime>>()
                     .expect("vault runtime must initialize")
                     .inner()
                     .clone();
-                let (router, _router_state) =
+                let (router, router_state) =
                     app::init_router(runtime_config, database, file_systems)
                         .expect("router must initialize");
+                app::init_tunnel_manager(&app_handle, router_state)
+                    .expect("tunnel manager must initialize");
                 app::init_unified_localhost_server(&app_handle, router, listener, base_url)
                     .await
                     .expect("unified localhost server must initialize");

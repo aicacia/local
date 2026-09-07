@@ -13,16 +13,19 @@ use lidp_service::{
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
         LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
-    scoped_file_system::ScopedFileSystemRuntime,
     storage_session::StorageSessionService,
 };
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
-use crate::device_identity::DeviceIdentity;
 use crate::localhost_server::{
     localhost_server_base_url, reserve_localhost_listener, start_unified_localhost_server,
+};
+use crate::{
+    device_identity::DeviceIdentity,
+    scoped_transport::{AppFileSystemRuntime, IrohTransportFactory, TunnelContext},
+    tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer},
 };
 
 #[derive(Clone, Default)]
@@ -34,7 +37,7 @@ pub struct LocalhostServerState {
 pub fn init_router(
     app_config: Arc<AppConfig>,
     database: Arc<Database>,
-    file_systems: Arc<ScopedFileSystemRuntime>,
+    file_systems: Arc<AppFileSystemRuntime>,
 ) -> io::Result<(Router, Arc<RouterState>)> {
     let key_service = Arc::new(KeyService::new(
         LibSqlKeyRepo::new(database.clone()),
@@ -223,8 +226,19 @@ pub async fn init_scoped_file_system_runtime(
     app_config: &AppConfig,
 ) -> tauri::Result<()> {
     let data_dir = app_handle.path().app_data_dir()?;
-    let runtime = ScopedFileSystemRuntime::new(data_dir, &app_config.oauth2.issuer)
-        .map_err(tauri::Error::Io)?;
+    let context = TunnelContext::default();
+    let local_peer = app_handle
+        .try_state::<Arc<DeviceIdentity>>()
+        .ok_or_else(|| tauri::Error::Io(io::Error::other("device identity is missing")))?
+        .endpoint_id();
+    let runtime = AppFileSystemRuntime::new(
+        data_dir,
+        &app_config.oauth2.issuer,
+        local_peer,
+        IrohTransportFactory::new(context.clone()),
+    )
+    .map_err(tauri::Error::Io)?;
+    app_handle.manage(context);
     app_handle.manage(Arc::new(runtime));
     Ok(())
 }
@@ -237,6 +251,33 @@ pub async fn init_device_identity(
         .await
         .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
     app_handle.manage(Arc::new(identity));
+    Ok(())
+}
+
+pub fn init_tunnel_manager(
+    app_handle: &AppHandle<Wry>,
+    state: Arc<RouterState>,
+) -> tauri::Result<()> {
+    let identity = app_handle
+        .try_state::<Arc<DeviceIdentity>>()
+        .ok_or_else(|| tauri::Error::Io(io::Error::other("device identity is missing")))?;
+    let allowlist = iroh_chain::DynamicEndpointIdStore::default();
+    let manager = Arc::new(DeviceTunnelManager::new(
+        identity.endpoint(),
+        allowlist.clone(),
+        LidpTunnelAuthorizer::new(state.clone()),
+    ));
+    let listener = Arc::clone(&manager);
+    tauri::async_runtime::spawn(async move {
+        listener.listen().await;
+    });
+    let allowlist = Arc::new(allowlist);
+    app_handle
+        .try_state::<TunnelContext>()
+        .ok_or_else(|| tauri::Error::Io(io::Error::other("tunnel context is missing")))?
+        .set(Arc::clone(&manager), Arc::clone(&allowlist), state);
+    app_handle.manage(allowlist);
+    app_handle.manage(manager);
     Ok(())
 }
 
@@ -277,6 +318,9 @@ pub fn app_config_for_localhost_base_url(
 }
 
 pub async fn close(app_handle: &AppHandle<Wry>) -> io::Result<()> {
+    if let Some(manager) = app_handle.try_state::<Arc<DeviceTunnelManager>>() {
+        manager.close().await;
+    }
     if let Some(database) = app_handle.try_state::<Database>() {
         close_database(database.inner())
             .await

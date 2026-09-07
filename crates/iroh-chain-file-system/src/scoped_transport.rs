@@ -9,11 +9,10 @@ use std::{
 
 use file_system::Transport;
 use iroh::{EndpointAddr, EndpointId};
-use iroh_chain::{AllowedEndpointId, Tunnel, TunnelAuthorizer, TunnelManager, VaultId};
+use iroh_chain::{AllowedEndpointId, Server, Tunnel, TunnelAuthorizer, VaultId};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex as AsyncMutex, broadcast, mpsc},
-    task::JoinHandle,
 };
 
 const INCOMING_CAPACITY: usize = 64;
@@ -67,7 +66,6 @@ where
     P: TunnelAuthorizationProvider,
 {
     inner: Arc<ScopedIrohTransportInner<A, V, P>>,
-    task: JoinHandle<()>,
 }
 
 struct ScopedIrohTransportInner<A, V, P>
@@ -76,7 +74,7 @@ where
     V: TunnelAuthorizer,
     P: TunnelAuthorizationProvider,
 {
-    manager: TunnelManager<A, V>,
+    manager: Server<A, V>,
     vault_id: VaultId,
     authorization: P,
     peers: Mutex<BTreeMap<EndpointId, Tunnel>>,
@@ -91,7 +89,7 @@ where
     V: TunnelAuthorizer,
     P: TunnelAuthorizationProvider,
 {
-    pub fn new(manager: TunnelManager<A, V>, vault_id: VaultId, authorization: P) -> Self {
+    pub fn new(manager: Server<A, V>, vault_id: VaultId, authorization: P) -> Self {
         let (incoming_tx, incoming_rx) = mpsc::channel(INCOMING_CAPACITY);
         let (peer_events, _) = broadcast::channel(INCOMING_CAPACITY);
         let inner = Arc::new(ScopedIrohTransportInner {
@@ -105,7 +103,7 @@ where
         });
         let task_inner = Arc::clone(&inner);
         let mut events = manager.subscribe();
-        let task = tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 match events.recv().await {
                     Ok(event) if event.vault_id == task_inner.vault_id => {
@@ -116,7 +114,7 @@ where
                 }
             }
         });
-        Self { inner, task }
+        Self { inner }
     }
 
     pub async fn connect(&self, endpoint: impl Into<EndpointAddr>) -> Result<EndpointId, Error> {
@@ -144,6 +142,16 @@ where
         self.inner.peer_events.subscribe()
     }
 
+    pub fn peers(&self) -> Vec<EndpointId> {
+        self.inner
+            .peers
+            .lock()
+            .expect("peer lock poisoned")
+            .keys()
+            .copied()
+            .collect()
+    }
+
     pub async fn disconnect(&self, peer_id: EndpointId) -> bool {
         self.inner
             .peers
@@ -157,14 +165,16 @@ where
     }
 }
 
-impl<A, V, P> Drop for ScopedIrohTransport<A, V, P>
+impl<A, V, P> Clone for ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
     P: TunnelAuthorizationProvider,
 {
-    fn drop(&mut self) {
-        self.task.abort();
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
     }
 }
 
@@ -183,6 +193,13 @@ where
             return Err(Error::new(
                 ErrorKind::InvalidInput,
                 "file-system message is too large",
+            ));
+        }
+        if !self.inner.manager.is_allowed(peer).await {
+            self.disconnect(peer).await;
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "Iroh peer is not allowed",
             ));
         }
         let tunnel = self
@@ -208,11 +225,15 @@ where
             .peers
             .lock()
             .expect("peer lock poisoned")
-            .values()
-            .cloned()
+            .iter()
+            .map(|(peer_id, tunnel)| (*peer_id, tunnel.clone()))
             .collect::<Vec<_>>();
-        for peer in peers {
-            write_frame(&peer, &data).await?;
+        for (peer_id, tunnel) in peers {
+            if !self.inner.manager.is_allowed(peer_id).await {
+                self.disconnect(peer_id).await;
+                continue;
+            }
+            write_frame(&tunnel, &data).await?;
         }
         Ok(())
     }
@@ -259,6 +280,9 @@ where
             }
             let mut data = vec![0; length];
             if reader.read_exact(&mut data).await.is_err() {
+                break;
+            }
+            if !task_inner.manager.is_allowed(peer_id).await {
                 break;
             }
             if incoming_tx.send((peer_id, data)).await.is_err() {

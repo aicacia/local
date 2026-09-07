@@ -41,6 +41,10 @@ impl DeviceIdentity {
         self.endpoint.id()
     }
 
+    pub fn endpoint(&self) -> Endpoint {
+        self.endpoint.clone()
+    }
+
     pub fn endpoint_address(&self) -> Result<String, String> {
         serde_json::to_string(&self.endpoint.addr()).map_err(|error| error.to_string())
     }

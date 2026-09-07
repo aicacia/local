@@ -1,245 +1,177 @@
 use std::{
+    collections::BTreeMap,
     io::{Error, ErrorKind},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
 };
 
-use dashmap::DashMap;
-use futures::future::join_all;
 use iroh::{Endpoint, EndpointAddr, EndpointId, endpoint::Connection};
-use iroh_tickets::endpoint::EndpointTicket;
+use noq::{RecvStream, SendStream, VarInt};
 use tokio::{
-    select, spawn,
-    sync::{
-        Mutex, MutexGuard, broadcast,
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-    },
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+    sync::{Mutex, MutexGuard, broadcast},
 };
-use tokio_util::sync::CancellationToken;
 
-use crate::{peer::Peer, store::AllowedEndpointId};
+use crate::AllowedEndpointId;
 
-pub const IRON_CHAIN_V1_ALPN: &[u8] = b"iron-chain/v1";
+pub const TUNNEL_ALPN: &[u8] = b"lidp-tunnel/1";
+const PROTOCOL_VERSION: u8 = 1;
+const MAX_AUTHORIZATION_LENGTH: usize = 4096;
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct VaultId([u8; 32]);
+
+impl VaultId {
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn hash(&self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    pub fn from_application(user_sub: &str, application_id: i64) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"lidp-vault-id/v1");
+        hasher.update(&(user_sub.len() as u64).to_be_bytes());
+        hasher.update(user_sub.as_bytes());
+        hasher.update(&application_id.to_be_bytes());
+        Self(*hasher.finalize().as_bytes())
+    }
+}
+
+pub trait TunnelAuthorizer: Send + Sync + 'static {
+    fn authorize(
+        &self,
+        vault_id: VaultId,
+        initiating_id: EndpointId,
+        accepting_id: EndpointId,
+        authorization: &[u8],
+    ) -> impl Future<Output = bool> + Send;
+}
 
 #[derive(Clone, Debug)]
-pub enum ServerEvent {
-    Connected(Peer),
-    Disconnected(EndpointId),
+pub struct Tunnel {
+    inner: Arc<TunnelInner>,
 }
 
-struct ServerInner<A>
+#[derive(Debug)]
+struct TunnelInner {
+    remote_id: EndpointId,
+    send: Mutex<SendStream>,
+    recv: Mutex<RecvStream>,
+}
+
+impl Tunnel {
+    fn new(remote_id: EndpointId, send: SendStream, recv: RecvStream) -> Self {
+        Self {
+            inner: Arc::new(TunnelInner {
+                remote_id,
+                send: Mutex::new(send),
+                recv: Mutex::new(recv),
+            }),
+        }
+    }
+
+    pub fn remote_id(&self) -> EndpointId {
+        self.inner.remote_id
+    }
+
+    pub async fn reader(&self) -> TunnelReader<'_> {
+        TunnelReader {
+            guard: self.inner.recv.lock().await,
+        }
+    }
+
+    pub async fn writer(&self) -> TunnelWriter<'_> {
+        TunnelWriter {
+            guard: self.inner.send.lock().await,
+        }
+    }
+
+    pub async fn close(&self) {
+        let _ = self.inner.send.lock().await.reset(VarInt::from_u32(1));
+        let _ = self.inner.recv.lock().await.stop(VarInt::from_u32(1));
+    }
+}
+
+pub struct TunnelReader<'a> {
+    guard: MutexGuard<'a, RecvStream>,
+}
+
+impl AsyncRead for TunnelReader<'_> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<Result<(), Error>> {
+        Pin::new(&mut *self.guard).poll_read(context, buffer)
+    }
+}
+
+pub struct TunnelWriter<'a> {
+    guard: MutexGuard<'a, SendStream>,
+}
+
+impl AsyncWrite for TunnelWriter<'_> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<Result<usize, Error>> {
+        Pin::new(&mut *self.guard)
+            .poll_write(context, buffer)
+            .map_err(Error::other)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        Pin::new(&mut *self.guard).poll_flush(context)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Result<(), Error>> {
+        Pin::new(&mut *self.guard).poll_shutdown(context)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TunnelEvent {
+    pub vault_id: VaultId,
+    pub tunnel: Tunnel,
+}
+
+struct ServerInner<A, V>
 where
     A: AllowedEndpointId,
+    V: TunnelAuthorizer,
 {
     endpoint: Endpoint,
-    alpn: Vec<u8>,
-    store: A,
-    peers: DashMap<EndpointId, Peer>,
-    closed_tx: UnboundedSender<(EndpointId, u64)>,
-    closed_rx: Mutex<UnboundedReceiver<(EndpointId, u64)>>,
-    event_tx: UnboundedSender<ServerEvent>,
-    event_rx: Mutex<UnboundedReceiver<ServerEvent>>,
-    events_tx: broadcast::Sender<ServerEvent>,
-    next_session: AtomicU64,
-    cancellation_token: CancellationToken,
+    allowed: A,
+    authorizer: V,
+    tunnels: Mutex<BTreeMap<(EndpointId, VaultId), Tunnel>>,
+    events: broadcast::Sender<TunnelEvent>,
 }
 
-impl<A> ServerInner<A>
+pub struct Server<A, V>
 where
     A: AllowedEndpointId,
+    V: TunnelAuthorizer,
 {
-    fn new(endpoint: Endpoint, alpn: Vec<u8>, store: A) -> Self {
-        let (event_tx, event_rx) = unbounded_channel();
-        let (events_tx, _) = broadcast::channel(64);
-        let (closed_tx, closed_rx) = unbounded_channel();
-
-        Self {
-            endpoint,
-            alpn,
-            store,
-            peers: DashMap::new(),
-            closed_tx,
-            closed_rx: Mutex::new(closed_rx),
-            event_tx,
-            event_rx: Mutex::new(event_rx),
-            events_tx,
-            next_session: AtomicU64::new(0),
-            cancellation_token: CancellationToken::new(),
-        }
-    }
-
-    async fn connect(&self, endpoint: impl Into<EndpointAddr>) -> Result<(), Error> {
-        let endpoint_addr = endpoint.into();
-
-        tracing::info!("connecting to {:?}", endpoint_addr);
-
-        let connection = self
-            .endpoint
-            .connect(endpoint_addr, &self.alpn)
-            .await
-            .map_err(Error::other)?;
-
-        tracing::info!(
-            "connected to {:?} with alpn {:?}",
-            connection.remote_id(),
-            self.alpn
-        );
-
-        self.internal_connect(connection, true).await
-    }
-
-    async fn internal_connect(&self, connection: Connection, outbound: bool) -> Result<(), Error> {
-        let remote = connection.remote_id();
-        tracing::info!("internal connect {remote} (outbound: {outbound})");
-
-        if !self.store.allowed(remote).await {
-            tracing::warn!("peer {remote} is not allowed");
-            return Err(Error::new(
-                ErrorKind::PermissionDenied,
-                format!("peer {remote} is not allowed"),
-            ));
-        }
-        tracing::info!("peer {remote} is allowed");
-
-        let (send, recv) = if outbound {
-            connection.open_bi().await?
-        } else {
-            connection.accept_bi().await?
-        };
-        tracing::info!("bi-directional stream established with {remote}");
-
-        let cancellation_token = CancellationToken::new();
-        let session = self.next_session.fetch_add(1, Ordering::Relaxed);
-
-        let peer = Peer::new(
-            remote,
-            session,
-            send,
-            recv,
-            self.closed_tx.clone(),
-            cancellation_token,
-        );
-        if let Some(previous) = self.peers.insert(remote, peer.clone()) {
-            previous.close().await;
-        }
-
-        self.send_event(ServerEvent::Connected(peer))?;
-
-        Ok(())
-    }
-
-    fn try_get(&self, id: EndpointId) -> Option<Peer> {
-        self.peers.get(&id).map(|entry| entry.value().clone())
-    }
-
-    fn peers(&self) -> Vec<Peer> {
-        self.peers
-            .iter()
-            .map(|entry| entry.value().clone())
-            .collect()
-    }
-
-    fn send_event(&self, event: ServerEvent) -> Result<(), Error> {
-        self.event_tx
-            .send(event.clone())
-            .map_err(|error| Error::other(format!("error sending server event: {error}")))?;
-        let _ = self.events_tx.send(event);
-        Ok(())
-    }
-
-    async fn disconnect(&self, id: EndpointId) {
-        if let Some((_, peer)) = self.peers.remove(&id) {
-            self.finish_disconnect(id, peer).await;
-        }
-    }
-
-    async fn disconnect_session(&self, id: EndpointId, session: u64) {
-        if let Some((_, peer)) = self
-            .peers
-            .remove_if(&id, |_, peer| peer.session() == session)
-        {
-            self.finish_disconnect(id, peer).await;
-        }
-    }
-
-    async fn finish_disconnect(&self, id: EndpointId, peer: Peer) {
-        peer.close().await;
-        if let Err(error) = self.send_event(ServerEvent::Disconnected(id)) {
-            tracing::warn!("error sending disconnected event: {error}");
-        }
-    }
-
-    async fn disconnect_all(&self) {
-        let endpoint_ids = self
-            .peers
-            .iter()
-            .map(|entry| self.disconnect(entry.id()))
-            .collect::<Vec<_>>();
-
-        let _ = join_all(endpoint_ids).await;
-    }
-
-    async fn listen(self: Arc<Self>) {
-        let cancellation_token = self.cancellation_token.clone();
-        let mut closed_rx = self.closed_rx.lock().await;
-
-        loop {
-            select! {
-                _ = cancellation_token.cancelled() => break,
-                incoming = self.endpoint.accept() => {
-                    let Some(connecting) = incoming else { break };
-                    let this = Arc::clone(&self);
-
-                    tracing::info!("incoming connection");
-
-                    spawn(async move {
-                        tracing::info!("waiting for handshake");
-
-                        let connection = match connecting.await {
-                            Ok(c) => c,
-                            Err(e) => {
-                                tracing::warn!("error accepting connection: {e}");
-                                return;
-                            }
-                        };
-                        tracing::info!(
-                            "handshake succeeded from {:?}",
-                            connection.remote_id()
-                        );
-
-                        match this.internal_connect(connection, false).await {
-                            Ok(_) => {},
-                            Err(e) => {
-                                tracing::warn!("error connecting to peer: {e}");
-                            }
-                        }
-                    });
-                }
-                Some((id, session)) = closed_rx.recv() => {
-                    self.disconnect_session(id, session).await;
-                }
-            }
-        }
-    }
-
-    async fn close(&self) {
-        self.endpoint.close().await;
-        self.disconnect_all().await;
-    }
+    inner: Arc<ServerInner<A, V>>,
 }
 
-pub struct Server<A>
+impl<A, V> Clone for Server<A, V>
 where
     A: AllowedEndpointId,
-{
-    inner: Arc<ServerInner<A>>,
-}
-
-impl<A> Clone for Server<A>
-where
-    A: AllowedEndpointId,
+    V: TunnelAuthorizer,
 {
     fn clone(&self) -> Self {
         Self {
@@ -248,15 +180,21 @@ where
     }
 }
 
-impl<A> Server<A>
+impl<A, V> Server<A, V>
 where
     A: AllowedEndpointId,
+    V: TunnelAuthorizer,
 {
-    pub fn new(endpoint: Endpoint, store: A) -> Self {
-        let inner = ServerInner::new(endpoint, IRON_CHAIN_V1_ALPN.to_vec(), store);
-
+    pub fn new(endpoint: Endpoint, allowed: A, authorizer: V) -> Self {
+        let (events, _) = broadcast::channel(64);
         Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(ServerInner {
+                endpoint,
+                allowed,
+                authorizer,
+                tunnels: Mutex::new(BTreeMap::new()),
+                events,
+            }),
         }
     }
 
@@ -264,50 +202,236 @@ where
         &self.inner.endpoint
     }
 
-    pub fn ticket(&self) -> EndpointTicket {
-        EndpointTicket::new(self.inner.endpoint.addr())
+    pub fn subscribe(&self) -> broadcast::Receiver<TunnelEvent> {
+        self.inner.events.subscribe()
     }
 
-    pub async fn connect(&self, endpoint: impl Into<EndpointAddr>) -> Result<(), Error> {
-        self.inner.connect(endpoint).await
+    pub async fn is_allowed(&self, endpoint_id: EndpointId) -> bool {
+        self.inner.allowed.allowed(endpoint_id).await
     }
 
-    pub async fn event_receiver(&self) -> MutexGuard<'_, UnboundedReceiver<ServerEvent>> {
-        self.inner.event_rx.lock().await
-    }
-
-    pub fn try_get(&self, id: EndpointId) -> Option<Peer> {
-        self.inner.try_get(id)
-    }
-
-    pub fn peers(&self) -> Vec<Peer> {
-        self.inner.peers()
-    }
-
-    pub fn subscribe_events(&self) -> broadcast::Receiver<ServerEvent> {
-        self.inner.events_tx.subscribe()
-    }
-
-    pub async fn disconnect(&self, id: EndpointId) {
-        self.inner.disconnect(id).await;
-    }
-
-    pub async fn disconnect_peer(&self, peer: &Peer) {
-        self.inner
-            .disconnect_session(peer.id(), peer.session())
-            .await;
-    }
-
-    pub fn store(&self) -> &A {
-        &self.inner.store
+    pub async fn connect(
+        &self,
+        vault_id: VaultId,
+        endpoint: impl Into<EndpointAddr>,
+        authorization: &[u8],
+    ) -> Result<Tunnel, Error> {
+        let connection = self
+            .inner
+            .endpoint
+            .connect(endpoint, TUNNEL_ALPN)
+            .await
+            .map_err(Error::other)?;
+        let remote_id = connection.remote_id();
+        if !self.inner.allowed.allowed(remote_id).await {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "peer is not allowed",
+            ));
+        }
+        let (mut send, mut recv) = connection.open_bi().await?;
+        write_handshake(&mut send, vault_id, self.inner.endpoint.id(), authorization).await?;
+        if recv.read_u8().await? == 0 {
+            return Err(Error::new(
+                ErrorKind::PermissionDenied,
+                "tunnel was rejected",
+            ));
+        }
+        self.insert(vault_id, Tunnel::new(remote_id, send, recv))
+            .await
     }
 
     pub async fn listen(&self) {
-        let inner = Arc::clone(&self.inner);
-        inner.listen().await;
+        loop {
+            let Some(connecting) = self.inner.endpoint.accept().await else {
+                return;
+            };
+            let manager = self.clone();
+            tokio::spawn(async move {
+                let Ok(connection) = connecting.await else {
+                    return;
+                };
+                manager.accept_connection(connection).await;
+            });
+        }
     }
 
     pub async fn close(&self) {
-        self.inner.close().await;
+        self.inner.endpoint.close().await;
+        let tunnels = std::mem::take(&mut *self.inner.tunnels.lock().await);
+        for tunnel in tunnels.into_values() {
+            tunnel.close().await;
+        }
+    }
+
+    pub async fn close_tunnel(&self, vault_id: VaultId, remote_id: EndpointId) -> bool {
+        let tunnel = self
+            .inner
+            .tunnels
+            .lock()
+            .await
+            .remove(&(remote_id, vault_id));
+        if let Some(tunnel) = tunnel {
+            tunnel.close().await;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub async fn close_disallowed(&self) -> usize {
+        let tunnels = self
+            .inner
+            .tunnels
+            .lock()
+            .await
+            .iter()
+            .map(|(key, tunnel)| (*key, tunnel.clone()))
+            .collect::<Vec<_>>();
+        let mut disallowed = Vec::new();
+        for ((remote_id, vault_id), tunnel) in tunnels {
+            if !self.inner.allowed.allowed(remote_id).await {
+                disallowed.push((remote_id, vault_id, tunnel));
+            }
+        }
+        let mut active = self.inner.tunnels.lock().await;
+        let mut removed = Vec::new();
+        for (remote_id, vault_id, tunnel) in disallowed {
+            if active.remove(&(remote_id, vault_id)).is_some() {
+                removed.push(tunnel);
+            }
+        }
+        drop(active);
+        for tunnel in &removed {
+            tunnel.close().await;
+        }
+        removed.len()
+    }
+
+    async fn accept_connection(&self, connection: Connection) {
+        let remote_id = connection.remote_id();
+        if !self.inner.allowed.allowed(remote_id).await {
+            return;
+        }
+        while let Ok((mut send, mut recv)) = connection.accept_bi().await {
+            if !self.inner.allowed.allowed(remote_id).await {
+                let _ = send.write_u8(0).await;
+                let _ = send.flush().await;
+                continue;
+            }
+            let Ok((vault_id, initiating_id, authorization)) = read_handshake(&mut recv).await
+            else {
+                return;
+            };
+            let authorized = initiating_id == remote_id
+                && self
+                    .inner
+                    .authorizer
+                    .authorize(
+                        vault_id,
+                        remote_id,
+                        self.inner.endpoint.id(),
+                        &authorization,
+                    )
+                    .await;
+            let tunnel = Tunnel::new(remote_id, send, recv);
+            let accepted = authorized && self.insert(vault_id, tunnel.clone()).await.is_ok();
+            let mut writer = tunnel.writer().await;
+            let acknowledged =
+                writer.write_u8(u8::from(accepted)).await.is_ok() && writer.flush().await.is_ok();
+            drop(writer);
+            if !acknowledged {
+                if accepted {
+                    self.close_tunnel(vault_id, remote_id).await;
+                }
+                return;
+            }
+            if !accepted {
+                tunnel.close().await;
+                continue;
+            }
+            let _ = self.inner.events.send(TunnelEvent { vault_id, tunnel });
+        }
+    }
+
+    async fn insert(&self, vault_id: VaultId, tunnel: Tunnel) -> Result<Tunnel, Error> {
+        let key = (tunnel.remote_id(), vault_id);
+        let mut tunnels = self.inner.tunnels.lock().await;
+        if tunnels.contains_key(&key) {
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                "tunnel already exists",
+            ));
+        }
+        tunnels.insert(key, tunnel.clone());
+        Ok(tunnel)
+    }
+}
+
+async fn write_handshake(
+    send: &mut SendStream,
+    vault_id: VaultId,
+    initiating_id: EndpointId,
+    authorization: &[u8],
+) -> Result<(), Error> {
+    let authorization_length = u16::try_from(authorization.len())
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "tunnel authorization is too large"))?;
+    if authorization.len() > MAX_AUTHORIZATION_LENGTH {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "tunnel authorization is too large",
+        ));
+    }
+    send.write_u8(PROTOCOL_VERSION).await?;
+    send.write_all(vault_id.as_bytes()).await?;
+    send.write_all(initiating_id.as_bytes()).await?;
+    send.write_u16(authorization_length).await?;
+    send.write_all(authorization).await?;
+    send.flush().await
+}
+
+async fn read_handshake(recv: &mut RecvStream) -> Result<(VaultId, EndpointId, Vec<u8>), Error> {
+    if recv.read_u8().await? != PROTOCOL_VERSION {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "unsupported tunnel protocol",
+        ));
+    }
+    let mut vault_id = [0_u8; 32];
+    recv.read_exact(&mut vault_id).await.map_err(Error::other)?;
+    let mut initiating_id = [0_u8; 32];
+    recv.read_exact(&mut initiating_id)
+        .await
+        .map_err(Error::other)?;
+    let initiating_id = EndpointId::from_bytes(&initiating_id).map_err(Error::other)?;
+    let length = usize::from(recv.read_u16().await?);
+    if length > MAX_AUTHORIZATION_LENGTH {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "tunnel authorization is too large",
+        ));
+    }
+    let mut authorization = vec![0; length];
+    recv.read_exact(&mut authorization)
+        .await
+        .map_err(Error::other)?;
+    Ok((VaultId::new(vault_id), initiating_id, authorization))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VaultId;
+
+    #[test]
+    fn derives_a_stable_scope_bound_vault_id() {
+        let first = VaultId::from_application("user", 1);
+        assert_eq!(first, VaultId::from_application("user", 1));
+        assert_ne!(first, VaultId::from_application("other-user", 1));
+        assert_ne!(first, VaultId::from_application("user", 2));
+        assert_ne!(
+            VaultId::from_application("a", 12),
+            VaultId::from_application("ab", 2)
+        );
+        assert_eq!(first.hash().len(), 64);
     }
 }

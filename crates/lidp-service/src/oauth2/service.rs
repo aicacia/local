@@ -141,6 +141,15 @@ where
         Ok(client.into())
     }
 
+    pub async fn application_id_for_client(&self, client_id: &str) -> ErrorResponseResult<i64> {
+        self.client_repo
+            .find_client_by_client_id(client_id)
+            .await
+            .map_err(ErrorResponse::from)?
+            .map(|client| client.application_id)
+            .ok_or_else(|| ErrorResponse::new(ErrorCode::InvalidClient))
+    }
+
     pub async fn list_clients(
         &self,
         offset: u32,
@@ -854,7 +863,7 @@ where
     pub async fn issue_tunnel_authorization(
         &self,
         principal: &dyn Principal,
-        client_id: String,
+        application_id: i64,
         request: TunnelAuthorizationRequest,
     ) -> ErrorResponseResult<TunnelAuthorization> {
         if principal.get_entity_type() != EntityType::User {
@@ -864,7 +873,7 @@ where
         let claims = TunnelAuthorizationClaims {
             iss: self.oauth_config.issuer.clone(),
             sub: principal.get_entity_id().to_string(),
-            aud: client_id,
+            application_id,
             vault_id_hash: request.vault_id_hash,
             local_public_key: request.local_public_key,
             remote_public_key: request.remote_public_key,

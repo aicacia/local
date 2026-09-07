@@ -3750,6 +3750,7 @@ name = "iroh-chain"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "blake3",
  "chrono",
  "dashmap",
  "env_logger 0.11.11",
@@ -4435,6 +4436,7 @@ dependencies = [
  "getrandom 0.3.4",
  "iroh",
  "iroh-chain",
+ "iroh-chain-file-system",
  "libsql",
  "lidp-management-server",
  "lidp-model",
@@ -4525,6 +4527,7 @@ dependencies = [
  "db",
  "dotenvy",
  "env_logger 0.10.2",
+ "file-system",
  "http 1.5.0",
  "key",
  "libsql",
