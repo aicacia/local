@@ -1,3 +1,4 @@
 lidp_ui_public_uri: "https://lidp.localhost:1337"
 bootstrap:
   is_master: true
+  web: true
