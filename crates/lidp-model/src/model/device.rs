@@ -3,17 +3,16 @@ use alloc::string::String;
 
 use chrono::{DateTime, Utc};
 
-use crate::contract::{DeviceInfo, UserDeviceState};
+use crate::contract::{DeviceInfo, DeviceState};
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct UserDevice {
+pub struct Device {
     pub id: i64,
-    pub user_id: i64,
     pub name: String,
     pub public_key: String,
     pub address: String,
-    #[serde(with = "super::sql_enum::user_device_state")]
-    pub state: UserDeviceState,
+    #[serde(with = "super::sql_enum::device_state")]
+    pub state: DeviceState,
     #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
     #[serde(with = "chrono::serde::ts_seconds")]
@@ -22,8 +21,8 @@ pub struct UserDevice {
     pub revoked_at: Option<DateTime<Utc>>,
 }
 
-impl From<UserDevice> for DeviceInfo {
-    fn from(device: UserDevice) -> Self {
+impl From<Device> for DeviceInfo {
+    fn from(device: Device) -> Self {
         Self {
             id: device.id,
             name: device.name,

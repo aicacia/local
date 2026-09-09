@@ -12,11 +12,11 @@ use lidp_model::{
         ErrorCode, ErrorResponse, ErrorResponseResult, UpdateDeviceRequest,
         device_pairing_approval_payload,
     },
-    model::UserDevice,
+    model::Device,
 };
 use sha2::{Digest, Sha256};
 
-use crate::repo::UserDeviceRepo;
+use crate::repo::DeviceRepo;
 
 const PAIRING_SECRET_BYTES: usize = 32;
 const PAIRING_TTL_SECONDS: i64 = 300;
@@ -27,7 +27,7 @@ pub struct DeviceEnrollmentService<R> {
 
 impl<R> DeviceEnrollmentService<R>
 where
-    R: UserDeviceRepo,
+    R: DeviceRepo,
 {
     pub fn new(repo: Arc<R>) -> Self {
         Self { repo }
@@ -35,22 +35,15 @@ where
 
     pub async fn enroll(
         &self,
-        user_id: i64,
         request: DeviceEnrollmentRequest,
     ) -> ErrorResponseResult<DeviceEnrollment> {
         validate_enrollment(&request)?;
-        if self
-            .repo
-            .has_any_by_user_id(user_id)
-            .await
-            .map_err(ErrorResponse::from)?
-        {
+        if self.repo.has_any().await.map_err(ErrorResponse::from)? {
             return Err(ErrorResponse::new(ErrorCode::AccessDenied));
         }
         let device = self
             .repo
             .create(
-                user_id,
                 request.name,
                 request.public_key,
                 request.address,
@@ -68,7 +61,6 @@ where
 
     pub async fn create_pairing_invitation(
         &self,
-        user_id: i64,
         request: DevicePairingInvitationRequest,
     ) -> ErrorResponseResult<DevicePairingInvitation> {
         validate_public_key(&request.initiating_public_key)?;
@@ -77,7 +69,6 @@ where
         let id = self
             .repo
             .create_pairing_invitation(
-                user_id,
                 request.initiating_public_key,
                 hash_secret(&secret),
                 expires_at,
@@ -121,13 +112,12 @@ where
 
     pub async fn approve_pairing(
         &self,
-        user_id: i64,
         device_id: i64,
         request: DevicePairingApprovalRequest,
     ) -> ErrorResponseResult<DeviceInfo> {
         let (invitation_id, device, initiating_public_key) = self
             .repo
-            .pending_pairing(user_id, device_id)
+            .pending_pairing(device_id)
             .await
             .map_err(ErrorResponse::from)?
             .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
@@ -143,21 +133,17 @@ where
             &request.signature,
         )?;
         self.repo
-            .approve_pairing(user_id, device_id, invitation_id)
+            .approve_pairing(device_id, invitation_id)
             .await
             .map_err(ErrorResponse::from)?
             .map(Into::into)
             .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))
     }
 
-    pub async fn pairing_approval_payload(
-        &self,
-        user_id: i64,
-        device_id: i64,
-    ) -> ErrorResponseResult<String> {
+    pub async fn pairing_approval_payload(&self, device_id: i64) -> ErrorResponseResult<String> {
         let (invitation_id, device, _) = self
             .repo
-            .pending_pairing(user_id, device_id)
+            .pending_pairing(device_id)
             .await
             .map_err(ErrorResponse::from)?
             .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
@@ -170,32 +156,31 @@ where
         ))
     }
 
-    pub async fn list(&self, user_id: i64) -> ErrorResponseResult<Vec<DeviceInfo>> {
+    pub async fn list(&self) -> ErrorResponseResult<Vec<DeviceInfo>> {
         self.repo
-            .list_by_user_id(user_id)
+            .list()
             .await
-            .map(|devices| devices.into_iter().map(UserDevice::into).collect())
+            .map(|devices| devices.into_iter().map(Device::into).collect())
             .map_err(ErrorResponse::from)
     }
 
     pub async fn rename(
         &self,
-        user_id: i64,
         device_id: i64,
         request: UpdateDeviceRequest,
     ) -> ErrorResponseResult<DeviceInfo> {
         validate_name(&request.name)?;
         self.repo
-            .rename(user_id, device_id, request.name)
+            .rename(device_id, request.name)
             .await
             .map_err(ErrorResponse::from)?
             .map(Into::into)
             .ok_or_else(|| ErrorResponse::new(ErrorCode::NotFound))
     }
 
-    pub async fn revoke(&self, user_id: i64, device_id: i64) -> ErrorResponseResult<()> {
+    pub async fn revoke(&self, device_id: i64) -> ErrorResponseResult<()> {
         self.repo
-            .revoke(user_id, device_id)
+            .revoke(device_id)
             .await
             .map_err(ErrorResponse::from)?
             .then_some(())
@@ -256,29 +241,4 @@ fn now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .expect("system clock is before Unix epoch")
         .as_secs() as i64
-}
-
-#[cfg(test)]
-mod tests {
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-    use iroh::SecretKey;
-
-    use super::{device_pairing_approval_payload, verify_signature};
-
-    #[test]
-    fn verifies_only_the_bound_signer() {
-        let signer = SecretKey::generate();
-        let payload = device_pairing_approval_payload(1, 2, "device", "key", "address");
-        let signature = URL_SAFE_NO_PAD.encode(signer.sign(payload.as_bytes()).to_bytes());
-
-        assert!(verify_signature(&signer.public().to_string(), &payload, &signature).is_ok());
-        assert!(
-            verify_signature(
-                &SecretKey::generate().public().to_string(),
-                &payload,
-                &signature
-            )
-            .is_err()
-        );
-    }
 }

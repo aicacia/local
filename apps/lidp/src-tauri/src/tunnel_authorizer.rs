@@ -25,7 +25,7 @@ impl LidpTunnelAuthorizer {
         Self {
             local: Arc::new(LocalTunnelAuthorizer::new(
                 Arc::clone(&state.oauth2_service),
-                Arc::clone(&state.user_devices),
+                Arc::clone(&state.devices),
             )),
             control_plane,
             used: Mutex::new(BTreeMap::new()),

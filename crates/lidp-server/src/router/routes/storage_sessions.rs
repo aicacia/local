@@ -1,7 +1,7 @@
 use axum::{Json, extract::State};
 use http::{HeaderMap, header::AUTHORIZATION};
 use lidp_model::contract::{ErrorCode, ErrorResponse, StorageSession};
-use lidp_service::{repo::UserDeviceRepo, storage_session::StorageScope};
+use lidp_service::{repo::DeviceRepo, storage_session::StorageScope};
 
 use crate::router::{RouterState, authorize_bearer};
 
@@ -42,8 +42,8 @@ async fn local_scope(state: &RouterState, token: &str) -> Result<StorageScope, E
         .application_id_for_client(&authorization.claims.aud)
         .await?;
     let trusted_devices = state
-        .user_devices
-        .list_approved_by_user_id(authorization.principal.get_entity_id())
+        .devices
+        .list_approved()
         .await
         .map_err(|_| ErrorResponse::new(ErrorCode::ServerError))?;
     Ok(StorageScope {

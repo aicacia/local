@@ -3,7 +3,7 @@ use alloc::string::String;
 
 use serde::{Deserialize, Serialize};
 
-use super::UserDeviceState;
+use super::DeviceState;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -13,7 +13,7 @@ pub struct DeviceInfo {
     pub name: String,
     pub public_key: String,
     pub address: String,
-    pub state: UserDeviceState,
+    pub state: DeviceState,
     pub created_at: i64,
     pub updated_at: i64,
     pub revoked_at: Option<i64>,

@@ -48,11 +48,8 @@ CREATE UNIQUE INDEX `idx_user_emails_primary`
     ON `user_emails`(`user_id`)
     WHERE `primary` = 1;
 
-CREATE TABLE user_devices (
+CREATE TABLE devices (
     `id` INTEGER PRIMARY KEY,
-
-    `user_id` INTEGER NOT NULL
-        REFERENCES `users`(`id`) ON DELETE CASCADE,
 
     `name` TEXT NOT NULL,
     `public_key` TEXT NOT NULL,
@@ -66,22 +63,18 @@ CREATE TABLE user_devices (
     `revoked_at` INTEGER
 ) STRICT;
 
-CREATE UNIQUE INDEX `idx_user_devices_user_public_key`
-    ON `user_devices`(`user_id`, `public_key`);
+CREATE UNIQUE INDEX `idx_devices_public_key` ON `devices`(`public_key`);
 
-CREATE INDEX `idx_user_devices_user_state`
-    ON `user_devices`(`user_id`, `state`);
+CREATE INDEX `idx_devices_state` ON `devices`(`state`);
 
 CREATE TABLE device_pairing_invitations (
     `id` INTEGER PRIMARY KEY,
-    `user_id` INTEGER NOT NULL
-        REFERENCES `users`(`id`) ON DELETE CASCADE,
     `initiating_public_key` TEXT NOT NULL,
     `secret_hash` BLOB NOT NULL UNIQUE,
     `expires_at` INTEGER NOT NULL,
     `redeemed_at` INTEGER,
     `enrollment_device_id` INTEGER UNIQUE
-        REFERENCES `user_devices`(`id`) ON DELETE SET NULL,
+        REFERENCES `devices`(`id`) ON DELETE SET NULL,
     `created_at` INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 

@@ -9,9 +9,9 @@ use lidp_service::{
     management::ManagementService,
     oauth2::OAuth2Service,
     repo::{
-        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo,
+        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
+        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
     storage_session::StorageSessionService,
 };
@@ -70,7 +70,7 @@ pub fn init_router(
         database.clone(),
         oauth2_service.clone(),
         storage_sessions.clone(),
-        Arc::new(LibSqlUserDeviceRepo::new(database.clone())),
+        Arc::new(LibSqlDeviceRepo::new(database.clone())),
         device_identity,
     );
     let router_state = Arc::new(match control_plane {
@@ -141,7 +141,7 @@ pub async fn init_datebase(
         app_config.bootstrap.clone(),
     );
 
-    let bootstrap_user = bootstrap_service
+    bootstrap_service
         .ensure_system_baseline()
         .await
         .map_err(io::Error::other)?;
@@ -149,8 +149,7 @@ pub async fn init_datebase(
         .try_state::<Arc<DeviceIdentity>>()
         .ok_or_else(|| io::Error::other("device identity is missing"))?;
     lidp_service::bootstrap::ensure_bootstrap_device(
-        bootstrap_user.id,
-        &LibSqlUserDeviceRepo::new(database.clone()),
+        &LibSqlDeviceRepo::new(database.clone()),
         lidp_model::contract::DeviceEnrollmentRequest {
             name: "LIdP API server".to_string(),
             public_key: device_identity.endpoint_id().to_string(),

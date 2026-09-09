@@ -10,9 +10,9 @@ use lidp_service::{
     hosted_control_plane::HostedControlPlane,
     oauth2::OAuth2Service,
     repo::{
-        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo,
+        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
+        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
     storage_session::{StorageScope, StorageSessionService},
     tunnel_authorization::{
@@ -209,7 +209,7 @@ pub async fn run() -> io::Result<()> {
         app_config.bootstrap.clone(),
     );
 
-    let bootstrap_user = bootstrap_service
+    bootstrap_service
         .ensure_system_baseline()
         .await
         .map_err(io::Error::other)?;
@@ -229,7 +229,7 @@ pub async fn run() -> io::Result<()> {
         oauth2_config,
     ));
     let storage_sessions = Arc::new(StorageSessionService::new());
-    let user_devices = Arc::new(LibSqlUserDeviceRepo::new(database.clone()));
+    let devices = Arc::new(LibSqlDeviceRepo::new(database.clone()));
     let control_plane = app_config
         .control_plane_uri
         .as_deref()
@@ -239,8 +239,7 @@ pub async fn run() -> io::Result<()> {
         .map(Arc::new);
     let device_identity = Arc::new(open_device_identity(Path::new(&app_config.device_key)).await?);
     lidp_service::bootstrap::ensure_bootstrap_device(
-        bootstrap_user.id,
-        user_devices.as_ref(),
+        devices.as_ref(),
         lidp_model::contract::DeviceEnrollmentRequest {
             name: "LIdP API server".to_string(),
             public_key: device_identity.endpoint_id().to_string(),
@@ -257,7 +256,7 @@ pub async fn run() -> io::Result<()> {
         database.clone(),
         Arc::clone(&oauth2_service),
         storage_sessions.clone(),
-        Arc::clone(&user_devices),
+        Arc::clone(&devices),
         Arc::clone(&device_identity),
     );
     let router_state = match &control_plane {
@@ -277,7 +276,7 @@ pub async fn run() -> io::Result<()> {
         }
         None => CliTunnelAuthorizer::Local(LocalTunnelAuthorizer::new(
             Arc::clone(&oauth2_service),
-            Arc::clone(&user_devices),
+            Arc::clone(&devices),
         )),
     };
     let manager = Server::new(device_identity.endpoint(), allowlist.clone(), authorizer);
@@ -290,7 +289,7 @@ pub async fn run() -> io::Result<()> {
         Some(control_plane) => CliAuthorizationProvider::Hosted(Arc::clone(control_plane)),
         None => CliAuthorizationProvider::Local(Arc::new(LocalTunnelAuthorizer::new(
             Arc::clone(&oauth2_service),
-            Arc::clone(&user_devices),
+            Arc::clone(&devices),
         ))),
     };
     let transport_factory = IrohTransportFactory::new(

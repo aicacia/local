@@ -1,61 +1,50 @@
 use std::sync::Arc;
 
 use libsql::{Database, de::from_row};
-use lidp_model::{contract::TrustedDevice, model::UserDevice};
+use lidp_model::{contract::TrustedDevice, model::Device};
 
-use crate::repo::{RepoResult, UserDeviceRepo};
+use crate::repo::{DeviceRepo, RepoResult};
 
-pub struct LibSqlUserDeviceRepo {
+pub struct LibSqlDeviceRepo {
     database: Arc<Database>,
 }
 
-impl LibSqlUserDeviceRepo {
+impl LibSqlDeviceRepo {
     pub fn new(database: Arc<Database>) -> Self {
         Self { database }
     }
 }
 
-impl UserDeviceRepo for LibSqlUserDeviceRepo {
+impl DeviceRepo for LibSqlDeviceRepo {
     async fn create(
         &self,
-        user_id: i64,
         name: String,
         public_key: String,
         address: String,
         enrollment_code_hash: Vec<u8>,
         enrollment_expires_at: i64,
-    ) -> RepoResult<UserDevice> {
+    ) -> RepoResult<Device> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
-                    INSERT INTO user_devices (
-                        user_id, name, public_key, address, enrollment_code_hash,
-                        enrollment_expires_at, state
+                    INSERT INTO devices (
+                        name, public_key, address, enrollment_code_hash, enrollment_expires_at,
+                        state
                     )
-                    SELECT ?, ?, ?, ?,
-                        CASE WHEN EXISTS(
-                            SELECT 1 FROM user_devices WHERE user_id = ?
-                        ) THEN ? ELSE NULL END,
-                        CASE WHEN EXISTS(
-                            SELECT 1 FROM user_devices WHERE user_id = ?
-                        ) THEN ? ELSE NULL END,
-                        CASE WHEN EXISTS(
-                            SELECT 1 FROM user_devices WHERE user_id = ?
-                        ) THEN 0 ELSE 1 END
-                    RETURNING id, user_id, name, public_key, address, state,
-                        created_at, updated_at, revoked_at
+                    SELECT ?, ?, ?,
+                        CASE WHEN EXISTS(SELECT 1 FROM devices) THEN ? ELSE NULL END,
+                        CASE WHEN EXISTS(SELECT 1 FROM devices) THEN ? ELSE NULL END,
+                        CASE WHEN EXISTS(SELECT 1 FROM devices) THEN 0 ELSE 1 END
+                    RETURNING id, name, public_key, address, state, created_at, updated_at,
+                        revoked_at
                 "#,
                 libsql::params![
-                    user_id,
                     name,
                     public_key,
                     address,
-                    user_id,
                     enrollment_code_hash,
-                    user_id,
                     enrollment_expires_at,
-                    user_id,
                 ],
             )
             .await?;
@@ -63,12 +52,11 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
             .next()
             .await?
             .ok_or(libsql::Error::QueryReturnedNoRows)?;
-        Ok(from_row::<UserDevice>(&row)?)
+        Ok(from_row::<Device>(&row)?)
     }
 
     async fn create_pairing_invitation(
         &self,
-        user_id: i64,
         initiating_public_key: String,
         secret_hash: Vec<u8>,
         expires_at: i64,
@@ -78,22 +66,20 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
             .query(
                 r#"
                     INSERT INTO device_pairing_invitations (
-                        user_id, initiating_public_key, secret_hash, expires_at
+                        initiating_public_key, secret_hash, expires_at
                     )
-                    SELECT ?, ?, ?, ?
+                    SELECT ?, ?, ?
                     WHERE EXISTS(
-                        SELECT 1 FROM user_devices
-                        WHERE user_id = ? AND public_key = ? AND state = 1
+                        SELECT 1 FROM devices
+                        WHERE public_key = ? AND state = 1
                     )
                     RETURNING id
                 "#,
                 libsql::params![
-                    user_id,
                     initiating_public_key.clone(),
                     secret_hash,
                     expires_at,
-                    user_id,
-                    initiating_public_key,
+                    initiating_public_key
                 ],
             )
             .await?;
@@ -110,17 +96,17 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
         name: String,
         public_key: String,
         address: String,
-    ) -> RepoResult<Option<(i64, UserDevice)>> {
+    ) -> RepoResult<Option<(i64, Device)>> {
         let connection = self.database.connect()?;
         let tx = connection.transaction().await?;
-        let (invitation_id, user_id) = {
+        let invitation_id = {
             let mut rows = tx
                 .query(
                     r#"
                         UPDATE device_pairing_invitations
                         SET redeemed_at = unixepoch()
                         WHERE secret_hash = ? AND redeemed_at IS NULL AND expires_at > unixepoch()
-                        RETURNING id, user_id
+                        RETURNING id
                     "#,
                     libsql::params![secret_hash],
                 )
@@ -128,25 +114,25 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
             let Some(row) = rows.next().await? else {
                 return Ok(None);
             };
-            (row.get::<i64>(0)?, row.get::<i64>(1)?)
+            row.get::<i64>(0)?
         };
         let device = {
             let mut rows = tx
                 .query(
                     r#"
-                        INSERT INTO user_devices (user_id, name, public_key, address, state)
-                        VALUES (?, ?, ?, ?, 0)
-                        RETURNING id, user_id, name, public_key, address, state,
-                            created_at, updated_at, revoked_at
+                        INSERT INTO devices (name, public_key, address, state)
+                        VALUES (?, ?, ?, 0)
+                        RETURNING id, name, public_key, address, state, created_at, updated_at,
+                            revoked_at
                     "#,
-                    libsql::params![user_id, name, public_key, address],
+                    libsql::params![name, public_key, address],
                 )
                 .await?;
             let row = rows
                 .next()
                 .await?
                 .ok_or(libsql::Error::QueryReturnedNoRows)?;
-            from_row::<UserDevice>(&row)?
+            from_row::<Device>(&row)?
         };
         tx.execute(
             "UPDATE device_pairing_invitations SET enrollment_device_id = ? WHERE id = ?",
@@ -157,72 +143,59 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
         Ok(Some((invitation_id, device)))
     }
 
-    async fn pending_pairing(
-        &self,
-        user_id: i64,
-        device_id: i64,
-    ) -> RepoResult<Option<(i64, UserDevice, String)>> {
+    async fn pending_pairing(&self, device_id: i64) -> RepoResult<Option<(i64, Device, String)>> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
-                    SELECT i.id, d.id, d.user_id, d.name, d.public_key, d.address, d.state,
-                        d.created_at, d.updated_at, d.revoked_at, i.initiating_public_key
+                    SELECT i.id AS invitation_id, d.id, d.name, d.public_key, d.address, d.state, d.created_at,
+                        d.updated_at, d.revoked_at, i.initiating_public_key
                     FROM device_pairing_invitations i
-                    JOIN user_devices d ON d.id = i.enrollment_device_id
-                    WHERE i.user_id = ? AND d.id = ? AND d.state = 0 AND i.expires_at > unixepoch()
+                    JOIN devices d ON d.id = i.enrollment_device_id
+                    WHERE d.id = ? AND d.state = 0 AND i.expires_at > unixepoch()
                 "#,
-                libsql::params![user_id, device_id],
+                libsql::params![device_id],
             )
             .await?;
         let Some(row) = rows.next().await? else {
             return Ok(None);
         };
-        Ok(Some((
-            row.get(0)?,
-            from_row::<UserDevice>(&row)?,
-            row.get(10)?,
-        )))
+        Ok(Some((row.get(0)?, from_row::<Device>(&row)?, row.get(9)?)))
     }
 
     async fn approve_pairing(
         &self,
-        user_id: i64,
         device_id: i64,
         invitation_id: i64,
-    ) -> RepoResult<Option<UserDevice>> {
+    ) -> RepoResult<Option<Device>> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
-                    UPDATE user_devices
+                    UPDATE devices
                     SET state = 1, updated_at = unixepoch()
-                    WHERE id = ? AND user_id = ? AND state = 0
+                    WHERE id = ? AND state = 0
                         AND EXISTS(
                             SELECT 1 FROM device_pairing_invitations
-                            WHERE id = ? AND user_id = ? AND enrollment_device_id = ?
-                                AND expires_at > unixepoch()
+                            WHERE id = ? AND enrollment_device_id = ? AND expires_at > unixepoch()
                         )
-                    RETURNING id, user_id, name, public_key, address, state,
-                        created_at, updated_at, revoked_at
+                    RETURNING id, name, public_key, address, state, created_at, updated_at,
+                        revoked_at
                 "#,
-                libsql::params![device_id, user_id, invitation_id, user_id, device_id],
+                libsql::params![device_id, invitation_id, device_id],
             )
             .await?;
         rows.next()
             .await?
-            .map(|row| from_row::<UserDevice>(&row))
+            .map(|row| from_row::<Device>(&row))
             .transpose()
             .map_err(Into::into)
     }
 
-    async fn has_any_by_user_id(&self, user_id: i64) -> RepoResult<bool> {
+    async fn has_any(&self) -> RepoResult<bool> {
         let connection = self.database.connect()?;
         let mut rows = connection
-            .query(
-                "SELECT EXISTS(SELECT 1 FROM user_devices WHERE user_id = ?)",
-                libsql::params![user_id],
-            )
+            .query("SELECT EXISTS(SELECT 1 FROM devices)", ())
             .await?;
         let row = rows
             .next()
@@ -231,52 +204,47 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
         Ok(row.get::<i64>(0)? != 0)
     }
 
-    async fn list_by_user_id(&self, user_id: i64) -> RepoResult<Vec<UserDevice>> {
+    async fn list(&self) -> RepoResult<Vec<Device>> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
-                    SELECT id, user_id, name, public_key, address, state,
-                        created_at, updated_at, revoked_at
-                    FROM user_devices
-                    WHERE user_id = ?
+                    SELECT id, name, public_key, address, state, created_at, updated_at, revoked_at
+                    FROM devices
                     ORDER BY id
                 "#,
-                libsql::params![user_id],
+                (),
             )
             .await?;
         let mut devices = Vec::new();
         while let Some(row) = rows.next().await? {
-            devices.push(from_row::<UserDevice>(&row)?);
+            devices.push(from_row::<Device>(&row)?);
         }
         Ok(devices)
     }
 
-    async fn list_approved_by_user_id(&self, user_id: i64) -> RepoResult<Vec<TrustedDevice>> {
+    async fn list_approved(&self) -> RepoResult<Vec<TrustedDevice>> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
                     SELECT public_key AS publicKey, address
-                    FROM user_devices
-                    WHERE user_id = ? AND state = 1
+                    FROM devices
+                    WHERE state = 1
                     ORDER BY id
                 "#,
-                libsql::params![user_id],
+                (),
             )
             .await?;
         let mut devices = Vec::new();
-
         while let Some(row) = rows.next().await? {
             devices.push(from_row::<TrustedDevice>(&row)?);
         }
-
         Ok(devices)
     }
 
-    async fn are_approved_by_user_id(
+    async fn are_approved(
         &self,
-        user_id: i64,
         local_public_key: &str,
         remote_public_key: &str,
     ) -> RepoResult<bool> {
@@ -285,12 +253,10 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
             .query(
                 r#"
                     SELECT COUNT(*)
-                    FROM user_devices
-                    WHERE user_id = ?
-                        AND state = 1
-                        AND public_key IN (?, ?)
+                    FROM devices
+                    WHERE state = 1 AND public_key IN (?, ?)
                 "#,
-                libsql::params![user_id, local_public_key, remote_public_key],
+                libsql::params![local_public_key, remote_public_key],
             )
             .await?;
         let count: i64 = rows
@@ -301,99 +267,76 @@ impl UserDeviceRepo for LibSqlUserDeviceRepo {
         Ok(count == 2)
     }
 
-    async fn has_approved_by_user_id(&self, user_id: i64) -> RepoResult<bool> {
-        let connection = self.database.connect()?;
-        let mut rows = connection
-            .query(
-                "SELECT EXISTS(SELECT 1 FROM user_devices WHERE user_id = ? AND state = 1)",
-                libsql::params![user_id],
-            )
-            .await?;
-        let row = rows
-            .next()
-            .await?
-            .ok_or(libsql::Error::QueryReturnedNoRows)?;
-        Ok(row.get::<i64>(0)? != 0)
-    }
-
     async fn approve(
         &self,
-        user_id: i64,
         device_id: i64,
         enrollment_code_hash: &[u8],
-    ) -> RepoResult<Option<UserDevice>> {
+    ) -> RepoResult<Option<Device>> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
-                    UPDATE user_devices
+                    UPDATE devices
                     SET state = 1,
                         enrollment_code_hash = NULL,
                         enrollment_expires_at = NULL,
                         updated_at = unixepoch()
                     WHERE id = ?
-                        AND user_id = ?
                         AND state = 0
                         AND enrollment_code_hash = ?
                         AND enrollment_expires_at > unixepoch()
-                    RETURNING id, user_id, name, public_key, address, state,
-                        created_at, updated_at, revoked_at
+                    RETURNING id, name, public_key, address, state, created_at, updated_at,
+                        revoked_at
                 "#,
-                libsql::params![device_id, user_id, enrollment_code_hash],
+                libsql::params![device_id, enrollment_code_hash],
             )
             .await?;
         rows.next()
             .await?
-            .map(|row| from_row::<UserDevice>(&row))
+            .map(|row| from_row::<Device>(&row))
             .transpose()
             .map_err(Into::into)
     }
 
-    async fn rename(
-        &self,
-        user_id: i64,
-        device_id: i64,
-        name: String,
-    ) -> RepoResult<Option<UserDevice>> {
+    async fn rename(&self, device_id: i64, name: String) -> RepoResult<Option<Device>> {
         let connection = self.database.connect()?;
         let mut rows = connection
             .query(
                 r#"
-                    UPDATE user_devices
+                    UPDATE devices
                     SET name = ?, updated_at = unixepoch()
-                    WHERE id = ? AND user_id = ? AND state != 2
-                    RETURNING id, user_id, name, public_key, address, state,
-                        created_at, updated_at, revoked_at
+                    WHERE id = ? AND state != 2
+                    RETURNING id, name, public_key, address, state, created_at, updated_at,
+                        revoked_at
                 "#,
-                libsql::params![name, device_id, user_id],
+                libsql::params![name, device_id],
             )
             .await?;
         rows.next()
             .await?
-            .map(|row| from_row::<UserDevice>(&row))
+            .map(|row| from_row::<Device>(&row))
             .transpose()
             .map_err(Into::into)
     }
 
-    async fn revoke(&self, user_id: i64, device_id: i64) -> RepoResult<bool> {
+    async fn revoke(&self, device_id: i64) -> RepoResult<bool> {
         let connection = self.database.connect()?;
         let changed = connection
             .execute(
                 r#"
-                    UPDATE user_devices
+                    UPDATE devices
                     SET state = 2, revoked_at = unixepoch(), updated_at = unixepoch()
                     WHERE id = ?
-                        AND user_id = ?
                         AND (
                             state != 1
                             OR EXISTS(
                                 SELECT 1
-                                FROM user_devices
-                                WHERE user_id = ? AND state = 1 AND id != ?
+                                FROM devices
+                                WHERE state = 1 AND id != ?
                             )
                         )
                 "#,
-                libsql::params![device_id, user_id, user_id, device_id],
+                libsql::params![device_id, device_id],
             )
             .await?;
         Ok(changed != 0)
@@ -406,28 +349,20 @@ mod tests {
 
     use iroh::SecretKey;
     use libsql::Builder;
-    use lidp_model::contract::UserDeviceState;
+    use lidp_model::contract::DeviceState;
 
-    use super::{LibSqlUserDeviceRepo, UserDeviceRepo};
+    use super::{DeviceRepo, LibSqlDeviceRepo};
 
     #[tokio::test]
-    async fn approves_and_revokes_a_device() {
-        let path = std::env::temp_dir().join(format!(
-            "lidp-user-device-test-{}.sqlite",
-            std::process::id()
-        ));
+    async fn manages_global_devices() {
+        let path =
+            std::env::temp_dir().join(format!("lidp-device-test-{}.sqlite", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let database = Arc::new(Builder::new_local(&path).build().await.unwrap());
         lidp_model::migrate::up(&database).await.unwrap();
-        let connection = database.connect().unwrap();
-        connection
-            .execute("INSERT INTO users (name) VALUES ('user')", ())
-            .await
-            .unwrap();
-        let repo = LibSqlUserDeviceRepo::new(database.clone());
+        let repo = LibSqlDeviceRepo::new(Arc::clone(&database));
         let first = repo
             .create(
-                1,
                 "first".into(),
                 "first-key".into(),
                 "first-address".into(),
@@ -438,7 +373,6 @@ mod tests {
             .unwrap();
         let pending = repo
             .create(
-                1,
                 "pending".into(),
                 "pending-key".into(),
                 "pending-address".into(),
@@ -448,40 +382,34 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(repo.list_approved_by_user_id(1).await.unwrap().len(), 1);
+        assert_eq!(repo.list_approved().await.unwrap().len(), 1);
         assert_eq!(
-            repo.approve(1, pending.id, &[1, 2, 3])
+            repo.approve(pending.id, &[1, 2, 3])
                 .await
                 .unwrap()
                 .unwrap()
                 .state,
-            UserDeviceState::Approved
+            DeviceState::Approved
         );
-        assert!(repo.revoke(1, pending.id).await.unwrap());
-        assert!(!repo.revoke(1, first.id).await.unwrap());
-        assert_eq!(repo.list_approved_by_user_id(1).await.unwrap().len(), 1);
+        assert!(repo.revoke(pending.id).await.unwrap());
+        assert!(!repo.revoke(first.id).await.unwrap());
+        assert_eq!(repo.list_approved().await.unwrap().len(), 1);
         drop(repo);
         drop(database);
         std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
-    async fn pairing_invitations_expire_once_and_are_bound_to_the_user() {
+    async fn pairing_invitations_are_global_single_use_and_expiring() {
         let path =
             std::env::temp_dir().join(format!("lidp-pairing-test-{}.sqlite", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let database = Arc::new(Builder::new_local(&path).build().await.unwrap());
         lidp_model::migrate::up(&database).await.unwrap();
-        let connection = database.connect().unwrap();
-        connection
-            .execute("INSERT INTO users (name) VALUES ('first'), ('second')", ())
-            .await
-            .unwrap();
-        let repo = LibSqlUserDeviceRepo::new(database.clone());
+        let repo = LibSqlDeviceRepo::new(Arc::clone(&database));
         let signer = SecretKey::generate();
         let signer_key = signer.public().to_string();
         repo.create(
-            1,
             "first".into(),
             signer_key.clone(),
             "first-address".into(),
@@ -492,7 +420,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            repo.create_pairing_invitation(1, signer_key.clone(), vec![0], 0)
+            repo.create_pairing_invitation(signer_key.clone(), vec![0], 0)
                 .await
                 .unwrap()
                 .is_some()
@@ -505,7 +433,7 @@ mod tests {
         );
 
         let invitation = repo
-            .create_pairing_invitation(1, signer_key, vec![1], 4_102_444_800)
+            .create_pairing_invitation(signer_key, vec![1], 4_102_444_800)
             .await
             .unwrap()
             .unwrap();
@@ -515,17 +443,22 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(
-            repo.redeem_pairing_invitation(&[1], "again".into(), "key".into(), "address".into())
-                .await
-                .unwrap()
-                .is_none()
+            repo.redeem_pairing_invitation(
+                &[1],
+                "again".into(),
+                "other-key".into(),
+                "address".into()
+            )
+            .await
+            .unwrap()
+            .is_none()
         );
-        assert!(repo.pending_pairing(2, pending.id).await.unwrap().is_none());
+        assert!(repo.pending_pairing(pending.id).await.unwrap().is_some());
         assert!(
-            repo.approve_pairing(2, pending.id, invitation)
+            repo.approve_pairing(pending.id, invitation)
                 .await
                 .unwrap()
-                .is_none()
+                .is_some()
         );
         drop(repo);
         drop(database);

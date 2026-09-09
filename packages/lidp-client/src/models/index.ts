@@ -50,6 +50,6 @@ export * from "./TrustedDevice.js";
 export * from "./TunnelAuthorization.js";
 export * from "./TunnelAuthorizationRequest.js";
 export * from "./UpdateDeviceRequest.js";
-export * from "./UserDeviceState.js";
+export * from "./DeviceState.js";
 export * from "./UserInfo.js";
 export * from "./VersionResponse.js";

@@ -16,8 +16,8 @@ use crate::{
     hosted_control_plane::HostedControlPlane,
     oauth2::{OAuth2Service, decode_jwt, verify_tunnel_authorization},
     repo::{
-        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
-        LibSqlOAuth2UserConsentRepo, LibSqlUserDeviceRepo, LibSqlUserRepo, UserDeviceRepo,
+        DeviceRepo, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
+        LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
     },
     storage_session::StorageScope,
 };
@@ -33,19 +33,16 @@ pub type LocalOAuth2Service = OAuth2Service<
 
 pub struct LocalTunnelAuthorizer {
     oauth2_service: Arc<LocalOAuth2Service>,
-    user_devices: Arc<LibSqlUserDeviceRepo>,
+    devices: Arc<LibSqlDeviceRepo>,
     used: Mutex<BTreeMap<String, i64>>,
 }
 
 impl LocalTunnelAuthorizer {
     #[must_use]
-    pub fn new(
-        oauth2_service: Arc<LocalOAuth2Service>,
-        user_devices: Arc<LibSqlUserDeviceRepo>,
-    ) -> Self {
+    pub fn new(oauth2_service: Arc<LocalOAuth2Service>, devices: Arc<LibSqlDeviceRepo>) -> Self {
         Self {
             oauth2_service,
-            user_devices,
+            devices,
             used: Mutex::new(BTreeMap::new()),
         }
     }
@@ -54,7 +51,7 @@ impl LocalTunnelAuthorizer {
     pub fn authorization_provider(&self, scope: StorageScope) -> LocalTunnelAuthorizationProvider {
         LocalTunnelAuthorizationProvider {
             oauth2_service: Arc::clone(&self.oauth2_service),
-            user_devices: Arc::clone(&self.user_devices),
+            devices: Arc::clone(&self.devices),
             scope,
         }
     }
@@ -145,12 +142,9 @@ impl TunnelAuthorizer for LocalTunnelAuthorizer {
         {
             return false;
         }
-        let Ok(user_id) = claims.sub.parse() else {
-            return false;
-        };
         let Ok(approved) = self
-            .user_devices
-            .are_approved_by_user_id(user_id, &initiating_public_key, &accepting_public_key)
+            .devices
+            .are_approved(&initiating_public_key, &accepting_public_key)
             .await
         else {
             return false;
@@ -162,7 +156,7 @@ impl TunnelAuthorizer for LocalTunnelAuthorizer {
 #[derive(Clone)]
 pub struct LocalTunnelAuthorizationProvider {
     oauth2_service: Arc<LocalOAuth2Service>,
-    user_devices: Arc<LibSqlUserDeviceRepo>,
+    devices: Arc<LibSqlDeviceRepo>,
     scope: StorageScope,
 }
 
@@ -216,17 +210,13 @@ impl TunnelAuthorizationProvider for LocalTunnelAuthorizationProvider {
         remote_id: EndpointId,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
         let oauth2_service = Arc::clone(&self.oauth2_service);
-        let user_devices = Arc::clone(&self.user_devices);
+        let devices = Arc::clone(&self.devices);
         let scope = self.scope.clone();
         Box::pin(async move {
-            let user_id = scope
-                .user_sub
-                .parse()
-                .map_err(|_| Error::new(ErrorKind::PermissionDenied, "invalid user subject"))?;
             let local_public_key = local_id.to_string();
             let remote_public_key = remote_id.to_string();
-            let approved = user_devices
-                .are_approved_by_user_id(user_id, &local_public_key, &remote_public_key)
+            let approved = devices
+                .are_approved(&local_public_key, &remote_public_key)
                 .await
                 .map_err(|error| Error::other(error.to_string()))?;
             if !approved {

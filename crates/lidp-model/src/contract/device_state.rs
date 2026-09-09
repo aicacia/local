@@ -1,20 +1,17 @@
-#[cfg(not(feature = "std"))]
-use alloc::{format, string::String};
-
 use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum UserDeviceState {
+pub enum DeviceState {
     Pending = 0,
     Approved = 1,
     Revoked = 2,
 }
 
-impl fmt::Display for UserDeviceState {
+impl fmt::Display for DeviceState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Pending => write!(f, "pending"),
@@ -26,12 +23,12 @@ impl fmt::Display for UserDeviceState {
 
 #[cfg(test)]
 mod tests {
-    use super::UserDeviceState;
+    use super::DeviceState;
 
     #[test]
     fn serializes_as_a_stable_name() {
         assert_eq!(
-            serde_json::to_string(&UserDeviceState::Approved).unwrap(),
+            serde_json::to_string(&DeviceState::Approved).unwrap(),
             "\"approved\""
         );
     }

@@ -17,6 +17,7 @@ mod device_enrollment;
 mod device_enrollment_request;
 mod device_info;
 mod device_pairing;
+mod device_state;
 mod entity_type;
 mod error_code;
 mod error_response;
@@ -49,7 +50,6 @@ mod token_request;
 mod trusted_device;
 mod tunnel_authorization;
 mod update_device_request;
-mod user_device_state;
 mod user_info;
 
 pub use application_registration::ApplicationRegistration;
@@ -75,6 +75,7 @@ pub use device_pairing::{
     DevicePairingInvitationRequest, DevicePairingRedemptionRequest,
     device_pairing_approval_payload,
 };
+pub use device_state::DeviceState;
 pub use entity_type::EntityType;
 pub use error_code::ErrorCode;
 pub use error_response::{ErrorResponse, ErrorResponseResult};
@@ -109,5 +110,4 @@ pub use tunnel_authorization::{
     TunnelAuthorization, TunnelAuthorizationClaims, TunnelAuthorizationRequest,
 };
 pub use update_device_request::UpdateDeviceRequest;
-pub use user_device_state::UserDeviceState;
 pub use user_info::UserInfo;

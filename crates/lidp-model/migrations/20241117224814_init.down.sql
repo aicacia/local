@@ -50,9 +50,9 @@ DROP TABLE IF EXISTS "user_emails";
 DROP INDEX IF EXISTS "idx_device_pairing_invitations_enrollment";
 DROP TABLE IF EXISTS "device_pairing_invitations";
 
-DROP INDEX IF EXISTS "idx_user_devices_user_state";
-DROP INDEX IF EXISTS "idx_user_devices_user_public_key";
-DROP TABLE IF EXISTS "user_devices";
+DROP INDEX IF EXISTS "idx_devices_state";
+DROP INDEX IF EXISTS "idx_devices_public_key";
+DROP TABLE IF EXISTS "devices";
 
 DROP INDEX IF EXISTS "idx_users_name";
 DROP TABLE IF EXISTS "users";

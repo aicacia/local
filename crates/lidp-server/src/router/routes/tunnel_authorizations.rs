@@ -2,7 +2,7 @@ use axum::{Json, extract::State};
 use lidp_model::contract::{
     ErrorCode, ErrorResponse, TunnelAuthorization, TunnelAuthorizationRequest,
 };
-use lidp_service::repo::UserDeviceRepo;
+use lidp_service::repo::DeviceRepo;
 
 use crate::router::{RouterState, middleware::StandardAuthorization};
 
@@ -31,12 +31,8 @@ pub(crate) async fn create_tunnel_authorization(
         return Err(ErrorResponse::new(ErrorCode::InvalidRequest));
     }
     let approved = state
-        .user_devices
-        .are_approved_by_user_id(
-            principal.get_entity_id(),
-            &request.local_public_key,
-            &request.remote_public_key,
-        )
+        .devices
+        .are_approved(&request.local_public_key, &request.remote_public_key)
         .await
         .map_err(|_| ErrorResponse::new(ErrorCode::ServerError))?;
     if !approved {

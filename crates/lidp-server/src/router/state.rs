@@ -8,8 +8,8 @@ use lidp_service::{
     hosted_control_plane::HostedControlPlane,
     oauth2::OAuth2Service,
     repo::{
-        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
-        LibSqlOAuth2UserConsentRepo, LibSqlUserDeviceRepo, LibSqlUserRepo,
+        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
+        LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
     },
     storage_session::StorageScope,
     storage_session::StorageSessionService,
@@ -99,7 +99,7 @@ pub struct RouterState {
         >,
     >,
     pub storage_sessions: Arc<StorageSessionService>,
-    pub user_devices: Arc<LibSqlUserDeviceRepo>,
+    pub devices: Arc<LibSqlDeviceRepo>,
     pub device_identity: Arc<DeviceIdentity>,
     pub storage_scope_resolver: Option<Arc<dyn StorageScopeResolver>>,
 }
@@ -120,7 +120,7 @@ impl RouterState {
             >,
         >,
         storage_sessions: Arc<StorageSessionService>,
-        user_devices: Arc<LibSqlUserDeviceRepo>,
+        devices: Arc<LibSqlDeviceRepo>,
         device_identity: Arc<DeviceIdentity>,
     ) -> Self {
         Self {
@@ -129,7 +129,7 @@ impl RouterState {
             database,
             oauth2_service,
             storage_sessions,
-            user_devices,
+            devices,
             device_identity,
             storage_scope_resolver: None,
         }
