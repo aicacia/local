@@ -43,11 +43,57 @@ import {
     CodeChallengeMethodFromJSON,
     CodeChallengeMethodToJSON,
 } from "../models/CodeChallengeMethod.js";
+import { type Device, DeviceFromJSON, DeviceToJSON } from "../models/Device.js";
 import {
     type DeviceAuthorization,
     DeviceAuthorizationFromJSON,
     DeviceAuthorizationToJSON,
 } from "../models/DeviceAuthorization.js";
+import {
+    type DeviceEnrollment,
+    DeviceEnrollmentFromJSON,
+    DeviceEnrollmentToJSON,
+} from "../models/DeviceEnrollment.js";
+import {
+    type DeviceEnrollmentRequest,
+    DeviceEnrollmentRequestFromJSON,
+    DeviceEnrollmentRequestToJSON,
+} from "../models/DeviceEnrollmentRequest.js";
+import {
+    type DeviceInfo,
+    DeviceInfoFromJSON,
+    DeviceInfoToJSON,
+} from "../models/DeviceInfo.js";
+import {
+    type DevicePairingApprovalPayload,
+    DevicePairingApprovalPayloadFromJSON,
+    DevicePairingApprovalPayloadToJSON,
+} from "../models/DevicePairingApprovalPayload.js";
+import {
+    type DevicePairingApprovalRequest,
+    DevicePairingApprovalRequestFromJSON,
+    DevicePairingApprovalRequestToJSON,
+} from "../models/DevicePairingApprovalRequest.js";
+import {
+    type DevicePairingInvitation,
+    DevicePairingInvitationFromJSON,
+    DevicePairingInvitationToJSON,
+} from "../models/DevicePairingInvitation.js";
+import {
+    type DevicePairingInvitationRequest,
+    DevicePairingInvitationRequestFromJSON,
+    DevicePairingInvitationRequestToJSON,
+} from "../models/DevicePairingInvitationRequest.js";
+import {
+    type DevicePairingRedemptionRequest,
+    DevicePairingRedemptionRequestFromJSON,
+    DevicePairingRedemptionRequestToJSON,
+} from "../models/DevicePairingRedemptionRequest.js";
+import {
+    type DeviceSignature,
+    DeviceSignatureFromJSON,
+    DeviceSignatureToJSON,
+} from "../models/DeviceSignature.js";
 import {
     type HealthResponse,
     HealthResponseFromJSON,
@@ -75,6 +121,16 @@ import {
     ResponseTypeToJSON,
 } from "../models/ResponseType.js";
 import {
+    type SignDeviceMessage,
+    SignDeviceMessageFromJSON,
+    SignDeviceMessageToJSON,
+} from "../models/SignDeviceMessage.js";
+import {
+    type StorageSession,
+    StorageSessionFromJSON,
+    StorageSessionToJSON,
+} from "../models/StorageSession.js";
+import {
     type SubjectTokenType,
     SubjectTokenTypeFromJSON,
     SubjectTokenTypeToJSON,
@@ -85,6 +141,26 @@ import {
     TokenResponseToJSON,
 } from "../models/TokenResponse.js";
 import {
+    type TrustedDevice,
+    TrustedDeviceFromJSON,
+    TrustedDeviceToJSON,
+} from "../models/TrustedDevice.js";
+import {
+    type TunnelAuthorization,
+    TunnelAuthorizationFromJSON,
+    TunnelAuthorizationToJSON,
+} from "../models/TunnelAuthorization.js";
+import {
+    type TunnelAuthorizationRequest,
+    TunnelAuthorizationRequestFromJSON,
+    TunnelAuthorizationRequestToJSON,
+} from "../models/TunnelAuthorizationRequest.js";
+import {
+    type UpdateDeviceRequest,
+    UpdateDeviceRequestFromJSON,
+    UpdateDeviceRequestToJSON,
+} from "../models/UpdateDeviceRequest.js";
+import {
     type UserInfo,
     UserInfoFromJSON,
     UserInfoToJSON,
@@ -94,6 +170,17 @@ import {
     VersionResponseFromJSON,
     VersionResponseToJSON,
 } from "../models/VersionResponse.js";
+
+export interface ApproveDeviceRequest {
+    /**
+     * Pending device enrollment ID
+     */
+    id: number;
+    /**
+     *
+     */
+    devicePairingApprovalRequest: DevicePairingApprovalRequest;
+}
 
 export interface ApproveForUserOperationRequest {
     /**
@@ -169,6 +256,20 @@ export interface AuthorizeQueryRequest {
     uiLocales: string | null;
 }
 
+export interface CreatePairingInvitationRequest {
+    /**
+     *
+     */
+    devicePairingInvitationRequest: DevicePairingInvitationRequest;
+}
+
+export interface CreateTunnelAuthorizationRequest {
+    /**
+     *
+     */
+    tunnelAuthorizationRequest: TunnelAuthorizationRequest;
+}
+
 export interface DeleteRegisterRequest {
     /**
      * Client ID
@@ -187,6 +288,13 @@ export interface DeviceAuthRequest {
     scope?: string | null;
 }
 
+export interface EnrollDeviceRequest {
+    /**
+     *
+     */
+    deviceEnrollmentRequest: DeviceEnrollmentRequest;
+}
+
 export interface GetRegisterRequest {
     /**
      * Client ID
@@ -201,6 +309,13 @@ export interface IsAllowedForUserOperationRequest {
     isAllowedForUserRequest: IsAllowedForUserRequest;
 }
 
+export interface PairingApprovalPayloadRequest {
+    /**
+     * Pending device enrollment ID
+     */
+    id: number;
+}
+
 export interface PutRegisterRequest {
     /**
      * Client ID
@@ -210,6 +325,13 @@ export interface PutRegisterRequest {
      *
      */
     clientRegistration: ClientRegistration;
+}
+
+export interface RedeemPairingInvitationRequest {
+    /**
+     *
+     */
+    devicePairingRedemptionRequest: DevicePairingRedemptionRequest;
 }
 
 export interface RegisterRequest {
@@ -228,6 +350,20 @@ export interface RevokeRequest {
      *
      */
     tokenTypeHint?: string | null;
+}
+
+export interface RevokeDeviceRequest {
+    /**
+     * Device ID
+     */
+    id: number;
+}
+
+export interface SignDeviceMessageRequest {
+    /**
+     *
+     */
+    signDeviceMessage: SignDeviceMessage;
 }
 
 export interface TokenRequest {
@@ -301,6 +437,17 @@ export interface TokenRequest {
     subjectTokenType?: SubjectTokenType;
 }
 
+export interface UpdateDeviceOperationRequest {
+    /**
+     * Device ID
+     */
+    id: number;
+    /**
+     *
+     */
+    updateDeviceRequest: UpdateDeviceRequest;
+}
+
 /**
  * DefaultApi - interface
  *
@@ -308,6 +455,37 @@ export interface TokenRequest {
  * @interface DefaultApiInterface
  */
 export interface DefaultApiInterface {
+    /**
+     * Creates request options for approveDevice without sending the request
+     * @param {number} id Pending device enrollment ID
+     * @param {DevicePairingApprovalRequest} devicePairingApprovalRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    approveDeviceRequestOpts(
+        requestParameters: ApproveDeviceRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {number} id Pending device enrollment ID
+     * @param {DevicePairingApprovalRequest} devicePairingApprovalRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    approveDeviceRaw(
+        requestParameters: ApproveDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceInfo>>;
+
+    /**
+     */
+    approveDevice(
+        requestParameters: ApproveDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceInfo>;
+
     /**
      * Creates request options for approveForUser without sending the request
      * @param {ApproveForUserRequest} approveForUserRequest
@@ -422,6 +600,87 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for createPairingInvitation without sending the request
+     * @param {DevicePairingInvitationRequest} devicePairingInvitationRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createPairingInvitationRequestOpts(
+        requestParameters: CreatePairingInvitationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {DevicePairingInvitationRequest} devicePairingInvitationRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createPairingInvitationRaw(
+        requestParameters: CreatePairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DevicePairingInvitation>>;
+
+    /**
+     */
+    createPairingInvitation(
+        requestParameters: CreatePairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DevicePairingInvitation>;
+
+    /**
+     * Creates request options for createStorageSession without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createStorageSessionRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createStorageSessionRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<StorageSession>>;
+
+    /**
+     */
+    createStorageSession(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<StorageSession>;
+
+    /**
+     * Creates request options for createTunnelAuthorization without sending the request
+     * @param {TunnelAuthorizationRequest} tunnelAuthorizationRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createTunnelAuthorizationRequestOpts(
+        requestParameters: CreateTunnelAuthorizationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {TunnelAuthorizationRequest} tunnelAuthorizationRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    createTunnelAuthorizationRaw(
+        requestParameters: CreateTunnelAuthorizationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<TunnelAuthorization>>;
+
+    /**
+     */
+    createTunnelAuthorization(
+        requestParameters: CreateTunnelAuthorizationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<TunnelAuthorization>;
+
+    /**
      * Creates request options for deleteRegister without sending the request
      * @param {string} clientId Client ID
      * @throws {RequiredError}
@@ -449,6 +708,29 @@ export interface DefaultApiInterface {
         requestParameters: DeleteRegisterRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for device without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    deviceRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    deviceRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Device>>;
+
+    /**
+     */
+    device(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<Device>;
 
     /**
      * Creates request options for deviceAuth without sending the request
@@ -503,6 +785,35 @@ export interface DefaultApiInterface {
     deviceVerify(
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for enrollDevice without sending the request
+     * @param {DeviceEnrollmentRequest} deviceEnrollmentRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    enrollDeviceRequestOpts(
+        requestParameters: EnrollDeviceRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {DeviceEnrollmentRequest} deviceEnrollmentRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    enrollDeviceRaw(
+        requestParameters: EnrollDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceEnrollment>>;
+
+    /**
+     */
+    enrollDevice(
+        requestParameters: EnrollDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceEnrollment>;
 
     /**
      * Creates request options for getRegister without sending the request
@@ -609,6 +920,29 @@ export interface DefaultApiInterface {
     ): Promise<Jwks>;
 
     /**
+     * Creates request options for listDevices without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listDevicesRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    listDevicesRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<DeviceInfo>>>;
+
+    /**
+     */
+    listDevices(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<Array<DeviceInfo>>;
+
+    /**
      * Creates request options for openapiJson without sending the request
      * @throws {RequiredError}
      * @memberof DefaultApiInterface
@@ -655,6 +989,35 @@ export interface DefaultApiInterface {
     ): Promise<AuthorizationServerMetadata>;
 
     /**
+     * Creates request options for pairingApprovalPayload without sending the request
+     * @param {number} id Pending device enrollment ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    pairingApprovalPayloadRequestOpts(
+        requestParameters: PairingApprovalPayloadRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {number} id Pending device enrollment ID
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    pairingApprovalPayloadRaw(
+        requestParameters: PairingApprovalPayloadRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DevicePairingApprovalPayload>>;
+
+    /**
+     */
+    pairingApprovalPayload(
+        requestParameters: PairingApprovalPayloadRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DevicePairingApprovalPayload>;
+
+    /**
      * Creates request options for putRegister without sending the request
      * @param {string} clientId Client ID
      * @param {ClientRegistration} clientRegistration
@@ -684,6 +1047,35 @@ export interface DefaultApiInterface {
         requestParameters: PutRegisterRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration>;
+
+    /**
+     * Creates request options for redeemPairingInvitation without sending the request
+     * @param {DevicePairingRedemptionRequest} devicePairingRedemptionRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    redeemPairingInvitationRequestOpts(
+        requestParameters: RedeemPairingInvitationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {DevicePairingRedemptionRequest} devicePairingRedemptionRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    redeemPairingInvitationRaw(
+        requestParameters: RedeemPairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceEnrollment>>;
+
+    /**
+     */
+    redeemPairingInvitation(
+        requestParameters: RedeemPairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceEnrollment>;
 
     /**
      * Creates request options for register without sending the request
@@ -746,6 +1138,35 @@ export interface DefaultApiInterface {
     ): Promise<void>;
 
     /**
+     * Creates request options for revokeDevice without sending the request
+     * @param {number} id Device ID
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    revokeDeviceRequestOpts(
+        requestParameters: RevokeDeviceRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {number} id Device ID
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    revokeDeviceRaw(
+        requestParameters: RevokeDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>>;
+
+    /**
+     */
+    revokeDevice(
+        requestParameters: RevokeDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<void>;
+
+    /**
      * Creates request options for sessionsLogout without sending the request
      * @throws {RequiredError}
      * @memberof DefaultApiInterface
@@ -767,6 +1188,35 @@ export interface DefaultApiInterface {
     sessionsLogout(
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for signDeviceMessage without sending the request
+     * @param {SignDeviceMessage} signDeviceMessage
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    signDeviceMessageRequestOpts(
+        requestParameters: SignDeviceMessageRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {SignDeviceMessage} signDeviceMessage
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    signDeviceMessageRaw(
+        requestParameters: SignDeviceMessageRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceSignature>>;
+
+    /**
+     */
+    signDeviceMessage(
+        requestParameters: SignDeviceMessageRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceSignature>;
 
     /**
      * Creates request options for token without sending the request
@@ -830,6 +1280,60 @@ export interface DefaultApiInterface {
     ): Promise<TokenResponse>;
 
     /**
+     * Creates request options for trustedDevices without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    trustedDevicesRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    trustedDevicesRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<TrustedDevice>>>;
+
+    /**
+     */
+    trustedDevices(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<Array<TrustedDevice>>;
+
+    /**
+     * Creates request options for updateDevice without sending the request
+     * @param {number} id Device ID
+     * @param {UpdateDeviceRequest} updateDeviceRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    updateDeviceRequestOpts(
+        requestParameters: UpdateDeviceOperationRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {number} id Device ID
+     * @param {UpdateDeviceRequest} updateDeviceRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    updateDeviceRaw(
+        requestParameters: UpdateDeviceOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceInfo>>;
+
+    /**
+     */
+    updateDevice(
+        requestParameters: UpdateDeviceOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceInfo>;
+
+    /**
      * Creates request options for userinfo without sending the request
      * @throws {RequiredError}
      * @memberof DefaultApiInterface
@@ -880,6 +1384,86 @@ export interface DefaultApiInterface {
  *
  */
 export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
+    /**
+     * Creates request options for approveDevice without sending the request
+     */
+    async approveDeviceRequestOpts(
+        requestParameters: ApproveDeviceRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["id"] == null) {
+            throw new runtime.RequiredError(
+                "id",
+                'Required parameter "id" was null or undefined when calling approveDevice().',
+            );
+        }
+
+        if (requestParameters["devicePairingApprovalRequest"] == null) {
+            throw new runtime.RequiredError(
+                "devicePairingApprovalRequest",
+                'Required parameter "devicePairingApprovalRequest" was null or undefined when calling approveDevice().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/enrollments/{id}/approve`;
+        urlPath = urlPath.replace(
+            "{id}",
+            encodeURIComponent(String(requestParameters["id"])),
+        );
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: DevicePairingApprovalRequestToJSON(
+                requestParameters["devicePairingApprovalRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async approveDeviceRaw(
+        requestParameters: ApproveDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceInfo>> {
+        const requestOptions =
+            await this.approveDeviceRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceInfoFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async approveDevice(
+        requestParameters: ApproveDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceInfo> {
+        const response = await this.approveDeviceRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
+    }
+
     /**
      * Creates request options for approveForUser without sending the request
      */
@@ -1217,6 +1801,193 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for createPairingInvitation without sending the request
+     */
+    async createPairingInvitationRequestOpts(
+        requestParameters: CreatePairingInvitationRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["devicePairingInvitationRequest"] == null) {
+            throw new runtime.RequiredError(
+                "devicePairingInvitationRequest",
+                'Required parameter "devicePairingInvitationRequest" was null or undefined when calling createPairingInvitation().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/pairing-invitations`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: DevicePairingInvitationRequestToJSON(
+                requestParameters["devicePairingInvitationRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async createPairingInvitationRaw(
+        requestParameters: CreatePairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DevicePairingInvitation>> {
+        const requestOptions =
+            await this.createPairingInvitationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DevicePairingInvitationFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async createPairingInvitation(
+        requestParameters: CreatePairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DevicePairingInvitation> {
+        const response = await this.createPairingInvitationRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for createStorageSession without sending the request
+     */
+    async createStorageSessionRequestOpts(): Promise<runtime.RequestOpts> {
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/storage/sessions`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async createStorageSessionRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<StorageSession>> {
+        const requestOptions = await this.createStorageSessionRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            StorageSessionFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async createStorageSession(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<StorageSession> {
+        const response = await this.createStorageSessionRaw(initOverrides);
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for createTunnelAuthorization without sending the request
+     */
+    async createTunnelAuthorizationRequestOpts(
+        requestParameters: CreateTunnelAuthorizationRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["tunnelAuthorizationRequest"] == null) {
+            throw new runtime.RequiredError(
+                "tunnelAuthorizationRequest",
+                'Required parameter "tunnelAuthorizationRequest" was null or undefined when calling createTunnelAuthorization().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/tunnels`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: TunnelAuthorizationRequestToJSON(
+                requestParameters["tunnelAuthorizationRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async createTunnelAuthorizationRaw(
+        requestParameters: CreateTunnelAuthorizationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<TunnelAuthorization>> {
+        const requestOptions =
+            await this.createTunnelAuthorizationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            TunnelAuthorizationFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async createTunnelAuthorization(
+        requestParameters: CreateTunnelAuthorizationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<TunnelAuthorization> {
+        const response = await this.createTunnelAuthorizationRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
+    }
+
+    /**
      * Creates request options for deleteRegister without sending the request
      */
     async deleteRegisterRequestOpts(
@@ -1276,6 +2047,46 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void> {
         await this.deleteRegisterRaw(requestParameters, initOverrides);
+    }
+
+    /**
+     * Creates request options for device without sending the request
+     */
+    async deviceRequestOpts(): Promise<runtime.RequestOpts> {
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        let urlPath = `/device`;
+
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async deviceRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Device>> {
+        const requestOptions = await this.deviceRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async device(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<Device> {
+        const response = await this.deviceRaw(initOverrides);
+        return await response.value();
     }
 
     /**
@@ -1387,6 +2198,75 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void> {
         await this.deviceVerifyRaw(initOverrides);
+    }
+
+    /**
+     * Creates request options for enrollDevice without sending the request
+     */
+    async enrollDeviceRequestOpts(
+        requestParameters: EnrollDeviceRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["deviceEnrollmentRequest"] == null) {
+            throw new runtime.RequiredError(
+                "deviceEnrollmentRequest",
+                'Required parameter "deviceEnrollmentRequest" was null or undefined when calling enrollDevice().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/enrollments`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: DeviceEnrollmentRequestToJSON(
+                requestParameters["deviceEnrollmentRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async enrollDeviceRaw(
+        requestParameters: EnrollDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceEnrollment>> {
+        const requestOptions =
+            await this.enrollDeviceRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceEnrollmentFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async enrollDevice(
+        requestParameters: EnrollDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceEnrollment> {
+        const response = await this.enrollDeviceRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
     }
 
     /**
@@ -1598,6 +2478,55 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for listDevices without sending the request
+     */
+    async listDevicesRequestOpts(): Promise<runtime.RequestOpts> {
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices`;
+
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async listDevicesRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<DeviceInfo>>> {
+        const requestOptions = await this.listDevicesRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            jsonValue.map(DeviceInfoFromJSON),
+        );
+    }
+
+    /**
+     */
+    async listDevices(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<Array<DeviceInfo>> {
+        const response = await this.listDevicesRaw(initOverrides);
+        return await response.value();
+    }
+
+    /**
      * Creates request options for openapiJson without sending the request
      */
     async openapiJsonRequestOpts(): Promise<runtime.RequestOpts> {
@@ -1675,6 +2604,74 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for pairingApprovalPayload without sending the request
+     */
+    async pairingApprovalPayloadRequestOpts(
+        requestParameters: PairingApprovalPayloadRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["id"] == null) {
+            throw new runtime.RequiredError(
+                "id",
+                'Required parameter "id" was null or undefined when calling pairingApprovalPayload().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/enrollments/{id}/approval-payload`;
+        urlPath = urlPath.replace(
+            "{id}",
+            encodeURIComponent(String(requestParameters["id"])),
+        );
+
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async pairingApprovalPayloadRaw(
+        requestParameters: PairingApprovalPayloadRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DevicePairingApprovalPayload>> {
+        const requestOptions =
+            await this.pairingApprovalPayloadRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DevicePairingApprovalPayloadFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async pairingApprovalPayload(
+        requestParameters: PairingApprovalPayloadRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DevicePairingApprovalPayload> {
+        const response = await this.pairingApprovalPayloadRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
+    }
+
+    /**
      * Creates request options for putRegister without sending the request
      */
     async putRegisterRequestOpts(
@@ -1748,6 +2745,66 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration> {
         const response = await this.putRegisterRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for redeemPairingInvitation without sending the request
+     */
+    async redeemPairingInvitationRequestOpts(
+        requestParameters: RedeemPairingInvitationRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["devicePairingRedemptionRequest"] == null) {
+            throw new runtime.RequiredError(
+                "devicePairingRedemptionRequest",
+                'Required parameter "devicePairingRedemptionRequest" was null or undefined when calling redeemPairingInvitation().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        let urlPath = `/devices/pairing-invitations/redeem`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: DevicePairingRedemptionRequestToJSON(
+                requestParameters["devicePairingRedemptionRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async redeemPairingInvitationRaw(
+        requestParameters: RedeemPairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceEnrollment>> {
+        const requestOptions =
+            await this.redeemPairingInvitationRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceEnrollmentFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async redeemPairingInvitation(
+        requestParameters: RedeemPairingInvitationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceEnrollment> {
+        const response = await this.redeemPairingInvitationRaw(
             requestParameters,
             initOverrides,
         );
@@ -1898,6 +2955,68 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for revokeDevice without sending the request
+     */
+    async revokeDeviceRequestOpts(
+        requestParameters: RevokeDeviceRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["id"] == null) {
+            throw new runtime.RequiredError(
+                "id",
+                'Required parameter "id" was null or undefined when calling revokeDevice().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/{id}`;
+        urlPath = urlPath.replace(
+            "{id}",
+            encodeURIComponent(String(requestParameters["id"])),
+        );
+
+        return {
+            path: urlPath,
+            method: "DELETE",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async revokeDeviceRaw(
+        requestParameters: RevokeDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<void>> {
+        const requestOptions =
+            await this.revokeDeviceRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.VoidApiResponse(response);
+    }
+
+    /**
+     */
+    async revokeDevice(
+        requestParameters: RevokeDeviceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<void> {
+        await this.revokeDeviceRaw(requestParameters, initOverrides);
+    }
+
+    /**
      * Creates request options for sessionsLogout without sending the request
      */
     async sessionsLogoutRequestOpts(): Promise<runtime.RequestOpts> {
@@ -1932,6 +3051,66 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void> {
         await this.sessionsLogoutRaw(initOverrides);
+    }
+
+    /**
+     * Creates request options for signDeviceMessage without sending the request
+     */
+    async signDeviceMessageRequestOpts(
+        requestParameters: SignDeviceMessageRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["signDeviceMessage"] == null) {
+            throw new runtime.RequiredError(
+                "signDeviceMessage",
+                'Required parameter "signDeviceMessage" was null or undefined when calling signDeviceMessage().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        let urlPath = `/device/sign`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: SignDeviceMessageToJSON(
+                requestParameters["signDeviceMessage"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async signDeviceMessageRaw(
+        requestParameters: SignDeviceMessageRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceSignature>> {
+        const requestOptions =
+            await this.signDeviceMessageRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceSignatureFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async signDeviceMessage(
+        requestParameters: SignDeviceMessageRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceSignature> {
+        const response = await this.signDeviceMessageRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
     }
 
     /**
@@ -2091,6 +3270,135 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<TokenResponse> {
         const response = await this.tokenRaw(requestParameters, initOverrides);
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for trustedDevices without sending the request
+     */
+    async trustedDevicesRequestOpts(): Promise<runtime.RequestOpts> {
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/trusted`;
+
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async trustedDevicesRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<Array<TrustedDevice>>> {
+        const requestOptions = await this.trustedDevicesRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            jsonValue.map(TrustedDeviceFromJSON),
+        );
+    }
+
+    /**
+     */
+    async trustedDevices(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<Array<TrustedDevice>> {
+        const response = await this.trustedDevicesRaw(initOverrides);
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for updateDevice without sending the request
+     */
+    async updateDeviceRequestOpts(
+        requestParameters: UpdateDeviceOperationRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["id"] == null) {
+            throw new runtime.RequiredError(
+                "id",
+                'Required parameter "id" was null or undefined when calling updateDevice().',
+            );
+        }
+
+        if (requestParameters["updateDeviceRequest"] == null) {
+            throw new runtime.RequiredError(
+                "updateDeviceRequest",
+                'Required parameter "updateDeviceRequest" was null or undefined when calling updateDevice().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/{id}`;
+        urlPath = urlPath.replace(
+            "{id}",
+            encodeURIComponent(String(requestParameters["id"])),
+        );
+
+        return {
+            path: urlPath,
+            method: "PATCH",
+            headers: headerParameters,
+            query: queryParameters,
+            body: UpdateDeviceRequestToJSON(
+                requestParameters["updateDeviceRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async updateDeviceRaw(
+        requestParameters: UpdateDeviceOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceInfo>> {
+        const requestOptions =
+            await this.updateDeviceRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceInfoFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async updateDevice(
+        requestParameters: UpdateDeviceOperationRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceInfo> {
+        const response = await this.updateDeviceRaw(
+            requestParameters,
+            initOverrides,
+        );
         return await response.value();
     }
 

@@ -21,12 +21,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![
-            app::get_device_endpoint_id,
-            app::get_device_endpoint_address,
-            app::get_localhost_server_base_url,
-            app::sign_device_message,
-        ])
+        .invoke_handler(tauri::generate_handler![app::get_localhost_server_base_url,])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -74,10 +69,16 @@ pub fn run() {
                     .expect("vault runtime must initialize")
                     .inner()
                     .clone();
+                let device_identity = app_handle
+                    .try_state::<std::sync::Arc<crate::device_identity::DeviceIdentity>>()
+                    .expect("device identity must initialize")
+                    .inner()
+                    .clone();
                 let (router, router_state) = app::init_router(
                     runtime_config,
                     database,
                     file_systems,
+                    device_identity,
                     control_plane.clone(),
                 )
                 .expect("router must initialize");

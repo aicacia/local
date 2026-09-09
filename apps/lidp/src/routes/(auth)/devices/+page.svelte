@@ -1,19 +1,19 @@
 <script lang="ts">
-    import { invoke, isTauri } from "@tauri-apps/api/core";
     import { toDataURL } from "qrcode";
     import { onMount } from "svelte";
     import { page } from "$app/state";
     import {
         approveDevice,
         createDeviceInvitation,
+        type DeviceInfo,
         enrollDevice,
         getDeviceApprovalPayload,
         listDevices,
         redeemDeviceInvitation,
         renameDevice,
         revokeDevice,
-        type DeviceInfo,
     } from "$lib/common/state/devices.svelte";
+    import { lidpApi } from "$lib/common/state/lidpClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     interface BarcodeDetectorResult {
@@ -51,24 +51,23 @@
     const initialLoading = $derived(!error && loading && devices.length === 0);
     const empty = $derived(!error && !loading && devices.length === 0);
     const hasDevices = $derived(!error && devices.length > 0);
-    const bootstrapEnrollment = $derived(isTauri() && devices.length === 0);
+    const bootstrapEnrollment = $derived(
+        Boolean(deviceEndpointId) && devices.length === 0,
+    );
     const localDeviceApproved = $derived(
-        isTauri() &&
-            devices.some(
-                (device) =>
-                    device.state === "approved" &&
-                    device.publicKey === deviceEndpointId,
-            ),
+        devices.some(
+            (device) =>
+                device.state === "approved" &&
+                device.publicKey === deviceEndpointId,
+        ),
     );
     const invitationId = $derived(page.url.searchParams.get("invitation"));
     const invitationSecret = $derived(page.url.searchParams.get("secret"));
     const hasPairingInvitation = $derived(
-        isTauri() && Boolean(invitationId && invitationSecret),
+        Boolean(invitationId && invitationSecret),
     );
     const supportsScanner = $derived(
-        !isTauri() &&
-            typeof window !== "undefined" &&
-            "BarcodeDetector" in window,
+        typeof window !== "undefined" && "BarcodeDetector" in window,
     );
 
     function formatTimestamp(value: number): string {
@@ -137,14 +136,11 @@
 
         enrolling = true;
         try {
-            const [publicKey, address] = await Promise.all([
-                invoke<string>("get_device_endpoint_id"),
-                invoke<string>("get_device_endpoint_address"),
-            ]);
+            const device = await lidpApi.device();
             const enrollment = await enrollDevice(
                 deviceName.trim(),
-                publicKey,
-                address,
+                device.publicKey,
+                device.address,
             );
             deviceName = "";
             notifications.add(
@@ -165,11 +161,8 @@
     async function onCreateInvitation() {
         creatingInvitation = true;
         try {
-            const initiatingPublicKey = await invoke<string>(
-                "get_device_endpoint_id",
-            );
-            const invitation =
-                await createDeviceInvitation(initiatingPublicKey);
+            const device = await lidpApi.device();
+            const invitation = await createDeviceInvitation(device.publicKey);
             invitationLink = pairingLink(invitation.id, invitation.secret);
             invitationQr = await toDataURL(invitationLink);
         } catch (cause) {
@@ -200,15 +193,12 @@
 
         redeeming = true;
         try {
-            const [publicKey, address] = await Promise.all([
-                invoke<string>("get_device_endpoint_id"),
-                invoke<string>("get_device_endpoint_address"),
-            ]);
+            const device = await lidpApi.device();
             const enrollment = await redeemDeviceInvitation(
                 invitationSecret,
                 pairingName.trim(),
-                publicKey,
-                address,
+                device.publicKey,
+                device.address,
             );
             pairingState =
                 enrollment.state === "approved" ? "approved" : "pending";
@@ -224,8 +214,8 @@
     async function onApprove(device: DeviceInfo) {
         try {
             const payload = await getDeviceApprovalPayload(device.id);
-            const signature = await invoke<string>("sign_device_message", {
-                message: payload,
+            const { signature } = await lidpApi.signDeviceMessage({
+                signDeviceMessage: { message: payload },
             });
             await approveDevice(device.id, signature);
             pendingPrompt = null;
@@ -280,7 +270,9 @@
             clearInterval(scannerTimer);
             scannerTimer = null;
         }
-        scannerStream?.getTracks().forEach((track) => track.stop());
+        scannerStream?.getTracks().forEach((track) => {
+            track.stop();
+        });
         scannerStream = null;
         scanning = false;
     }
@@ -322,11 +314,10 @@
     }
 
     onMount(() => {
-        if (isTauri()) {
-            void invoke<string>("get_device_endpoint_id").then((id) => {
-                deviceEndpointId = id;
-            });
-        }
+        void lidpApi.device().then((device) => {
+                deviceEndpointId = device.publicKey;
+            })
+            .catch(console.error);
         void loadDevices();
         const timer = setInterval(() => void loadDevices(), 5000);
         return () => {
@@ -387,10 +378,6 @@
                 >
             </div>
         </form>
-    {:else if isTauri()}
-        <div class="card secondary">
-            <p class="mb-0">Scan a pairing QR code on this device to add it.</p>
-        </div>
     {:else}
         <div class="card secondary flex flex-col gap-3">
             <h2 class="mb-0 text-2xl">Pair a device</h2>
@@ -418,10 +405,7 @@
                     >
                 {/if}
             {:else}
-                <p class="mb-0">
-                    QR scanning is not supported by this browser. Open the
-                    pairing link on your native LIdP app.
-                </p>
+                <p class="mb-0">Scan a pairing QR code on this device to add it.</p>
             {/if}
         </div>
     {/if}
@@ -468,7 +452,7 @@
                 <button
                     type="button"
                     class="btn primary"
-                    onclick={() => void onApprove(pendingPrompt!)}
+                    onclick={() => pendingPrompt && void onApprove(pendingPrompt)}
                     >Approve</button
                 >
             </div>

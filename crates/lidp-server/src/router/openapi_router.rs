@@ -6,6 +6,9 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::RouterState;
 
 use super::openapi::{__path_openapi_json, openapi_json};
+use super::routes::device::{
+    __path_device, __path_sign_device_message, device, sign_device_message,
+};
 use super::routes::devices::{
     __path_approve_device, __path_create_pairing_invitation, __path_enroll_device,
     __path_list_devices, __path_pairing_approval_payload, __path_redeem_pairing_invitation,
@@ -60,6 +63,8 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
     let routes = || {
         OpenApiRouter::new()
             .routes(routes!(health))
+            .routes(routes!(device))
+            .routes(routes!(sign_device_message))
             .routes(routes!(trusted_devices))
             .routes(routes!(enroll_device))
             .routes(routes!(create_pairing_invitation))

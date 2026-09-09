@@ -2,18 +2,15 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use axum::Router;
 use file_system::{PeerCodec, Transport};
-use lidp_service::{
-    scoped_file_system::{ScopedFileSystemRuntime, ScopedTransportFactory},
-    storage_session::StorageSessionService,
-};
+use lidp_service::storage_session::{StorageScope, StorageSessionService};
 use storage_server::{
     StorageSessionResolver, StorageSocketSession, storage_router as socket_router,
 };
-use storage_service::StorageService;
+use storage_service::{ScopedFileSystemRuntime, ScopedTransportFactory, StorageService};
 
 pub fn storage_router<C, T, F>(
     sessions: Arc<StorageSessionService>,
-    file_systems: Arc<ScopedFileSystemRuntime<C, T, F>>,
+    file_systems: Arc<ScopedFileSystemRuntime<C, T, F, StorageScope>>,
 ) -> Router
 where
     C: PeerCodec + Send + Sync + 'static,
@@ -22,7 +19,7 @@ where
     T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
     T::Error: std::fmt::Display + Send + Sync + 'static,
     T::Incoming: Send + 'static,
-    F: ScopedTransportFactory<C, T>,
+    F: ScopedTransportFactory<C, T, StorageScope>,
 {
     socket_router(Arc::new(ScopedFileSystemSessionResolver {
         sessions,
@@ -34,10 +31,10 @@ struct ScopedFileSystemSessionResolver<C, T, F>
 where
     C: PeerCodec,
     T: Transport<PeerId = C::PeerId>,
-    F: ScopedTransportFactory<C, T>,
+    F: ScopedTransportFactory<C, T, StorageScope>,
 {
     sessions: Arc<StorageSessionService>,
-    file_systems: Arc<ScopedFileSystemRuntime<C, T, F>>,
+    file_systems: Arc<ScopedFileSystemRuntime<C, T, F, StorageScope>>,
 }
 
 impl<C, T, F> StorageSessionResolver for ScopedFileSystemSessionResolver<C, T, F>
@@ -48,7 +45,7 @@ where
     T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
     T::Error: std::fmt::Display + Send + Sync + 'static,
     T::Incoming: Send + 'static,
-    F: ScopedTransportFactory<C, T>,
+    F: ScopedTransportFactory<C, T, StorageScope>,
 {
     fn take(
         &self,

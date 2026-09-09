@@ -949,7 +949,7 @@ where
             nbf: now.timestamp(),
             iss: self.oauth_config.issuer.clone(),
             aud: client.client_id.clone(),
-            sub: principal.get_key().id.to_string(),
+            sub: principal.get_entity_id().to_string(),
             scope: scopes.to_vec(),
             resource: resource.map(|r| r.to_string()),
         };

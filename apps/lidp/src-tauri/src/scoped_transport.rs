@@ -1,220 +1,154 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
     future::Future,
     io::{Error, ErrorKind},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use iroh::{EndpointAddr, EndpointId};
 use iroh_chain::{DynamicEndpointIdStore, VaultId};
-use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, TunnelAuthorizationProvider};
 use lidp_model::contract::TunnelAuthorizationRequest;
 use lidp_service::{
-    repo::UserDeviceRepo,
-    scoped_file_system::{ScopedFileSystem, ScopedFileSystemRuntime, ScopedTransportFactory},
     storage_session::StorageScope,
+    tunnel_authorization::{LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer},
+};
+use storage_service::{
+    DeferredIrohTransportFactory, IrohTransport, IrohTransportFactory, ScopedFileSystemRuntime,
+    ScopedTunnelAuthorizationProvider, TrustedEndpointAddrLookup,
 };
 
 use crate::hosted_control_plane::HostedControlPlane;
 use crate::tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer};
 
-type AppTransport =
-    ScopedIrohTransport<DynamicEndpointIdStore, LidpTunnelAuthorizer, LidpTunnelAuthorization>;
-pub type AppFileSystemRuntime =
-    ScopedFileSystemRuntime<EndpointIdCodec, AppTransport, IrohTransportFactory>;
-type TunnelParts = (
-    Arc<DeviceTunnelManager>,
-    Arc<DynamicEndpointIdStore>,
-    Arc<lidp_server::RouterState>,
-    Option<Arc<HostedControlPlane>>,
-);
+type AppTransport = IrohTransport<LidpTunnelAuthorizer, AppTunnelAuthorization>;
+type AppTransportFactory = DeferredIrohTransportFactory<
+    LidpTunnelAuthorizer,
+    AppTunnelAuthorizationProvider,
+    AppTrustedEndpointLookup,
+    StorageScope,
+>;
+pub type AppFileSystemRuntime = ScopedFileSystemRuntime<
+    iroh_chain_file_system::EndpointIdCodec,
+    AppTransport,
+    AppTransportFactory,
+    StorageScope,
+>;
 
 #[derive(Clone, Default)]
 pub struct TunnelContext {
-    inner: Arc<Mutex<Option<TunnelParts>>>,
+    factory: AppTransportFactory,
 }
 
 impl TunnelContext {
-    pub fn set(
-        &self,
-        manager: Arc<DeviceTunnelManager>,
-        allowlist: Arc<DynamicEndpointIdStore>,
-        state: Arc<lidp_server::RouterState>,
-        control_plane: Option<Arc<HostedControlPlane>>,
-    ) {
-        *self.inner.lock().expect("tunnel context lock poisoned") =
-            Some((manager, allowlist, state, control_plane));
+    pub(crate) fn transport_factory(&self) -> AppTransportFactory {
+        self.factory.clone()
     }
 
-    fn get(&self) -> Result<TunnelParts, String> {
-        self.inner
-            .lock()
-            .expect("tunnel context lock poisoned")
-            .clone()
-            .ok_or_else(|| "tunnel manager is not initialized".to_owned())
+    pub fn set(
+        &self,
+        manager: DeviceTunnelManager,
+        allowlist: DynamicEndpointIdStore,
+        local: Arc<LocalTunnelAuthorizer>,
+        control_plane: Option<Arc<HostedControlPlane>>,
+    ) {
+        self.factory.set(IrohTransportFactory::new(
+            manager,
+            allowlist,
+            AppTunnelAuthorizationProvider {
+                local,
+                control_plane: control_plane.clone(),
+            },
+            AppTrustedEndpointLookup { control_plane },
+        ));
     }
 }
 
 #[derive(Clone)]
-pub struct IrohTransportFactory {
-    context: TunnelContext,
-    transports: Arc<Mutex<BTreeMap<String, AppTransport>>>,
-    listeners: Arc<Mutex<BTreeSet<String>>>,
+pub(crate) struct AppTunnelAuthorizationProvider {
+    local: Arc<LocalTunnelAuthorizer>,
+    control_plane: Option<Arc<HostedControlPlane>>,
 }
 
-impl IrohTransportFactory {
-    pub fn new(context: TunnelContext) -> Self {
-        Self {
-            context,
-            transports: Arc::new(Mutex::new(BTreeMap::new())),
-            listeners: Arc::new(Mutex::new(BTreeSet::new())),
+impl ScopedTunnelAuthorizationProvider<StorageScope> for AppTunnelAuthorizationProvider {
+    type Authorization = AppTunnelAuthorization;
+
+    fn authorization(&self, scope: &StorageScope) -> Result<Self::Authorization, String> {
+        match &self.control_plane {
+            Some(control_plane) => Ok(AppTunnelAuthorization::Hosted(HostedTunnelAuthorization {
+                scope: scope.clone(),
+                control_plane: Arc::clone(control_plane),
+            })),
+            None => Ok(AppTunnelAuthorization::Local(
+                self.local.authorization_provider(scope.clone()),
+            )),
         }
     }
 }
 
-impl ScopedTransportFactory<EndpointIdCodec, AppTransport> for IrohTransportFactory {
-    fn create(&self, scope: &StorageScope) -> Result<AppTransport, String> {
-        let (manager, _, state, control_plane) = self.context.get()?;
-        let vault_id = VaultId::from_application(&scope.user_sub, scope.application_id);
-        let transport = AppTransport::new(
-            (*manager).clone(),
-            vault_id,
-            LidpTunnelAuthorization {
-                state,
-                scope: scope.clone(),
-                control_plane,
-            },
-        );
-        self.transports
-            .lock()
-            .expect("transport map lock poisoned")
-            .insert(scope_key(scope), transport.clone());
-        Ok(transport)
-    }
+#[derive(Clone)]
+pub(crate) struct AppTrustedEndpointLookup {
+    control_plane: Option<Arc<HostedControlPlane>>,
+}
 
-    fn synchronize(
+impl TrustedEndpointAddrLookup<StorageScope> for AppTrustedEndpointLookup {
+    async fn trusted_endpoint_addrs(
         &self,
-        scope: StorageScope,
-        file_system: Arc<ScopedFileSystem<EndpointIdCodec, AppTransport>>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>> {
-        let context = self.context.clone();
-        let scope_key = scope_key(&scope);
-        let transport = self
-            .transports
-            .lock()
-            .expect("transport map lock poisoned")
-            .get(&scope_key)
-            .cloned();
-        let watch_peers = self
-            .listeners
-            .lock()
-            .expect("transport listeners lock poisoned")
-            .insert(scope_key.clone());
-        Box::pin(async move {
-            let (manager, allowlist, _, control_plane) = context.get()?;
-            let transport = transport.ok_or_else(|| "transport is missing".to_owned())?;
-            let local_id = manager.endpoint().id();
-            let trusted_devices = match control_plane {
-                Some(control_plane) => control_plane.trusted_devices(&scope.access_token).await?,
-                None => scope.trusted_devices,
-            };
-            let endpoints = trusted_devices
-                .iter()
-                .filter_map(|device| {
-                    let endpoint = serde_json::from_str::<EndpointAddr>(&device.address).ok()?;
-                    (endpoint.id != local_id).then_some(endpoint)
-                })
-                .collect::<Vec<_>>();
-            allowlist
-                .replace_scope(
-                    scope_key.clone(),
-                    endpoints.iter().map(|endpoint| endpoint.id),
-                )
-                .await;
-            manager.close_disallowed().await;
-            for peer in transport.peers() {
-                let _ = file_system.sync_peer(peer).await;
-            }
-            if watch_peers {
-                let mut peer_events = transport.subscribe_peers();
-                let synced_file_system = Arc::clone(&file_system);
-                tokio::spawn(async move {
-                    while let Ok(peer) = peer_events.recv().await {
-                        let _ = synced_file_system.sync_peer(peer).await;
-                    }
-                });
-            }
-            for endpoint in endpoints {
-                if let Ok(peer) = transport.connect(endpoint).await {
-                    let _ = file_system.sync_peer(peer).await;
-                }
-            }
-            Ok(())
-        })
+        scope: &StorageScope,
+    ) -> Result<Vec<EndpointAddr>, String> {
+        let trusted_devices = match &self.control_plane {
+            Some(control_plane) => control_plane.trusted_devices(&scope.access_token).await?,
+            None => scope.trusted_devices.clone(),
+        };
+        Ok(trusted_devices
+            .iter()
+            .filter_map(|device| serde_json::from_str(&device.address).ok())
+            .collect())
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct LidpTunnelAuthorization {
-    state: Arc<lidp_server::RouterState>,
-    scope: StorageScope,
-    control_plane: Option<Arc<HostedControlPlane>>,
+pub(crate) enum AppTunnelAuthorization {
+    Local(LocalTunnelAuthorizationProvider),
+    Hosted(HostedTunnelAuthorization),
 }
 
-impl TunnelAuthorizationProvider for LidpTunnelAuthorization {
+impl iroh_chain_file_system::TunnelAuthorizationProvider for AppTunnelAuthorization {
     fn authorization(
         &self,
         vault_id: VaultId,
         local_id: EndpointId,
         remote_id: EndpointId,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
-        let state = Arc::clone(&self.state);
+        match self {
+            Self::Local(authorization) => {
+                authorization.authorization(vault_id, local_id, remote_id)
+            }
+            Self::Hosted(authorization) => {
+                authorization.authorization(vault_id, local_id, remote_id)
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct HostedTunnelAuthorization {
+    scope: StorageScope,
+    control_plane: Arc<HostedControlPlane>,
+}
+
+impl iroh_chain_file_system::TunnelAuthorizationProvider for HostedTunnelAuthorization {
+    fn authorization(
+        &self,
+        vault_id: VaultId,
+        local_id: EndpointId,
+        remote_id: EndpointId,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
         let scope = self.scope.clone();
-        let control_plane = self.control_plane.clone();
+        let control_plane = Arc::clone(&self.control_plane);
         Box::pin(async move {
-            if let Some(control_plane) = control_plane {
-                let authorization = control_plane
-                    .tunnel_authorization(
-                        &scope.access_token,
-                        TunnelAuthorizationRequest {
-                            vault_id_hash: vault_id.hash(),
-                            local_public_key: local_id.to_string(),
-                            remote_public_key: remote_id.to_string(),
-                        },
-                    )
-                    .await
-                    .map_err(|_| Error::new(ErrorKind::PermissionDenied, "grant was rejected"))?;
-                return Ok(authorization.token.into_bytes());
-            }
-            let approved = state
-                .user_devices
-                .are_approved_by_user_id(
-                    scope.user_sub.parse().map_err(|_| {
-                        Error::new(ErrorKind::PermissionDenied, "invalid user subject")
-                    })?,
-                    &local_id.to_string(),
-                    &remote_id.to_string(),
-                )
-                .await
-                .map_err(|error| Error::other(error.to_string()))?;
-            if !approved {
-                return Err(Error::new(
-                    ErrorKind::PermissionDenied,
-                    "peer is not approved",
-                ));
-            }
-            let principal = state
-                .oauth2_service
-                .find_principal(scope.principal_key_id)
-                .await
-                .map_err(|_| Error::other("principal lookup failed"))?
-                .ok_or_else(|| Error::new(ErrorKind::PermissionDenied, "principal is missing"))?;
-            let authorization = state
-                .oauth2_service
-                .issue_tunnel_authorization(
-                    principal.as_ref(),
-                    scope.application_id,
+            let authorization = control_plane
+                .tunnel_authorization(
+                    &scope.access_token,
                     TunnelAuthorizationRequest {
                         vault_id_hash: vault_id.hash(),
                         local_public_key: local_id.to_string(),
@@ -226,8 +160,4 @@ impl TunnelAuthorizationProvider for LidpTunnelAuthorization {
             Ok(authorization.token.into_bytes())
         })
     }
-}
-
-fn scope_key(scope: &StorageScope) -> String {
-    format!("{}:{}", scope.user_sub, scope.application_id)
 }

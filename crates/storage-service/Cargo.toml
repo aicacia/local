@@ -9,8 +9,17 @@ repository.workspace = true
 
 [dependencies]
 # Internal
-file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+file-system = { path = "../file-system", default-features = false, features = ["native"] }
+iroh-chain = { path = "../iroh-chain", default-features = false, features = [] }
+iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features = false, features = [] }
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
+
+# Iroh
+iroh = { version = "1.1", default-features = false, features = [] }
+
+# Async
+futures-core = { version = "0.3", default-features = false, features = [] }
+tokio = { version = "1.53", default-features = false, features = ["rt", "sync"] }
 
 [dev-dependencies]
 # Internal

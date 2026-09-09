@@ -3,5 +3,6 @@
 /.env*
 !/.env.example
 /lidp.db
+/device.key
 /.keys
 /vaults

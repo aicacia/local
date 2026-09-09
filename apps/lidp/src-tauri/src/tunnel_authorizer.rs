@@ -1,32 +1,39 @@
 use std::{
     collections::BTreeMap,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
-use lidp_model::contract::{EntityType, TunnelAuthorizationClaims};
-use lidp_service::oauth2::{decode_jwt, verify_tunnel_authorization};
-
-use lidp_server::RouterState;
+use lidp_service::tunnel_authorization::LocalTunnelAuthorizer;
 
 use crate::hosted_control_plane::HostedControlPlane;
 
 pub struct LidpTunnelAuthorizer {
-    state: Arc<RouterState>,
+    local: Arc<LocalTunnelAuthorizer>,
     control_plane: Option<Arc<HostedControlPlane>>,
-    used: std::sync::Mutex<BTreeMap<String, i64>>,
+    used: Mutex<BTreeMap<String, i64>>,
 }
 
 pub type DeviceTunnelManager = Server<DynamicEndpointIdStore, LidpTunnelAuthorizer>;
 
 impl LidpTunnelAuthorizer {
-    pub fn new(state: Arc<RouterState>, control_plane: Option<Arc<HostedControlPlane>>) -> Self {
+    pub fn new(
+        state: Arc<lidp_server::RouterState>,
+        control_plane: Option<Arc<HostedControlPlane>>,
+    ) -> Self {
         Self {
-            state,
+            local: Arc::new(LocalTunnelAuthorizer::new(
+                Arc::clone(&state.oauth2_service),
+                Arc::clone(&state.user_devices),
+            )),
             control_plane,
-            used: std::sync::Mutex::new(BTreeMap::new()),
+            used: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    pub fn local(&self) -> Arc<LocalTunnelAuthorizer> {
+        Arc::clone(&self.local)
     }
 }
 
@@ -38,63 +45,29 @@ impl TunnelAuthorizer for LidpTunnelAuthorizer {
         accepting_id: iroh::EndpointId,
         authorization: &[u8],
     ) -> bool {
+        let Some(control_plane) = &self.control_plane else {
+            return self
+                .local
+                .authorize(vault_id, initiating_id, accepting_id, authorization)
+                .await;
+        };
         let Ok(token) = std::str::from_utf8(authorization) else {
             return false;
         };
-        if let Some(control_plane) = &self.control_plane {
-            let Ok(claims) = control_plane
-                .verifies_tunnel_authorization(token, &vault_id.hash(), initiating_id, accepting_id)
-                .await
-            else {
-                return false;
-            };
-            let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-                return false;
-            };
-            return consume(&self.used, token, claims.exp, now.as_secs() as i64);
-        }
-        let Ok((header, claims)) = decode_jwt::<TunnelAuthorizationClaims>(token) else {
-            return false;
-        };
-        let Ok(Some(principal)) = self.state.oauth2_service.find_principal(header.kid).await else {
-            return false;
-        };
-        if principal.get_entity_type() != EntityType::User
-            || claims.sub != principal.get_entity_id().to_string()
-        {
-            return false;
-        }
-        let Ok(jwk) = self.state.oauth2_service.find_public_jwk(header.kid).await else {
+        let Ok(claims) = control_plane
+            .verifies_tunnel_authorization(token, &vault_id.hash(), initiating_id, accepting_id)
+            .await
+        else {
             return false;
         };
         let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
             return false;
         };
-        if verify_tunnel_authorization(
-            &jwk,
-            token,
-            &self.state.oauth2_service.metadata().issuer,
-            &claims.sub,
-            claims.application_id,
-            &vault_id.hash(),
-            &initiating_id.to_string(),
-            &accepting_id.to_string(),
-            now.as_secs() as i64,
-        )
-        .is_err()
-        {
-            return false;
-        }
         consume(&self.used, token, claims.exp, now.as_secs() as i64)
     }
 }
 
-fn consume(
-    used: &std::sync::Mutex<BTreeMap<String, i64>>,
-    token: &str,
-    expires_at: i64,
-    now: i64,
-) -> bool {
+fn consume(used: &Mutex<BTreeMap<String, i64>>, token: &str, expires_at: i64, now: i64) -> bool {
     let mut used = used
         .lock()
         .expect("used tunnel authorizations lock poisoned");

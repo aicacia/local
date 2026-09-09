@@ -28,7 +28,7 @@ async function hydrateTauriApiUrl(): Promise<void> {
 
   const baseUrl = await loadLocalhostBaseUrl();
   if (baseUrl) {
-    lidpApiUrl.item = baseUrl;
+    lidpApiUrl.item = `${baseUrl}/lidp`;
   }
 }
 
@@ -99,7 +99,7 @@ export async function ensureTauriLidpApiUrl(): Promise<string | null> {
   }
 
   const baseUrl = await ensureLocalhostBaseUrl();
-  lidpApiUrl.item = baseUrl;
+  lidpApiUrl.item = `${baseUrl}/lidp`;
   return lidpApiUrl.item;
 }
 

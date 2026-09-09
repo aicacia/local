@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use axum::{Router, response::Html, routing::get};
+use axum::Router;
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair, SanType,
 };
@@ -14,19 +14,6 @@ use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
 use crate::localhost_trust::install_ca_to_user_trust_store;
-
-const TRUST_PAGE: &str = "<!DOCTYPE html>\
-<html lang=\"en\">\
-<head>\
-<meta charset=\"utf-8\">\
-<title>Localhost Certificate</title>\
-</head>\
-<body>\
-<h1>Localhost certificate</h1>\
-<p>If your browser shows a certificate warning, accept it to allow local apps to connect.</p>\
-<p>You can close this tab after the page loads without warnings.</p>\
-</body>\
-</html>";
 
 pub fn localhost_ca_cert_path(data_dir: &Path) -> PathBuf {
     data_dir.join("localhost-ca.pem")
@@ -218,10 +205,6 @@ pub async fn reserve_localhost_listener(data_dir: &Path) -> Result<(TcpListener,
 }
 
 pub fn start_unified_localhost_server(router: Router, listener: TcpListener, data_dir: &Path) {
-    let vault_router = Router::new().route("/trust", get(trust_handler));
-
-    let unified_router = router.merge(vault_router);
-
     let tls_listener = match build_server_config(data_dir) {
         Ok(server_config) => TlsListener {
             inner: listener,
@@ -233,14 +216,10 @@ pub fn start_unified_localhost_server(router: Router, listener: TcpListener, dat
         }
     };
 
-    let app = unified_router;
+    let app = router;
     tauri::async_runtime::spawn(async move {
         if let Err(err) = axum::serve(tls_listener, app).await {
             log::error!("unified localhost server failed: {err}");
         }
     });
-}
-
-async fn trust_handler() -> Html<&'static str> {
-    Html(TRUST_PAGE)
 }

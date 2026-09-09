@@ -6,6 +6,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use lidp_model::contract::{StorageSession, TrustedDevice};
+use storage_model::StorageNamespace;
 
 const TOKEN_BYTES: usize = 32;
 const TOKEN_TTL: Duration = Duration::from_secs(60);
@@ -17,6 +18,16 @@ pub struct StorageScope {
     pub principal_key_id: u32,
     pub trusted_devices: Vec<TrustedDevice>,
     pub access_token: String,
+}
+
+impl StorageNamespace for StorageScope {
+    fn user_sub(&self) -> &str {
+        &self.user_sub
+    }
+
+    fn application_id(&self) -> i64 {
+        self.application_id
+    }
 }
 
 impl std::fmt::Debug for StorageScope {
