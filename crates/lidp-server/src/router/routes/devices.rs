@@ -172,6 +172,6 @@ pub(crate) async fn revoke_device(
     StandardAuthorization { .. }: StandardAuthorization,
 ) -> Result<(), ErrorResponse> {
     DeviceEnrollmentService::new(state.devices)
-        .revoke(device_id)
+        .revoke(device_id, &state.device_identity.endpoint_id().to_string())
         .await
 }

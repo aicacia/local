@@ -62,5 +62,9 @@ pub trait DeviceRepo {
         name: String,
     ) -> impl Future<Output = RepoResult<Option<Device>>>;
 
-    fn revoke(&self, device_id: i64) -> impl Future<Output = RepoResult<bool>>;
+    fn revoke(
+        &self,
+        device_id: i64,
+        protected_public_key: &str,
+    ) -> impl Future<Output = RepoResult<bool>>;
 }

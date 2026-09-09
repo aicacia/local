@@ -490,13 +490,15 @@
                                                 >Review</button
                                             >
                                         {/if}
-                                        <button
-                                            type="button"
-                                            class="btn secondary"
-                                            onclick={() =>
-                                                void onRevoke(device)}
-                                            >Revoke</button
-                                        >
+                                        {#if deviceEndpointId !== null && device.publicKey !== deviceEndpointId}
+                                            <button
+                                                type="button"
+                                                class="btn secondary"
+                                                onclick={() =>
+                                                    void onRevoke(device)}
+                                                >Revoke</button
+                                            >
+                                        {/if}
                                     </div>
                                 {/if}
                             </td>

@@ -178,9 +178,13 @@ where
             .ok_or_else(|| ErrorResponse::new(ErrorCode::NotFound))
     }
 
-    pub async fn revoke(&self, device_id: i64) -> ErrorResponseResult<()> {
+    pub async fn revoke(
+        &self,
+        device_id: i64,
+        protected_public_key: &str,
+    ) -> ErrorResponseResult<()> {
         self.repo
-            .revoke(device_id)
+            .revoke(device_id, protected_public_key)
             .await
             .map_err(ErrorResponse::from)?
             .then_some(())

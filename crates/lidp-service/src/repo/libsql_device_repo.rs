@@ -319,7 +319,7 @@ impl DeviceRepo for LibSqlDeviceRepo {
             .map_err(Into::into)
     }
 
-    async fn revoke(&self, device_id: i64) -> RepoResult<bool> {
+    async fn revoke(&self, device_id: i64, protected_public_key: &str) -> RepoResult<bool> {
         let connection = self.database.connect()?;
         let changed = connection
             .execute(
@@ -327,6 +327,7 @@ impl DeviceRepo for LibSqlDeviceRepo {
                     UPDATE devices
                     SET state = 2, revoked_at = unixepoch(), updated_at = unixepoch()
                     WHERE id = ?
+                        AND public_key != ?
                         AND (
                             state != 1
                             OR EXISTS(
@@ -336,7 +337,7 @@ impl DeviceRepo for LibSqlDeviceRepo {
                             )
                         )
                 "#,
-                libsql::params![device_id, device_id],
+                libsql::params![device_id, protected_public_key, device_id],
             )
             .await?;
         Ok(changed != 0)
@@ -391,8 +392,8 @@ mod tests {
                 .state,
             DeviceState::Approved
         );
-        assert!(repo.revoke(pending.id).await.unwrap());
-        assert!(!repo.revoke(first.id).await.unwrap());
+        assert!(repo.revoke(pending.id, &first.public_key).await.unwrap());
+        assert!(!repo.revoke(first.id, &first.public_key).await.unwrap());
         assert_eq!(repo.list_approved().await.unwrap().len(), 1);
         drop(repo);
         drop(database);
