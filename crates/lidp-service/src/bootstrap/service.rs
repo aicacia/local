@@ -65,7 +65,7 @@ where
         }
     }
 
-    pub async fn ensure_system_baseline(&self) -> RepoResult<()> {
+    pub async fn ensure_system_baseline(&self) -> RepoResult<User> {
         let lidp_application = self
             .ensure_application("Local IdP".to_string(), "lidp".to_string())
             .await?;
@@ -173,7 +173,7 @@ where
             )
             .await?;
 
-        Ok(())
+        Ok(admin_user)
     }
 
     async fn ensure_application(&self, name: String, uri: String) -> RepoResult<Application> {

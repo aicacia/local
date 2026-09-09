@@ -209,7 +209,7 @@ pub async fn run() -> io::Result<()> {
         app_config.bootstrap.clone(),
     );
 
-    bootstrap_service
+    let bootstrap_user = bootstrap_service
         .ensure_system_baseline()
         .await
         .map_err(io::Error::other)?;
@@ -238,6 +238,19 @@ pub async fn run() -> io::Result<()> {
         .map_err(io::Error::other)?
         .map(Arc::new);
     let device_identity = Arc::new(open_device_identity(Path::new(&app_config.device_key)).await?);
+    lidp_service::bootstrap::ensure_bootstrap_device(
+        bootstrap_user.id,
+        user_devices.as_ref(),
+        lidp_model::contract::DeviceEnrollmentRequest {
+            name: "LIdP API server".to_string(),
+            public_key: device_identity.endpoint_id().to_string(),
+            address: device_identity
+                .endpoint_address()
+                .map_err(io::Error::other)?,
+        },
+    )
+    .await
+    .map_err(io::Error::other)?;
     let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,

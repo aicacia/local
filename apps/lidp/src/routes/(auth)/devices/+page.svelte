@@ -6,7 +6,6 @@
         approveDevice,
         createDeviceInvitation,
         type DeviceInfo,
-        enrollDevice,
         getDeviceApprovalPayload,
         listDevices,
         redeemDeviceInvitation,
@@ -31,8 +30,6 @@
     let devices = $state<DeviceInfo[]>([]);
     let loading = $state(false);
     let error = $state<string | null>(null);
-    let deviceName = $state("");
-    let enrolling = $state(false);
     let deviceEndpointId = $state<string | null>(null);
     let pendingPrompt = $state<DeviceInfo | null>(null);
     let editingId = $state<number | null>(null);
@@ -51,9 +48,6 @@
     const initialLoading = $derived(!error && loading && devices.length === 0);
     const empty = $derived(!error && !loading && devices.length === 0);
     const hasDevices = $derived(!error && devices.length > 0);
-    const bootstrapEnrollment = $derived(
-        Boolean(deviceEndpointId) && devices.length === 0,
-    );
     const localDeviceApproved = $derived(
         devices.some(
             (device) =>
@@ -128,35 +122,6 @@
         }
     }
 
-    async function onEnroll(event: SubmitEvent) {
-        event.preventDefault();
-        if (!deviceName.trim()) {
-            return;
-        }
-
-        enrolling = true;
-        try {
-            const device = await lidpApi.device();
-            const enrollment = await enrollDevice(
-                deviceName.trim(),
-                device.publicKey,
-                device.address,
-            );
-            deviceName = "";
-            notifications.add(
-                enrollment.state === "approved"
-                    ? "Device approved"
-                    : "Device is waiting for approval",
-                "success",
-            );
-            await loadDevices();
-        } catch (cause) {
-            console.error(cause);
-            notifications.add("Failed to enroll device", "error");
-        } finally {
-            enrolling = false;
-        }
-    }
 
     async function onCreateInvitation() {
         creatingInvitation = true;
@@ -364,19 +329,6 @@
                     >
                 </div>
             {/if}
-        </form>
-    {:else if bootstrapEnrollment}
-        <form class="card secondary flex flex-col gap-3" onsubmit={onEnroll}>
-            <h2 class="mb-0 text-2xl">Add this device</h2>
-            <label class="flex flex-col gap-1">
-                <span>Device name</span>
-                <input bind:value={deviceName} type="text" required />
-            </label>
-            <div class="flex justify-end">
-                <button type="submit" class="btn primary" disabled={enrolling}
-                    >{enrolling ? "Adding..." : "Add device"}</button
-                >
-            </div>
         </form>
     {:else}
         <div class="card secondary flex flex-col gap-3">

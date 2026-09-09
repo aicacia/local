@@ -141,10 +141,26 @@ pub async fn init_datebase(
         app_config.bootstrap.clone(),
     );
 
-    bootstrap_service
+    let bootstrap_user = bootstrap_service
         .ensure_system_baseline()
         .await
         .map_err(io::Error::other)?;
+    let device_identity = app_handle
+        .try_state::<Arc<DeviceIdentity>>()
+        .ok_or_else(|| io::Error::other("device identity is missing"))?;
+    lidp_service::bootstrap::ensure_bootstrap_device(
+        bootstrap_user.id,
+        &LibSqlUserDeviceRepo::new(database.clone()),
+        lidp_model::contract::DeviceEnrollmentRequest {
+            name: "LIdP API server".to_string(),
+            public_key: device_identity.endpoint_id().to_string(),
+            address: device_identity
+                .endpoint_address()
+                .map_err(io::Error::other)?,
+        },
+    )
+    .await
+    .map_err(io::Error::other)?;
     app_handle.manage(database.clone());
 
     Ok(database)
