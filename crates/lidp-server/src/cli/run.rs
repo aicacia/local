@@ -195,6 +195,7 @@ pub async fn run() -> io::Result<()> {
         app_config.key_namespace.clone(),
     ));
 
+    let devices = Arc::new(LibSqlDeviceRepo::new(database.clone()));
     let bootstrap_service = BootstrapService::new(
         LibSqlApplicationRepo::new(database.clone()),
         LibSqlClientRepo::new(database.clone(), key_service.clone()),
@@ -205,12 +206,19 @@ pub async fn run() -> io::Result<()> {
         ),
         LibSqlRoleRepo::new(database.clone()),
         LibSqlPermissionRepo::new(database.clone()),
+        LibSqlDeviceRepo::new(database.clone()),
         key_service.clone(),
         app_config.bootstrap.clone(),
     );
 
+    let device_identity = Arc::new(open_device_identity(Path::new(&app_config.device_key)).await?);
     bootstrap_service
-        .ensure_system_baseline()
+        .ensure_system_baseline(Some((
+            device_identity.endpoint_id().to_string(),
+            device_identity
+                .endpoint_address()
+                .map_err(io::Error::other)?,
+        )))
         .await
         .map_err(io::Error::other)?;
 
@@ -229,7 +237,6 @@ pub async fn run() -> io::Result<()> {
         oauth2_config,
     ));
     let storage_sessions = Arc::new(StorageSessionService::new());
-    let devices = Arc::new(LibSqlDeviceRepo::new(database.clone()));
     let control_plane = app_config
         .control_plane_uri
         .as_deref()
@@ -237,19 +244,6 @@ pub async fn run() -> io::Result<()> {
         .transpose()
         .map_err(io::Error::other)?
         .map(Arc::new);
-    let device_identity = Arc::new(open_device_identity(Path::new(&app_config.device_key)).await?);
-    lidp_service::bootstrap::ensure_bootstrap_device(
-        devices.as_ref(),
-        lidp_model::contract::DeviceEnrollmentRequest {
-            name: "LIdP API server".to_string(),
-            public_key: device_identity.endpoint_id().to_string(),
-            address: device_identity
-                .endpoint_address()
-                .map_err(io::Error::other)?,
-        },
-    )
-    .await
-    .map_err(io::Error::other)?;
     let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,

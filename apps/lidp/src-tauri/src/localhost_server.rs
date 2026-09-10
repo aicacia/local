@@ -10,7 +10,10 @@ use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair, SanType,
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use tokio::net::TcpListener;
+use tokio::{
+    net::TcpListener,
+    time::{Duration, sleep},
+};
 use tokio_rustls::TlsAcceptor;
 
 use crate::localhost_trust::install_ca_to_user_trust_store;
@@ -25,6 +28,10 @@ fn localhost_ca_key_path(data_dir: &Path) -> PathBuf {
 
 fn localhost_ca_der_path(data_dir: &Path) -> PathBuf {
     data_dir.join("localhost-ca.der")
+}
+
+fn localhost_ca_trust_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("localhost-ca.trusted")
 }
 
 fn localhost_server_cert_paths(data_dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
@@ -127,15 +134,70 @@ async fn load_or_create_server_cert(data_dir: &Path, ca_key: &KeyPair) -> io::Re
 
 pub async fn ensure_localhost_certificate(data_dir: &Path) -> io::Result<PathBuf> {
     let cert_path = localhost_ca_cert_path(data_dir);
+    let trust_path = localhost_ca_trust_path(data_dir);
     let (ca, is_new_ca) = load_or_create_ca(data_dir).await?;
-    let (_ca_pem, is_new_pem) = ensure_ca_certificate_pem(data_dir, &ca).await?;
+    let (_, is_new_pem) = ensure_ca_certificate_pem(data_dir, &ca).await?;
     load_or_create_server_cert(data_dir, &ca).await?;
 
-    if is_new_ca || is_new_pem {
-        let _ = install_ca_to_user_trust_store(&cert_path);
+    if is_new_ca || is_new_pem || !fs::exists(&trust_path)? {
+        install_ca_to_user_trust_store(&cert_path)?;
+        fs::write(trust_path, [])?;
     }
 
     Ok(cert_path)
+}
+
+pub fn invalidate_localhost_certificate_trust(data_dir: &Path) -> io::Result<()> {
+    if let Err(err) = fs::remove_file(localhost_ca_trust_path(data_dir)) {
+        if err.kind() != io::ErrorKind::NotFound {
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
+pub async fn verify_localhost_server(base_url: &str) -> io::Result<()> {
+    let client = reqwest::Client::new();
+    let version_url = format!("{base_url}/lidp-management/version");
+    let health_url = format!("{base_url}/lidp-management/health");
+
+    for _ in 0..50 {
+        let result = async {
+            let version = client
+                .get(&version_url)
+                .send()
+                .await
+                .map_err(io::Error::other)?
+                .error_for_status()
+                .map_err(io::Error::other)?
+                .json::<serde_json::Value>()
+                .await
+                .map_err(io::Error::other)?;
+            if version.get("name").and_then(serde_json::Value::as_str)
+                != Some("lidp-management-server")
+            {
+                return Err(io::Error::other("unexpected localhost server"));
+            }
+            client
+                .get(&health_url)
+                .send()
+                .await
+                .map_err(io::Error::other)?
+                .error_for_status()
+                .map_err(io::Error::other)?;
+            Ok(())
+        }
+        .await;
+
+        if result.is_ok() {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    Err(io::Error::other(
+        "localhost server failed trust verification",
+    ))
 }
 
 fn build_server_config(data_dir: &Path) -> Result<Arc<rustls::ServerConfig>, String> {
@@ -191,11 +253,7 @@ pub fn localhost_server_base_url(port: u16) -> String {
     format!("https://localhost:{port}")
 }
 
-pub async fn reserve_localhost_listener(data_dir: &Path) -> Result<(TcpListener, u16), String> {
-    ensure_localhost_certificate(data_dir)
-        .await
-        .map_err(|err| err.to_string())?;
-
+pub async fn reserve_localhost_listener(_: &Path) -> Result<(TcpListener, u16), String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|err| err.to_string())?;
@@ -222,4 +280,31 @@ pub fn start_unified_localhost_server(router: Router, listener: TcpListener, dat
             log::error!("unified localhost server failed: {err}");
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn localhost_certificate_is_reusable() {
+        let data_dir = std::env::temp_dir().join(format!("lidp-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&data_dir).unwrap();
+
+        let certificate = ensure_localhost_certificate(&data_dir).await.unwrap();
+        assert!(certificate.exists());
+        assert!(data_dir.join("localhost-ca.trusted").exists());
+        assert!(data_dir.join("localhost-server.der").exists());
+        ensure_localhost_certificate(&data_dir).await.unwrap();
+
+        fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reserves_localhost_listener() {
+        let (listener, port) = reserve_localhost_listener(Path::new("")).await.unwrap();
+        assert_eq!(listener.local_addr().unwrap().port(), port);
+    }
 }

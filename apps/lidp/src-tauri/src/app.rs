@@ -108,7 +108,7 @@ pub fn init_router(
     ))
 }
 
-pub async fn init_datebase(
+pub async fn init_database(
     app_handle: AppHandle<Wry>,
     app_config: Arc<AppConfig>,
 ) -> io::Result<Arc<Database>> {
@@ -137,29 +137,23 @@ pub async fn init_datebase(
         ),
         LibSqlRoleRepo::new(database.clone()),
         LibSqlPermissionRepo::new(database.clone()),
+        LibSqlDeviceRepo::new(database.clone()),
         key_service,
         app_config.bootstrap.clone(),
     );
 
-    bootstrap_service
-        .ensure_system_baseline()
-        .await
-        .map_err(io::Error::other)?;
     let device_identity = app_handle
         .try_state::<Arc<DeviceIdentity>>()
         .ok_or_else(|| io::Error::other("device identity is missing"))?;
-    lidp_service::bootstrap::ensure_bootstrap_device(
-        &LibSqlDeviceRepo::new(database.clone()),
-        lidp_model::contract::DeviceEnrollmentRequest {
-            name: "LIdP API server".to_string(),
-            public_key: device_identity.endpoint_id().to_string(),
-            address: device_identity
+    bootstrap_service
+        .ensure_system_baseline(Some((
+            device_identity.endpoint_id().to_string(),
+            device_identity
                 .endpoint_address()
                 .map_err(io::Error::other)?,
-        },
-    )
-    .await
-    .map_err(io::Error::other)?;
+        )))
+        .await
+        .map_err(io::Error::other)?;
     app_handle.manage(database.clone());
 
     Ok(database)
@@ -182,6 +176,7 @@ pub fn init_app_config(
         default_config.bootstrap.is_master = true;
         default_config.bootstrap.web = false;
         default_config.bootstrap.desktop = true;
+        default_config.bootstrap.device_name = "Native Application Device".to_owned();
         default_config.database.url = format!(
             "file://{}",
             data_dir.as_ref().join("lidp.db").to_string_lossy()

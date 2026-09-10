@@ -8,7 +8,7 @@ use lidp_service::{
     management::ManagementService,
     oauth2::OAuth2Service,
     repo::{
-        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo,
+        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
         LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
         LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
     },
@@ -74,12 +74,13 @@ pub async fn run() -> io::Result<()> {
         ),
         LibSqlRoleRepo::new(database.clone()),
         LibSqlPermissionRepo::new(database.clone()),
+        LibSqlDeviceRepo::new(database.clone()),
         key_service.clone(),
         app_config.bootstrap.clone(),
     );
 
     bootstrap_service
-        .ensure_system_baseline()
+        .ensure_system_baseline(None)
         .await
         .map_err(io::Error::other)?;
 

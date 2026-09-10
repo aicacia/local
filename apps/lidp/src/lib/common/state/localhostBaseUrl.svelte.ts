@@ -1,3 +1,4 @@
+import { Configuration, DefaultApi } from "@aicacia/lidp-management-client";
 import { createStorage } from "@aicacia/svelte-headless";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
@@ -12,6 +13,19 @@ const RETRY_DELAY_MS = 100;
 
 function wait(delayMs: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function isLocalhostServerReady(baseUrl: string): Promise<boolean> {
+    const api = new DefaultApi(
+        new Configuration({ basePath: `${baseUrl}/lidp-management` }),
+    );
+
+    try {
+        const [version] = await Promise.all([api.version(), api.health()]);
+        return version.name === "lidp-management-server";
+    } catch {
+        return false;
+    }
 }
 
 export function getLocalhostBaseUrlCached(): string | null {
@@ -34,7 +48,7 @@ export async function loadLocalhostBaseUrl(): Promise<string | null> {
                     "get_localhost_server_base_url",
                 );
                 const normalized = baseUrl?.trim() ?? "";
-                if (normalized) {
+                if (normalized && (await isLocalhostServerReady(normalized))) {
                     localhostBaseUrl.item = normalized;
                     return normalized;
                 }

@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use lidp_model::{
     contract::{
-        ApplicationRegistration, ClientProfile, ClientRegistration, ClientType, EntityType,
-        GrantType, ResponseType, TokenEndpointAuthMethod,
+        ApplicationRegistration, ClientProfile, ClientRegistration, ClientType,
+        DeviceEnrollmentRequest, EntityType, GrantType, ResponseType, TokenEndpointAuthMethod,
     },
     model::{Application, Client, Key, User},
 };
@@ -20,8 +20,8 @@ use lidp_model::{
 use super::config::BootstrapConfig;
 use crate::{
     repo::{
-        ApplicationRepo, ClientRepo, KeyRepo, KeyService, PermissionRepo, PrivateKeyRepo,
-        RepoResult, RoleRepo, UserRepo,
+        ApplicationRepo, ClientRepo, KeyRepo, KeyService, LibSqlDeviceRepo, PermissionRepo,
+        PrivateKeyRepo, RepoResult, RoleRepo, UserRepo,
     },
     util::generate_random_string,
 };
@@ -32,6 +32,7 @@ pub struct BootstrapService<A, C, K, U, R, P> {
     user_repo: U,
     role_repo: R,
     permission_repo: P,
+    device_repo: LibSqlDeviceRepo,
     key_service: Arc<KeyService<K>>,
     config: BootstrapConfig,
 }
@@ -51,6 +52,7 @@ where
         user_repo: U,
         role_repo: R,
         permission_repo: P,
+        device_repo: LibSqlDeviceRepo,
         key_service: Arc<KeyService<K>>,
         config: BootstrapConfig,
     ) -> Self {
@@ -60,12 +62,28 @@ where
             user_repo,
             role_repo,
             permission_repo,
+            device_repo,
             key_service,
             config,
         }
     }
 
-    pub async fn ensure_system_baseline(&self) -> RepoResult<User> {
+    pub async fn ensure_system_baseline(
+        &self,
+        device: Option<(String, String)>,
+    ) -> RepoResult<User> {
+        if let Some((public_key, address)) = device {
+            super::ensure_bootstrap_device(
+                &self.device_repo,
+                DeviceEnrollmentRequest {
+                    name: self.config.device_name.clone(),
+                    public_key,
+                    address,
+                },
+            )
+            .await?;
+        }
+
         let lidp_application = self
             .ensure_application("Local IdP".to_string(), "lidp".to_string())
             .await?;
