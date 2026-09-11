@@ -3547,6 +3547,131 @@ dependencies = [
 ]
 
 [[package]]
+name = "idp-model"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "build-time",
+ "chrono",
+ "db",
+ "include_dir",
+ "key",
+ "libsql",
+ "model",
+ "serde",
+ "serde-wasm-bindgen 0.6.5",
+ "serde_json",
+ "tsify",
+ "utoipa",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "idp-server"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "axum",
+ "base64 0.22.1",
+ "clap",
+ "cli",
+ "config",
+ "db",
+ "dotenvy",
+ "env_logger 0.10.2",
+ "file-system",
+ "http 1.5.0",
+ "idp-model",
+ "idp-service",
+ "iroh",
+ "iroh-chain",
+ "key",
+ "libsql",
+ "log",
+ "model",
+ "serde",
+ "serde_json",
+ "serde_qs",
+ "storage-server",
+ "storage-service",
+ "tokio",
+ "tokio-util",
+ "tower 0.5.3",
+ "tower-http 0.7.1",
+ "utoipa",
+ "utoipa-axum",
+ "utoipa-swagger-ui",
+]
+
+[[package]]
+name = "idp-service"
+version = "0.1.0"
+dependencies = [
+ "android-native-keyring-store",
+ "apple-native-keyring-store",
+ "base64 0.22.1",
+ "chrono",
+ "config",
+ "db",
+ "dbus-secret-service-keyring-store",
+ "env_logger 0.10.2",
+ "getrandom 0.3.4",
+ "idp-model",
+ "iroh",
+ "iroh-chain",
+ "iroh-chain-file-system",
+ "k256",
+ "key",
+ "keyring-core",
+ "libsql",
+ "linux-keyutils-keyring-store",
+ "log",
+ "model",
+ "reqwest 0.12.28",
+ "rust-argon2",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "storage-model",
+ "thiserror 2.0.20",
+ "tokio",
+ "windows-native-keyring-store",
+ "zeroize",
+]
+
+[[package]]
+name = "idp-unified"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "axum",
+ "clap",
+ "cli",
+ "config",
+ "db",
+ "dotenvy",
+ "env_logger 0.10.2",
+ "idp-model",
+ "idp-server",
+ "idp-service",
+ "iroh",
+ "iroh-chain",
+ "libsql",
+ "log",
+ "management-server",
+ "serde",
+ "serde_json",
+ "storage-service",
+ "tokio",
+ "tokio-util",
+ "tower-http 0.7.1",
+ "utoipa",
+ "utoipa-axum",
+ "utoipa-swagger-ui",
+]
+
+[[package]]
 name = "igd-next"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4409,15 +4534,15 @@ dependencies = [
  "file-system",
  "futures-core",
  "getrandom 0.3.4",
+ "idp-model",
+ "idp-server",
+ "idp-service",
  "iroh",
  "iroh-chain",
  "iroh-chain-file-system",
  "libsql",
- "lidp-management-server",
- "lidp-model",
- "lidp-server",
- "lidp-service",
  "log",
+ "management-server",
  "model",
  "rcgen",
  "reqwest 0.12.28",
@@ -4437,162 +4562,6 @@ dependencies = [
  "tower-http 0.7.1",
  "uuid",
  "yaml_serde",
-]
-
-[[package]]
-name = "lidp-management-server"
-version = "0.1.0"
-dependencies = [
- "api",
- "axum",
- "base64 0.22.1",
- "chrono",
- "clap",
- "cli",
- "config",
- "db",
- "dotenvy",
- "env_logger 0.10.2",
- "http 1.5.0",
- "libsql",
- "lidp-model",
- "lidp-service",
- "log",
- "model",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tower 0.5.3",
- "tower-http 0.7.1",
- "utoipa",
- "utoipa-axum",
- "utoipa-swagger-ui",
-]
-
-[[package]]
-name = "lidp-model"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "build-time",
- "chrono",
- "db",
- "include_dir",
- "key",
- "libsql",
- "model",
- "serde",
- "serde-wasm-bindgen 0.6.5",
- "serde_json",
- "tsify",
- "utoipa",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "lidp-server"
-version = "0.1.0"
-dependencies = [
- "api",
- "axum",
- "base64 0.22.1",
- "clap",
- "cli",
- "config",
- "db",
- "dotenvy",
- "env_logger 0.10.2",
- "file-system",
- "http 1.5.0",
- "iroh",
- "iroh-chain",
- "key",
- "libsql",
- "lidp-model",
- "lidp-service",
- "log",
- "model",
- "serde",
- "serde_json",
- "serde_qs",
- "storage-server",
- "storage-service",
- "tokio",
- "tokio-util",
- "tower 0.5.3",
- "tower-http 0.7.1",
- "utoipa",
- "utoipa-axum",
- "utoipa-swagger-ui",
-]
-
-[[package]]
-name = "lidp-service"
-version = "0.1.0"
-dependencies = [
- "android-native-keyring-store",
- "apple-native-keyring-store",
- "base64 0.22.1",
- "chrono",
- "config",
- "db",
- "dbus-secret-service-keyring-store",
- "env_logger 0.10.2",
- "getrandom 0.3.4",
- "iroh",
- "iroh-chain",
- "iroh-chain-file-system",
- "k256",
- "key",
- "keyring-core",
- "libsql",
- "lidp-model",
- "linux-keyutils-keyring-store",
- "log",
- "model",
- "reqwest 0.12.28",
- "rust-argon2",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "storage-model",
- "thiserror 2.0.20",
- "tokio",
- "windows-native-keyring-store",
- "zeroize",
-]
-
-[[package]]
-name = "lidp-unified"
-version = "0.1.0"
-dependencies = [
- "api",
- "axum",
- "clap",
- "cli",
- "config",
- "db",
- "dotenvy",
- "env_logger 0.10.2",
- "iroh",
- "iroh-chain",
- "libsql",
- "lidp-management-server",
- "lidp-model",
- "lidp-server",
- "lidp-service",
- "log",
- "serde",
- "serde_json",
- "storage-service",
- "tokio",
- "tokio-util",
- "tower-http 0.7.1",
- "utoipa",
- "utoipa-axum",
- "utoipa-swagger-ui",
 ]
 
 [[package]]
@@ -4681,6 +4650,37 @@ name = "mac-addr"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3d25b0e0b648a86960ac23b7ad4abb9717601dec6f66c165f5b037f3f03065f"
+
+[[package]]
+name = "management-server"
+version = "0.1.0"
+dependencies = [
+ "api",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "cli",
+ "config",
+ "db",
+ "dotenvy",
+ "env_logger 0.10.2",
+ "http 1.5.0",
+ "idp-model",
+ "idp-service",
+ "libsql",
+ "log",
+ "model",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tower 0.5.3",
+ "tower-http 0.7.1",
+ "utoipa",
+ "utoipa-axum",
+ "utoipa-swagger-ui",
+]
 
 [[package]]
 name = "markup5ever"
@@ -7486,9 +7486,9 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "db",
+ "idp-model",
  "include_dir",
  "libsql",
- "lidp-model",
  "serde",
  "serde_json",
 ]

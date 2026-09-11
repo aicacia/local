@@ -38,8 +38,8 @@
         "vite-plugin-devtools-json": "^1.0.0"
     },
     "dependencies": {
-        "@aicacia/lidp-client": "workspace:*",
-        "@aicacia/lidp-management-client": "workspace:*",
+        "@aicacia/idp-client": "workspace:*",
+        "@aicacia/management-client": "workspace:*",
 
         "@aicacia/oidc-client": "workspace:*",
         "@aicacia/storage-client": "workspace:*",

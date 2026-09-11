@@ -1,4 +1,5 @@
 {
+  "name": "@local/monorepo",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,9 +13,9 @@
     "apps:build": "pnpm --filter \"./apps/*\" run build",
     "apps:desktop": "pnpm --filter \"./apps/*\" run desktop",
     "packages:build": "pnpm --filter \"./packages/*\" --filter \"./crates/*\" run build",
-    "openapi:lidp": "pnpm --filter \"./packages/lidp-client\" run openapi",
-    "openapi:management": "pnpm --filter \"./packages/lidp-management-client\" run openapi",
-    "openapi": "pnpm run openapi:lidp && pnpm run openapi:management"
+    "openapi:idp": "pnpm --filter \"./packages/idp-client\" run openapi",
+    "openapi:management": "pnpm --filter \"./packages/management-client\" run openapi",
+    "openapi": "pnpm run openapi:idp && pnpm run openapi:management"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",

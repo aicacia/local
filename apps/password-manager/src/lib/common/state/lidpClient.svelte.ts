@@ -2,7 +2,7 @@ import {
     Configuration,
     type ConfigurationParameters,
     DefaultApi,
-} from "@aicacia/lidp-client";
+} from "@aicacia/idp-client";
 
 import { createStorage } from "@aicacia/svelte-headless";
 
@@ -14,7 +14,7 @@ import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
 const defaultLidpApiUrl = env.PUBLIC_LIDP_BASE_URL ?? "";
-const lidpApiUrl = createStorage<string>("lidp-api-url", defaultLidpApiUrl);
+const lidpApiUrl = createStorage<string>("idp-api-url", defaultLidpApiUrl);
 
 if (!isHttpUrl(lidpApiUrl.item)) {
     lidpApiUrl.item = isHttpUrl(defaultLidpApiUrl) ? defaultLidpApiUrl : "";
@@ -92,7 +92,7 @@ export async function validateLidpApiUrl(basePath: string): Promise<boolean> {
 
     try {
         const version = await api.version();
-        return version.name === "lidp-server";
+        return version.name === "idp-server";
     } catch {
         return false;
     }

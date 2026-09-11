@@ -1,20 +1,20 @@
-# Local First IdP
+# Local First IdP and Storage
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)](LICENSE-MIT)
 ![Test Status](https://github.com/aicacia/rs-oauth/actions/workflows/ci.yml/badge.svg)
 
-LIDP is an OIDC/OAuth 2.x authority with local-first, application-scoped
+OIDC/OAuth 2.x authority with local-first, application-scoped
 storage. Applications remain ordinary OAuth clients. They do not own device
 keys, peer addresses, or sync code.
 
 ## Boundaries
 
-### LIDP
+### IdP
 
-LIDP is the identity and device-control plane.
+Idp is the identity and device-control plane.
 
 - Issues OAuth access tokens and maps a token's client to its application.
-- Stores user device membership in LIDP SQLite.
+- Stores user device membership in SQLite.
 - Approves and revokes device public keys and addresses.
 - Exposes the trusted-device list and short-lived tunnel authorizations.
 - Is the only source of user, application, and device authorization.

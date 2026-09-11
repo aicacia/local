@@ -13,9 +13,7 @@ use clap::Parser;
 use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::{close_database, open_database};
 use env_logger::Env;
-use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey, endpoint::presets};
-use iroh_chain::{DynamicEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
-use lidp_service::{
+use idp_service::{
     bootstrap::BootstrapService,
     hosted_control_plane::HostedControlPlane,
     management::ManagementService,
@@ -31,6 +29,8 @@ use lidp_service::{
         LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer,
     },
 };
+use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey, endpoint::presets};
+use iroh_chain::{DynamicEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
 use storage_service::{
     IrohTransportFactory, ScopedFileSystemRuntime, ScopedTunnelAuthorizationProvider,
     TrustedEndpointAddrLookup, TunnelAuthorizationProvider,
@@ -40,7 +40,7 @@ use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
 
 use crate::{AppConfig, openapi_router};
-use lidp_server::TimedPairingAcceptanceController;
+use idp_server::TimedPairingAcceptanceController;
 
 enum CliTunnelAuthorizer {
     Hosted(HostedTunnelAuthorizer),
@@ -132,7 +132,7 @@ impl TrustedEndpointAddrLookup<StorageScope> for ScopeTrustedEndpoints {
     }
 }
 
-async fn open_device_identity(key_path: &Path) -> io::Result<lidp_server::DeviceIdentity> {
+async fn open_device_identity(key_path: &Path) -> io::Result<idp_server::DeviceIdentity> {
     let secret_key = match std::fs::read(&key_path) {
         Ok(bytes) => SecretKey::from_bytes(
             &bytes
@@ -152,7 +152,7 @@ async fn open_device_identity(key_path: &Path) -> io::Result<lidp_server::Device
         .bind()
         .await
         .map_err(io::Error::other)?;
-    Ok(lidp_server::DeviceIdentity::new(endpoint, secret_key))
+    Ok(idp_server::DeviceIdentity::new(endpoint, secret_key))
 }
 
 pub async fn run() -> io::Result<()> {
@@ -182,7 +182,7 @@ pub async fn run() -> io::Result<()> {
         io::Error::other(e)
     })?);
 
-    lidp_model::migrate::up(&database).await.map_err(|e| {
+    idp_model::migrate::up(&database).await.map_err(|e| {
         log::error!("failed to run database migrations: {}", e);
         io::Error::other(e)
     })?;
@@ -243,8 +243,8 @@ pub async fn run() -> io::Result<()> {
         .transpose()
         .map_err(io::Error::other)?
         .map(Arc::new);
-    let lidp_router_state = lidp_server::RouterState::new(
-        &app_config.lidp_ui_public_uri,
+    let idp_router_state = idp_server::RouterState::new(
+        &app_config.idp_ui_public_uri,
         &app_config.api_public_base_uri,
         database.clone(),
         Arc::clone(&oauth2_service),
@@ -252,15 +252,15 @@ pub async fn run() -> io::Result<()> {
         Arc::clone(&devices),
         Arc::clone(&device_identity),
     );
-    let lidp_router_state = match &control_plane {
-        Some(control_plane) => lidp_router_state.with_storage_scope_resolver(Arc::new(
-            lidp_server::HostedStorageScopeResolver::new(Arc::clone(control_plane)),
+    let idp_router_state = match &control_plane {
+        Some(control_plane) => idp_router_state.with_storage_scope_resolver(Arc::new(
+            idp_server::HostedStorageScopeResolver::new(Arc::clone(control_plane)),
         )),
-        None => lidp_router_state,
+        None => idp_router_state,
     };
     let storage_session_router =
-        lidp_server::storage_session_openapi_router(lidp_router_state.clone());
-    let lidp_router = lidp_server::openapi_router(lidp_router_state.clone(), "/lidp");
+        idp_server::storage_session_openapi_router(idp_router_state.clone());
+    let idp_router = idp_server::openapi_router(idp_router_state.clone(), "/lidp");
     let storage_root = PathBuf::from(&args.config)
         .parent()
         .unwrap_or(Path::new("."))
@@ -276,7 +276,7 @@ pub async fn run() -> io::Result<()> {
         )),
     };
     let manager = Server::new(device_identity.endpoint(), allowlist.clone(), authorizer);
-    lidp_router_state
+    idp_router_state
         .pairing_acceptance
         .bind(Arc::new(TimedPairingAcceptanceController::new(
             manager.clone(),
@@ -315,19 +315,19 @@ pub async fn run() -> io::Result<()> {
         LibSqlPermissionRepo::new(database.clone()),
         LibSqlRoleRepo::new(database.clone()),
     ));
-    let management_router_state = lidp_management_server::RouterState::new(
+    let management_router_state = management_server::RouterState::new(
         &app_config.api_public_base_uri,
         database.clone(),
         management_service,
         oauth2_service,
     );
     let management_router =
-        lidp_management_server::openapi_router(management_router_state, "/lidp-management");
+        management_server::openapi_router(management_router_state, "/idp-management");
 
-    let router = openapi_router(lidp_router, management_router, storage_session_router)
+    let router = openapi_router(idp_router, management_router, storage_session_router)
         .split_for_parts()
         .0
-        .merge(lidp_server::storage_router(storage_sessions, file_systems))
+        .merge(idp_server::storage_router(storage_sessions, file_systems))
         .layer(CorsLayer::very_permissive().allow_private_network(true))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new().gzip(app_config.server.gzip));

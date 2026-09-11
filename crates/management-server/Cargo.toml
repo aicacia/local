@@ -1,0 +1,112 @@
+[package]
+name = "management-server"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Management API server for LIDP"
+
+[lib]
+name = "management_server"
+
+[[bin]]
+name = "management-server"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli", "completions", "remote", "swagger-ui"]
+cli = ["dep:tokio", "dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli"]
+completions = ["cli?/completions"]
+remote = ["db/remote"]
+swagger-ui = ["utoipa-swagger-ui"]
+
+[dependencies]
+# CLI
+dotenvy = { version = "0.15", default-features = false, features = [
+], optional = true }
+clap = { version = "4.6", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+], optional = true }
+cli = { path = "../cli", default-features = false, features = [
+], optional = true }
+
+# Internal
+api = { path = "../api", default-features = false, features = [] }
+db = { path = "../db", default-features = false, features = ["migrate"] }
+model = { path = "../model", default-features = false, features = [
+  "std",
+  "utoipa",
+  "axum",
+] }
+idp-model = { path = "../idp-model", default-features = false, features = [
+  "std",
+  "utoipa",
+  "axum",
+  "migrate",
+] }
+idp-service = { path = "../idp-service", default-features = false, features = ["std"] }
+
+# Database
+libsql = { version = "0.9", default-features = false, features = [] }
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = [
+  "derive",
+  "std",
+] }
+
+# Utilities
+config = { version = "0.15", features = ["yaml"], default-features = false }
+
+# Web
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "http2",
+  "query",
+  "json",
+  "tokio",
+  "macros",
+] }
+tower-http = { version = "0.7", features = [
+  "cors",
+  "trace",
+  "compression-gzip",
+], default-features = false }
+http = { version = "1.4", default-features = false }
+utoipa = { version = "5.5", default-features = false, features = ["macros"] }
+utoipa-axum = { version = "0.2", default-features = false, features = [] }
+utoipa-swagger-ui = { version = "9.0", default-features = false, features = [
+  "axum",
+], optional = true }
+
+# Async
+tokio = { version = "1.52", default-features = false, features = [
+  "macros",
+  "rt-multi-thread",
+], optional = true }
+tokio-util = { version = "0.7", default-features = false, features = [
+], optional = true }
+
+# Logging
+log = { version = "0.4", default-features = false, features = ["std"] }
+env_logger = { version = "0.10", default-features = false, features = [] }
+
+[dev-dependencies]
+# Encoding
+base64 = { version = "0.22", default-features = false, features = ["std"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+
+# Time
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
+
+# Web
+tower = { version = "0.5", default-features = false, features = ["util"] }

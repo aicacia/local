@@ -13,12 +13,12 @@ name = "storage_model"
 
 [features]
 default = ["std"]
-std = ["serde/std", "serde_json/std", "chrono/std", "lidp-model/std"]
+std = ["serde/std", "serde_json/std", "chrono/std", "idp-model/std"]
 migrate = ["dep:db", "dep:include_dir"]
 
 [dependencies]
 # Internal
-lidp-model = { path = "../lidp-model", default-features = false, features = [] }
+idp-model = { path = "../idp-model", default-features = false, features = [] }
 db = { path = "../db", default-features = false, features = ["migrate"], optional = true }
 libsql = { version = "0.9", default-features = false, features = [] }
 

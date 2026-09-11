@@ -19,8 +19,8 @@ use tokio::{
 
 use crate::{AllowedEndpointId, PairingOffer, pairing::validate_payload};
 
-pub const PAIRING_ALPN: &[u8] = b"lidp-pairing/1";
-pub const TUNNEL_ALPN: &[u8] = b"lidp-tunnel/1";
+pub const PAIRING_ALPN: &[u8] = b"idp-pairing/1";
+pub const TUNNEL_ALPN: &[u8] = b"idp-tunnel/1";
 const PROTOCOL_VERSION: u8 = 1;
 const MAX_AUTHORIZATION_LENGTH: usize = 4096;
 
@@ -43,7 +43,7 @@ impl VaultId {
 
     pub fn from_application(user_sub: &str, application_id: i64) -> Self {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"lidp-vault-id/v1");
+        hasher.update(b"idp-vault-id/v1");
         hasher.update(&(user_sub.len() as u64).to_be_bytes());
         hasher.update(user_sub.as_bytes());
         hasher.update(&application_id.to_be_bytes());

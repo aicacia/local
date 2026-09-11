@@ -5,8 +5,8 @@ use axum::{
     http::header::AUTHORIZATION,
 };
 use http::{HeaderValue, request::Parts};
-use lidp_model::contract::{ErrorCode, ErrorResponse, StandardClaims};
-use lidp_service::oauth2::{Principal, decode_jwt};
+use idp_model::contract::{ErrorCode, ErrorResponse, StandardClaims};
+use idp_service::oauth2::{Principal, decode_jwt};
 use serde::de::DeserializeOwned;
 
 use crate::RouterState;

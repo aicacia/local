@@ -1,5 +1,5 @@
 [package]
-name = "lidp-unified"
+name = "idp-unified"
 description = "Local First OIDC / OAuth 2.x implementation"
 repository = "https://github.com/aicacia/rs-oauth"
 rust-version = "1.98"
@@ -20,7 +20,7 @@ completions = ["cli/completions"]
 swagger-ui = ["utoipa-swagger-ui"]
 
 [lib]
-name = "lidp_unified"
+name = "idp_unified"
 
 [dependencies]
 # CLI
@@ -40,16 +40,16 @@ db = { path = "./crates/db", default-features = false, features = [
 ] }
 
 # LIDP
-lidp-model = { path = "./crates/lidp-model", default-features = false, features = [
+idp-model = { path = "./crates/idp-model", default-features = false, features = [
   "migrate",
 ] }
-lidp-server = { path = "./crates/lidp-server", default-features = false, features = [
+idp-server = { path = "./crates/idp-server", default-features = false, features = [
   "remote",
 ] }
-lidp-management-server = { path = "./crates/lidp-management-server", default-features = false, features = [
+management-server = { path = "./crates/management-server", default-features = false, features = [
   "remote",
 ] }
-lidp-service = { path = "./crates/lidp-service", default-features = false, features = [
+idp-service = { path = "./crates/idp-service", default-features = false, features = [
   "std",
 ] }
 storage-service = { path = "./crates/storage-service", default-features = false, features = [] }
@@ -115,15 +115,15 @@ members = [
   "crates/iroh-chain",
   "crates/iroh-chain-file-system",
   "crates/iroh-client-wasm",
-  "crates/lidp-management-server",
-  "crates/lidp-model",
-  "crates/lidp-server",
-  "crates/lidp-service",
+  "crates/management-server",
+  "crates/idp-model",
+  "crates/idp-server",
+  "crates/idp-service",
   "crates/storage-model",
   "crates/storage-server",
   "crates/storage-service",
   "crates/tauri-plugin-fetch-api",
-  "apps/lidp/src-tauri",
+  "apps/app/src-tauri",
 ]
 
 [workspace.package]

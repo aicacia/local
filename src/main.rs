@@ -1,4 +1,4 @@
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    lidp_unified::run().await
+    idp_unified::run().await
 }

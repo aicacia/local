@@ -6,12 +6,12 @@ use utoipa_axum::router::OpenApiRouter;
 pub(crate) struct ApiDoc;
 
 pub fn openapi_router(
-    lidp_router: OpenApiRouter,
+    idp_router: OpenApiRouter,
     management_router: OpenApiRouter,
     storage_session_router: OpenApiRouter,
 ) -> OpenApiRouter {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .merge(lidp_router)
+        .merge(idp_router)
         .merge(management_router)
         .merge(storage_session_router)
 }

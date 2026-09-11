@@ -2,8 +2,6 @@
 /node_modules
 /.env*
 !/.env.example
-/lidp.db
-/device.key
 /vaults
 
 /config/**/*.db
