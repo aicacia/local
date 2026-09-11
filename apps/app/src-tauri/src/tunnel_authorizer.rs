@@ -17,7 +17,7 @@ use management_service::{
     tunnel_authorization::{LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer},
 };
 
-use crate::hosted_control_plane::HostedControlPlane;
+use management_service::HostedControlPlane;
 
 type LocalOAuth2Service = OAuth2Service<
     LibSqlApplicationRepo,

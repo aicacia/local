@@ -14,10 +14,10 @@ use storage_service::{
     ScopedTunnelAuthorizationProvider, TrustedEndpointAddrLookup,
 };
 
-use crate::hosted_control_plane::HostedControlPlane;
 use crate::tunnel_authorizer::{
     DeviceTunnelManager, LidpTunnelAuthorizer, LocalTunnel, LocalTunnelProvider,
 };
+use management_service::HostedControlPlane;
 
 type AppTransport = IrohTransport<LidpTunnelAuthorizer, AppTunnelAuthorization>;
 type AppTransportFactory = DeferredIrohTransportFactory<
