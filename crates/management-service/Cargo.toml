@@ -1,0 +1,71 @@
+[package]
+name = "management-service"
+version = "0.1.0"
+publish = false
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Management service implementation"
+
+[lib]
+name = "management_service"
+
+[features]
+default = []
+fs = ["std"]
+libsql = ["std"]
+std = [
+  "idp-model/std",
+  "idp-service/std",
+  "model/std",
+  "storage-model/std",
+  "dep:base64",
+  "dep:getrandom",
+  "dep:iroh",
+  "dep:iroh-chain",
+  "dep:iroh-chain-file-system",
+  "dep:reqwest",
+  "serde/std",
+]
+
+[dependencies]
+# Internal
+file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+idp-model = { path = "../idp-model", default-features = false, features = [] }
+idp-service = { path = "../idp-service", default-features = false, features = [] }
+iroh-chain = { path = "../iroh-chain", default-features = false, features = [], optional = true }
+iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features = false, features = [], optional = true }
+model = { path = "../model", default-features = false, features = [] }
+storage-model = { path = "../storage-model", default-features = false, features = [] }
+
+# Error Handling
+thiserror = { version = "2.0", default-features = false, features = [] }
+
+# Database
+libsql = { version = "0.9", default-features = false, features = ["core", "serde"] }
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+# Serialization
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+
+# Cryptography
+base64 = { version = "0.22", default-features = false, features = [], optional = true }
+iroh = { version = "1.1", default-features = false, features = [], optional = true }
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+
+# HTTP
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+
+# Random
+getrandom = { version = "0.3", default-features = false, features = [], optional = true }
+
+[dev-dependencies]
+file-system = { path = "../file-system", default-features = false, features = ["in-memory", "sync"] }
+idp-model = { path = "../idp-model", default-features = false, features = ["migrate", "std"] }
+tokio = { version = "1.4", default-features = false, features = ["macros", "rt"] }

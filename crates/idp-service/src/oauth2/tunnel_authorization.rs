@@ -35,10 +35,10 @@ pub fn verify_tunnel_authorization(
 #[cfg(test)]
 mod tests {
     use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
-    use k256::ecdsa::SigningKey;
     use idp_model::contract::{
         JwkPrivate, JwkPrivateParameters, JwsAlgorithm, KeyUse, TunnelAuthorizationClaims,
     };
+    use k256::ecdsa::SigningKey;
 
     use super::{super::encode_jwt, verify_tunnel_authorization};
 

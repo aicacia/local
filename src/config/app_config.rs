@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use api::{Environment, ServerConfig};
+use bootstrap_service::bootstrap::BootstrapConfig;
 use db::DatabaseConfig;
 use idp_server::PairingConfig;
-use idp_service::{PasswordConfig, bootstrap::BootstrapConfig, oauth2::OAuth2Config};
+use idp_service::{PasswordConfig, oauth2::OAuth2Config};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]

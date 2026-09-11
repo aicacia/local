@@ -1,20 +1,21 @@
 use std::{fs, io, path::Path, sync::Arc, time::Duration};
 
 use axum::Router;
+use bootstrap_service::bootstrap::BootstrapService;
 use db::{close_database, open_database};
 use idp_server::{AppConfig, RouterState, TimedPairingAcceptanceController, storage_router};
+use idp_service::libsql::{
+    LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+    LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
+};
 use idp_service::{
-    bootstrap::BootstrapService,
-    management::ManagementService,
     oauth2::OAuth2Service,
-    repo::{
-        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
-        LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
-    },
-    storage_session::StorageSessionService,
+    repo::{KeyService, PrivateKeyKeyringRepo},
 };
 use libsql::Database;
+use management_service::ManagementService;
+use management_service::StorageSessionService;
+use management_service::libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo};
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;

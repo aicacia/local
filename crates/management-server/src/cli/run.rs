@@ -1,18 +1,19 @@
 use api::serve;
+use bootstrap_service::bootstrap::BootstrapService;
 use clap::Parser;
 use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::{close_database, open_database};
 use env_logger::Env;
-use idp_service::{
-    bootstrap::BootstrapService,
-    management::ManagementService,
-    oauth2::OAuth2Service,
-    repo::{
-        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
-        LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
-    },
+use idp_service::libsql::{
+    LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+    LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
 };
+use idp_service::{
+    oauth2::OAuth2Service,
+    repo::{KeyService, PrivateKeyKeyringRepo},
+};
+use management_service::ManagementService;
+use management_service::libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo};
 use std::{
     io,
     net::{IpAddr, SocketAddr},

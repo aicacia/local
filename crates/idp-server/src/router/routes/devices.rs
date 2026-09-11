@@ -6,7 +6,7 @@ use idp_model::contract::{
     DeviceEnrollment, DeviceEnrollmentRequest, DeviceInfo, ErrorCode, ErrorResponse,
     PairingAcceptance, TrustedDevice, UpdateDeviceRequest,
 };
-use idp_service::{device_enrollment::DeviceEnrollmentService, repo::DeviceRepo};
+use management_service::{DeviceEnrollmentService, DeviceRepo};
 
 use crate::router::{PairingAcceptanceController, RouterState, middleware::StandardAuthorization};
 

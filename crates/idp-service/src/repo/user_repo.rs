@@ -3,7 +3,7 @@ use idp_model::model::{User, UserEmail, UserPassword, UserPhoneNumber};
 use crate::repo::RepoResult;
 
 pub trait UserRepo {
-    fn find_user_by_id(&self, id: i64) -> impl Future<Output = RepoResult<Option<User>>>;
+    fn find_user_by_id(&self, id: i64) -> impl Future<Output = RepoResult<Option<User>>> + Send;
 
     fn list_users(&self, offset: u32, limit: u32) -> impl Future<Output = RepoResult<Vec<User>>>;
 

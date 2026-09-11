@@ -4,19 +4,17 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod bootstrap;
-pub mod device_enrollment;
-#[cfg(feature = "std")]
-pub mod hosted_control_plane;
-pub mod management;
+extern crate self as idp_service;
+
+#[cfg(feature = "fs")]
+pub mod fs;
+#[cfg(feature = "libsql")]
+pub mod libsql;
 pub mod oauth2;
 mod password_config;
 pub mod repo;
 
-#[cfg(feature = "std")]
-pub mod storage_session;
-#[cfg(feature = "std")]
-pub mod tunnel_authorization;
 mod util;
 
 pub use password_config::PasswordConfig;
+pub use util::{encrypt_password, generate_random_string};

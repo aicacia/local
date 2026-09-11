@@ -2,7 +2,7 @@ use axum::{Json, extract::State};
 use idp_model::contract::{
     ErrorCode, ErrorResponse, TunnelAuthorization, TunnelAuthorizationRequest,
 };
-use idp_service::repo::DeviceRepo;
+use management_service::DeviceRepo;
 
 use crate::router::{RouterState, middleware::StandardAuthorization};
 

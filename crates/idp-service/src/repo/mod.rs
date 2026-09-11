@@ -1,47 +1,29 @@
 mod appliccation_repo;
 mod client_repo;
-mod device_repo;
+
 mod error;
 mod key_repo;
 mod key_service;
-mod libsql_application_repo;
-mod libsql_client_repo;
-mod libsql_device_repo;
-mod libsql_key_repo;
-mod libsql_oauth2_authorization_code_repo;
-mod libsql_oauth2_user_consent_repo;
-mod libsql_permission_repo;
-mod libsql_role_repo;
-mod libsql_user_repo;
 mod oauth2_authorization_code_repo;
 mod oauth2_user_consent_repo;
-mod permission_repo;
+
 mod private_key_keyring_repo;
 mod private_key_repo;
 mod raw_keyring_repo;
-mod role_repo;
+
 mod user_repo;
 
 pub use appliccation_repo::ApplicationRepo;
 pub use client_repo::ClientRepo;
-pub use device_repo::DeviceRepo;
+
 pub use error::{RepoError, RepoResult};
 pub use key_repo::KeyRepo;
 pub use key_service::KeyService;
-pub use libsql_application_repo::LibSqlApplicationRepo;
-pub use libsql_client_repo::LibSqlClientRepo;
-pub use libsql_device_repo::LibSqlDeviceRepo;
-pub use libsql_key_repo::LibSqlKeyRepo;
-pub use libsql_oauth2_authorization_code_repo::LibSqlOAuth2AuthorizationCodeRepo;
-pub use libsql_oauth2_user_consent_repo::LibSqlOAuth2UserConsentRepo;
-pub use libsql_permission_repo::LibSqlPermissionRepo;
-pub use libsql_role_repo::LibSqlRoleRepo;
-pub use libsql_user_repo::LibSqlUserRepo;
 pub use oauth2_authorization_code_repo::OAuth2AuthorizationCodeRepo;
 pub use oauth2_user_consent_repo::OAuth2UserConsentRepo;
-pub use permission_repo::PermissionRepo;
+
 pub use private_key_keyring_repo::PrivateKeyKeyringRepo;
 pub use private_key_repo::PrivateKeyRepo;
 pub use raw_keyring_repo::RawKeyringRepo;
-pub use role_repo::RoleRepo;
+
 pub use user_repo::UserRepo;

@@ -4,13 +4,35 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use idp_service::{
+    libsql::{
+        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+        LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
+    },
+    oauth2::OAuth2Service,
+};
 use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
-use idp_service::tunnel_authorization::LocalTunnelAuthorizer;
+use management_service::{
+    libsql::LibSqlDeviceRepo,
+    tunnel_authorization::{LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer},
+};
 
 use crate::hosted_control_plane::HostedControlPlane;
 
+type LocalOAuth2Service = OAuth2Service<
+    LibSqlApplicationRepo,
+    LibSqlClientRepo,
+    LibSqlOAuth2AuthorizationCodeRepo,
+    LibSqlUserRepo,
+    LibSqlOAuth2UserConsentRepo,
+    LibSqlKeyRepo,
+>;
+pub type LocalTunnel = LocalTunnelAuthorizer<LocalOAuth2Service, LibSqlDeviceRepo>;
+pub type LocalTunnelProvider =
+    LocalTunnelAuthorizationProvider<LocalOAuth2Service, LibSqlDeviceRepo>;
+
 pub struct LidpTunnelAuthorizer {
-    local: Arc<LocalTunnelAuthorizer>,
+    local: Arc<LocalTunnel>,
     control_plane: Option<Arc<HostedControlPlane>>,
     used: Mutex<BTreeMap<String, i64>>,
 }
@@ -32,7 +54,7 @@ impl LidpTunnelAuthorizer {
         }
     }
 
-    pub fn local(&self) -> Arc<LocalTunnelAuthorizer> {
+    pub fn local(&self) -> Arc<LocalTunnel> {
         Arc::clone(&self.local)
     }
 }

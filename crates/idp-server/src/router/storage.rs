@@ -2,7 +2,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use axum::Router;
 use file_system::{PeerCodec, Transport};
-use idp_service::storage_session::{StorageScope, StorageSessionService};
+use management_service::{StorageScope, StorageSessionService};
 use storage_server::{
     StorageSessionResolver, StorageSocketSession, storage_router as socket_router,
 };

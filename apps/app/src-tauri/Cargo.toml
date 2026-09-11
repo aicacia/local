@@ -63,7 +63,13 @@ idp-model = { path = "../../../crates/idp-model", default-features = false, feat
 ] }
 idp-server = { path = "../../../crates/idp-server", default-features = false, features = [
 ] }
+bootstrap-service = { path = "../../../crates/bootstrap-service", default-features = false, features = ["std"] }
 idp-service = { path = "../../../crates/idp-service", default-features = false, features = [
+  "libsql",
+  "std",
+] }
+management-service = { path = "../../../crates/management-service", default-features = false, features = [
+  "libsql",
   "std",
 ] }
 model = { path = "../../../crates/model", default-features = false, features = ["std"] }

@@ -12,7 +12,7 @@ pub trait KeyRepo {
         entity_id: i64,
     ) -> impl Future<Output = RepoResult<Vec<Key>>>;
 
-    fn find_by_id(&self, id: u32) -> impl Future<Output = RepoResult<Option<Key>>>;
+    fn find_by_id(&self, id: u32) -> impl Future<Output = RepoResult<Option<Key>>> + Send;
 
     fn find_by_entity_type_and_id(
         &self,
@@ -24,7 +24,7 @@ pub trait KeyRepo {
         &self,
         entity_type: EntityType,
         entity_id: i64,
-    ) -> impl Future<Output = RepoResult<Option<Key>>>;
+    ) -> impl Future<Output = RepoResult<Option<Key>>> + Send;
 
     fn create_key(
         &self,

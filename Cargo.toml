@@ -49,7 +49,10 @@ idp-server = { path = "./crates/idp-server", default-features = false, features 
 management-server = { path = "./crates/management-server", default-features = false, features = [
   "remote",
 ] }
+management-service = { path = "./crates/management-service", default-features = false, features = ["libsql", "std"] }
+bootstrap-service = { path = "./crates/bootstrap-service", default-features = false, features = ["std"] }
 idp-service = { path = "./crates/idp-service", default-features = false, features = [
+  "libsql",
   "std",
 ] }
 storage-service = { path = "./crates/storage-service", default-features = false, features = [] }
@@ -110,12 +113,14 @@ members = [
   "crates/file-system",
   "crates/cli",
   "crates/api",
+  "crates/bootstrap-service",
   "crates/key",
   "crates/model",
   "crates/iroh-chain",
   "crates/iroh-chain-file-system",
   "crates/iroh-client-wasm",
   "crates/management-server",
+  "crates/management-service",
   "crates/idp-model",
   "crates/idp-server",
   "crates/idp-service",

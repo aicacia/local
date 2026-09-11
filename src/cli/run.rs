@@ -9,28 +9,30 @@ use std::{
 };
 
 use api::serve;
+use bootstrap_service::bootstrap::BootstrapService;
 use clap::Parser;
 use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::{close_database, open_database};
 use env_logger::Env;
+use idp_service::libsql::{
+    LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+    LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
+};
 use idp_service::{
-    bootstrap::BootstrapService,
-    hosted_control_plane::HostedControlPlane,
-    management::ManagementService,
     oauth2::OAuth2Service,
-    repo::{
-        KeyService, LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
-        LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlPermissionRepo,
-        LibSqlRoleRepo, LibSqlUserRepo, PrivateKeyKeyringRepo,
-    },
-    storage_session::{StorageScope, StorageSessionService},
+    repo::{KeyService, PrivateKeyKeyringRepo},
+};
+use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey, endpoint::presets};
+use iroh_chain::{DynamicEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
+use management_service::ManagementService;
+use management_service::{
+    HostedControlPlane, StorageScope, StorageSessionService,
+    libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo},
     tunnel_authorization::{
         HostedTunnelAuthorizationProvider, HostedTunnelAuthorizer,
         LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer,
     },
 };
-use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey, endpoint::presets};
-use iroh_chain::{DynamicEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
 use storage_service::{
     IrohTransportFactory, ScopedFileSystemRuntime, ScopedTunnelAuthorizationProvider,
     TrustedEndpointAddrLookup, TunnelAuthorizationProvider,
@@ -42,9 +44,21 @@ use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLay
 use crate::{AppConfig, openapi_router};
 use idp_server::TimedPairingAcceptanceController;
 
+type LocalOAuth2Service = OAuth2Service<
+    LibSqlApplicationRepo,
+    LibSqlClientRepo,
+    LibSqlOAuth2AuthorizationCodeRepo,
+    LibSqlUserRepo,
+    LibSqlOAuth2UserConsentRepo,
+    LibSqlKeyRepo,
+>;
+type CliLocalTunnelAuthorizer = LocalTunnelAuthorizer<LocalOAuth2Service, LibSqlDeviceRepo>;
+type CliLocalTunnelAuthorizationProvider =
+    LocalTunnelAuthorizationProvider<LocalOAuth2Service, LibSqlDeviceRepo>;
+
 enum CliTunnelAuthorizer {
     Hosted(HostedTunnelAuthorizer),
-    Local(LocalTunnelAuthorizer),
+    Local(CliLocalTunnelAuthorizer),
 }
 
 impl TunnelAuthorizer for CliTunnelAuthorizer {
@@ -73,7 +87,7 @@ impl TunnelAuthorizer for CliTunnelAuthorizer {
 #[derive(Clone)]
 enum CliAuthorizationProvider {
     Hosted(Arc<HostedControlPlane>),
-    Local(Arc<LocalTunnelAuthorizer>),
+    Local(Arc<CliLocalTunnelAuthorizer>),
 }
 
 impl ScopedTunnelAuthorizationProvider<StorageScope> for CliAuthorizationProvider {
@@ -94,7 +108,7 @@ impl ScopedTunnelAuthorizationProvider<StorageScope> for CliAuthorizationProvide
 #[derive(Clone)]
 enum CliTunnelAuthorization {
     Hosted(HostedTunnelAuthorizationProvider),
-    Local(LocalTunnelAuthorizationProvider),
+    Local(CliLocalTunnelAuthorizationProvider),
 }
 
 impl TunnelAuthorizationProvider for CliTunnelAuthorization {

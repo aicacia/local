@@ -1,7 +1,7 @@
 use axum::{Json, extract::State};
 use http::{HeaderMap, header::AUTHORIZATION};
 use idp_model::contract::{ErrorCode, ErrorResponse, StorageSession};
-use idp_service::{repo::DeviceRepo, storage_session::StorageScope};
+use management_service::{DeviceRepo, StorageScope};
 
 use crate::router::{RouterState, authorize_bearer};
 

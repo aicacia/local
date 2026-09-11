@@ -6,19 +6,18 @@ use std::{
 };
 
 use idp_model::contract::TunnelAuthorizationRequest;
-use idp_service::{
-    storage_session::StorageScope,
-    tunnel_authorization::{LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer},
-};
 use iroh::{EndpointAddr, EndpointId};
 use iroh_chain::{DynamicEndpointIdStore, VaultId};
+use management_service::StorageScope;
 use storage_service::{
     DeferredIrohTransportFactory, IrohTransport, IrohTransportFactory, ScopedFileSystemRuntime,
     ScopedTunnelAuthorizationProvider, TrustedEndpointAddrLookup,
 };
 
 use crate::hosted_control_plane::HostedControlPlane;
-use crate::tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer};
+use crate::tunnel_authorizer::{
+    DeviceTunnelManager, LidpTunnelAuthorizer, LocalTunnel, LocalTunnelProvider,
+};
 
 type AppTransport = IrohTransport<LidpTunnelAuthorizer, AppTunnelAuthorization>;
 type AppTransportFactory = DeferredIrohTransportFactory<
@@ -48,7 +47,7 @@ impl TunnelContext {
         &self,
         manager: DeviceTunnelManager,
         allowlist: DynamicEndpointIdStore,
-        local: Arc<LocalTunnelAuthorizer>,
+        local: Arc<LocalTunnel>,
         control_plane: Option<Arc<HostedControlPlane>>,
     ) {
         self.factory.set(IrohTransportFactory::new(
@@ -65,7 +64,7 @@ impl TunnelContext {
 
 #[derive(Clone)]
 pub(crate) struct AppTunnelAuthorizationProvider {
-    local: Arc<LocalTunnelAuthorizer>,
+    local: Arc<LocalTunnel>,
     control_plane: Option<Arc<HostedControlPlane>>,
 }
 
@@ -108,7 +107,7 @@ impl TrustedEndpointAddrLookup<StorageScope> for AppTrustedEndpointLookup {
 
 #[derive(Clone)]
 pub(crate) enum AppTunnelAuthorization {
-    Local(LocalTunnelAuthorizationProvider),
+    Local(LocalTunnelProvider),
     Hosted(HostedTunnelAuthorization),
 }
 

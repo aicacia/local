@@ -3,10 +3,9 @@ use axum::{
     extract::{Path, Query, State},
 };
 use idp_model::contract::{ErrorCode, ErrorResponse};
-use idp_service::management::ManagementService;
 use serde::{Deserialize, Serialize};
 
-use crate::router::{RouterState, middleware::ManagementAuthorization};
+use crate::router::{ManagementRouterService, RouterState, middleware::ManagementAuthorization};
 
 const ROLES_READ_PERMISSION: &str = "roles.read";
 const ROLES_WRITE_PERMISSION: &str = "roles.write";
@@ -267,7 +266,7 @@ pub(crate) async fn revoke_role_from_user(
 }
 
 pub(crate) async fn require_application_permission(
-    management_service: &ManagementService,
+    management_service: &ManagementRouterService,
     authorization: &ManagementAuthorization,
     permission: &str,
 ) -> Result<(), ErrorResponse> {

@@ -14,7 +14,9 @@ name = "idp_service"
 
 [features]
 default = ["std"]
+fs = ["std"]
 headless = []
+libsql = ["std"]
 std = [
   "key/std",
   "idp-model/std",
@@ -25,25 +27,18 @@ std = [
   "getrandom/std",
   "serde/std",
   "serde_json/std",
-  "log/std",
-
-  "dep:iroh-chain",
-  "dep:iroh-chain-file-system",
-  "dep:reqwest",
 ]
 
 [dependencies]
 # Internal
 db = { path = "../db", default-features = false, features = [] }
+file-system = { path = "../file-system", default-features = false, features = ["sync"] }
 key = { path = "../key", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = [] }
 idp-model = { path = "../idp-model", default-features = false, features = [
   "std",
 ] }
 
-iroh-chain = { path = "../iroh-chain", default-features = false, features = [], optional = true }
-iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features = false, features = [], optional = true }
-storage-model = { path = "../storage-model", default-features = false, features = [] }
 
 # Database
 libsql = { version = "0.9", default-features = false, features = [
@@ -52,10 +47,6 @@ libsql = { version = "0.9", default-features = false, features = [
 ] }
 
 # Cryptography
-iroh = { version = "1.1", default-features = false, features = [] }
-
-# HTTP
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 sha2 = { version = "0.10", default-features = false, features = [] }
 
@@ -67,7 +58,6 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 # Random
 getrandom = { version = "0.3", default-features = false, features = [] }
 
-tokio = { version = "1.52", default-features = false, features = ["sync"] }
 
 # Utilities
 chrono = { version = "0.4", default-features = false, features = [
@@ -75,16 +65,16 @@ chrono = { version = "0.4", default-features = false, features = [
   "serde",
 ] }
 rust-argon2 = { version = "3.0", default-features = false }
-zeroize = { version = "1.9", default-features = false, features = [] }
+
 thiserror = { version = "2.0", default-features = false, features = [] }
-config = { version = "0.15", features = ["yaml"], default-features = false }
+
+
+# Logging
+log = { version = "0.4", default-features = false, features = [] }
 
 # Keyring
 keyring-core = { version = "1.0", default-features = false, features = [] }
 
-# Logging
-log = { version = "0.4", default-features = false, features = [] }
-env_logger = { version = "0.10", default-features = false, features = [] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linux-keyutils-keyring-store = { version = "1.0", default-features = false, features = [
@@ -111,6 +101,9 @@ android-native-keyring-store = { version = "1.0", default-features = false, feat
 ] }
 
 [dev-dependencies]
+file-system = { path = "../file-system", default-features = false, features = [
+  "in-memory",
+] }
 idp-model = { path = "../idp-model", default-features = false, features = [
   "migrate",
   "std",

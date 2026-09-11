@@ -824,6 +824,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootstrap-service"
+version = "0.1.0"
+dependencies = [
+ "idp-model",
+ "idp-service",
+ "log",
+ "management-service",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3574,6 +3586,7 @@ dependencies = [
  "api",
  "axum",
  "base64 0.22.1",
+ "bootstrap-service",
  "clap",
  "cli",
  "config",
@@ -3589,6 +3602,7 @@ dependencies = [
  "key",
  "libsql",
  "log",
+ "management-service",
  "model",
  "serde",
  "serde_json",
@@ -3612,15 +3626,11 @@ dependencies = [
  "apple-native-keyring-store",
  "base64 0.22.1",
  "chrono",
- "config",
  "db",
  "dbus-secret-service-keyring-store",
- "env_logger 0.10.2",
+ "file-system",
  "getrandom 0.3.4",
  "idp-model",
- "iroh",
- "iroh-chain",
- "iroh-chain-file-system",
  "k256",
  "key",
  "keyring-core",
@@ -3628,16 +3638,13 @@ dependencies = [
  "linux-keyutils-keyring-store",
  "log",
  "model",
- "reqwest 0.12.28",
  "rust-argon2",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "storage-model",
  "thiserror 2.0.20",
  "tokio",
  "windows-native-keyring-store",
- "zeroize",
 ]
 
 [[package]]
@@ -3646,6 +3653,7 @@ version = "0.1.0"
 dependencies = [
  "api",
  "axum",
+ "bootstrap-service",
  "clap",
  "cli",
  "config",
@@ -3660,6 +3668,7 @@ dependencies = [
  "libsql",
  "log",
  "management-server",
+ "management-service",
  "serde",
  "serde_json",
  "storage-service",
@@ -4530,6 +4539,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "bootstrap-service",
  "db",
  "file-system",
  "futures-core",
@@ -4543,6 +4553,7 @@ dependencies = [
  "libsql",
  "log",
  "management-server",
+ "management-service",
  "model",
  "rcgen",
  "reqwest 0.12.28",
@@ -4658,6 +4669,7 @@ dependencies = [
  "api",
  "axum",
  "base64 0.22.1",
+ "bootstrap-service",
  "chrono",
  "clap",
  "cli",
@@ -4670,6 +4682,7 @@ dependencies = [
  "idp-service",
  "libsql",
  "log",
+ "management-service",
  "model",
  "serde",
  "serde_json",
@@ -4680,6 +4693,29 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
+]
+
+[[package]]
+name = "management-service"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "file-system",
+ "getrandom 0.3.4",
+ "idp-model",
+ "idp-service",
+ "iroh",
+ "iroh-chain",
+ "iroh-chain-file-system",
+ "libsql",
+ "model",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "storage-model",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

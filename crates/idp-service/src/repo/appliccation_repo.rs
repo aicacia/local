@@ -6,28 +6,33 @@ pub trait ApplicationRepo {
     fn find_by_id(
         &self,
         application_id: i64,
-    ) -> impl Future<Output = RepoResult<Option<Application>>>;
+    ) -> impl Future<Output = RepoResult<Option<Application>>> + Send;
 
-    fn find_by_uri(&self, uri: &str) -> impl Future<Output = RepoResult<Option<Application>>>;
+    fn find_by_uri(
+        &self,
+        uri: &str,
+    ) -> impl Future<Output = RepoResult<Option<Application>>> + Send;
 
     fn list_applications(
         &self,
         offset: u32,
         limit: u32,
-    ) -> impl Future<Output = RepoResult<Vec<Application>>>;
+    ) -> impl Future<Output = RepoResult<Vec<Application>>> + Send;
 
     fn create_application(
         &self,
         name: String,
         uri: String,
         description: Option<String>,
-    ) -> impl Future<Output = RepoResult<Application>>;
+    ) -> impl Future<Output = RepoResult<Application>> + Send;
 
     fn update_application(
         &self,
         application: Application,
-    ) -> impl Future<Output = RepoResult<Application>>;
+    ) -> impl Future<Output = RepoResult<Application>> + Send;
 
-    fn delete_application_by_id(&self, application_id: i64)
-    -> impl Future<Output = RepoResult<()>>;
+    fn delete_application_by_id(
+        &self,
+        application_id: i64,
+    ) -> impl Future<Output = RepoResult<()>> + Send;
 }

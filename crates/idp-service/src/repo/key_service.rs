@@ -4,21 +4,18 @@ use key::DerivedKey;
 
 use crate::repo::{KeyRepo, PrivateKeyKeyringRepo, PrivateKeyRepo, RepoResult};
 
-pub struct KeyService<R> {
+pub struct KeyService<R, P = PrivateKeyKeyringRepo> {
     key_repo: R,
-    private_key_repo: PrivateKeyKeyringRepo,
+    private_key_repo: P,
     namespace: String,
 }
 
-impl<R> KeyService<R>
+impl<R, P> KeyService<R, P>
 where
     R: KeyRepo,
+    P: PrivateKeyRepo,
 {
-    pub fn new(
-        key_repo: R,
-        private_key_repo: PrivateKeyKeyringRepo,
-        namespace: impl Into<String>,
-    ) -> Self {
+    pub fn new(key_repo: R, private_key_repo: P, namespace: impl Into<String>) -> Self {
         Self {
             key_repo,
             private_key_repo,
@@ -30,7 +27,7 @@ where
         &self.key_repo
     }
 
-    pub fn private_key_repo(&self) -> &PrivateKeyKeyringRepo {
+    pub fn private_key_repo(&self) -> &P {
         &self.private_key_repo
     }
 

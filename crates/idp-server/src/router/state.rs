@@ -1,19 +1,16 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use idp_model::contract::{ErrorCode, ErrorResponse};
+use idp_service::libsql::{
+    LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
+    LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
+};
+use idp_service::oauth2::OAuth2Service;
 use iroh::{Endpoint, EndpointId, SecretKey};
 use libsql::Database;
-use idp_model::contract::{ErrorCode, ErrorResponse};
-use idp_service::{
-    hosted_control_plane::HostedControlPlane,
-    oauth2::OAuth2Service,
-    repo::{
-        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlDeviceRepo, LibSqlKeyRepo,
-        LibSqlOAuth2AuthorizationCodeRepo, LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
-    },
-    storage_session::StorageScope,
-    storage_session::StorageSessionService,
-};
+use management_service::libsql::LibSqlDeviceRepo;
+use management_service::{HostedControlPlane, StorageScope, StorageSessionService};
 
 use super::PairingAcceptanceControllerSlot;
 
