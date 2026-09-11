@@ -1,5 +1,4 @@
 import { handleNativeCallbackRequestUrl } from "@aicacia/native-fetch";
-import { goto } from "$app/navigation";
 import { loadLocalhostBaseUrl } from "../state/localhostBaseUrl.svelte";
 import { redirectToUrl } from "./redirectToUrl";
 
@@ -16,23 +15,6 @@ export async function handleDeepLink(urlStrings: string[]): Promise<void> {
     return;
   }
 
-  if (url.protocol === "lidp:" && url.hostname === "pair") {
-    const invitation = url.searchParams.get("invitation");
-    const secret = url.searchParams.get("secret");
-    if (
-      !invitation ||
-      !secret ||
-      invitation.length > 256 ||
-      secret.length > 4096
-    ) {
-      return;
-    }
-    await goto(
-      `/devices?invitation=${encodeURIComponent(invitation)}&secret=${encodeURIComponent(secret)}`,
-    );
-    return;
-  }
-
   if (!url.searchParams.has("native")) {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       return;
@@ -46,7 +28,7 @@ export async function handleDeepLink(urlStrings: string[]): Promise<void> {
         const redirectUrl = new URL(location);
 
         if (redirectUrl.origin === url.origin) {
-          await goto(
+          window.location.assign(
             redirectUrl.pathname + redirectUrl.search + redirectUrl.hash,
           );
         }

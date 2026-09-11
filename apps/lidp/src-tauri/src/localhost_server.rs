@@ -133,6 +133,8 @@ async fn load_or_create_server_cert(data_dir: &Path, ca_key: &KeyPair) -> io::Re
 }
 
 pub async fn ensure_localhost_certificate(data_dir: &Path) -> io::Result<PathBuf> {
+    fs::create_dir_all(data_dir)?;
+
     let cert_path = localhost_ca_cert_path(data_dir);
     let trust_path = localhost_ca_trust_path(data_dir);
     let (ca, is_new_ca) = load_or_create_ca(data_dir).await?;
@@ -291,7 +293,6 @@ mod tests {
     #[tokio::test]
     async fn localhost_certificate_is_reusable() {
         let data_dir = std::env::temp_dir().join(format!("lidp-{}", uuid::Uuid::new_v4()));
-        fs::create_dir_all(&data_dir).unwrap();
 
         let certificate = ensure_localhost_certificate(&data_dir).await.unwrap();
         assert!(certificate.exists());

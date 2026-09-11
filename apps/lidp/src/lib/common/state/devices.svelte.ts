@@ -1,13 +1,12 @@
 import type {
   DeviceEnrollment,
   DeviceInfo,
-  DevicePairingInvitation,
   DeviceState,
 } from "@aicacia/lidp-client";
-import { lidpApi } from "./lidpClient.svelte";
+import { getOidcClient } from "./oidc.svelte";
+import { getLidpApiUrl, lidpApi } from "./lidpClient.svelte";
 
 export type { DeviceEnrollment, DeviceInfo, DeviceState };
-export type DeviceInvitation = DevicePairingInvitation;
 
 export function listDevices(): Promise<DeviceInfo[]> {
   return lidpApi.listDevices();
@@ -23,23 +22,38 @@ export function enrollDevice(
   });
 }
 
-export function createDeviceInvitation(
-  initiatingPublicKey: string,
-): Promise<DeviceInvitation> {
-  return lidpApi.createPairingInvitation({
-    devicePairingInvitationRequest: { initiatingPublicKey },
-  });
-}
-
-export function redeemDeviceInvitation(
-  secret: string,
+export function requestDevicePairing(
   name: string,
   publicKey: string,
   address: string,
+  acceptingPublicKey: string,
 ): Promise<DeviceEnrollment> {
-  return lidpApi.redeemPairingInvitation({
-    devicePairingRedemptionRequest: { secret, name, publicKey, address },
+  return lidpApi.requestPairing({
+    devicePairingRequest: { name, publicKey, address, acceptingPublicKey },
   });
+}
+export async function getPairingAccepting(
+  accepting?: boolean,
+): Promise<boolean> {
+  const baseUrl = getLidpApiUrl();
+  if (!baseUrl) {
+    throw new Error("LIdP API URL is not available");
+  }
+  const token = getOidcClient()?.getStoredTokenResponse()?.access_token;
+  const response = await fetch(`${baseUrl}/devices/pairing-accepting`, {
+    method: accepting === undefined ? "GET" : "PUT",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(accepting === undefined
+        ? {}
+        : { "Content-Type": "application/json" }),
+    },
+    body: accepting === undefined ? undefined : JSON.stringify({ accepting }),
+  });
+  if (!response.ok) {
+    throw new Error("Could not update pairing mode");
+  }
+  return ((await response.json()) as { accepting: boolean }).accepting;
 }
 
 export async function getDeviceApprovalPayload(id: number): Promise<string> {

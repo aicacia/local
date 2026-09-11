@@ -1,9 +1,9 @@
-use std::{fs, io, path::Path, sync::Arc};
+use std::{fs, io, path::Path, sync::Arc, time::Duration};
 
 use axum::Router;
 use db::{close_database, open_database};
 use libsql::Database;
-use lidp_server::{AppConfig, RouterState, storage_router};
+use lidp_server::{AppConfig, RouterState, TimedPairingAcceptanceController, storage_router};
 use lidp_service::{
     bootstrap::BootstrapService,
     management::ManagementService,
@@ -263,14 +263,24 @@ pub fn init_tunnel_manager(
     let identity = app_handle
         .try_state::<Arc<DeviceIdentity>>()
         .ok_or_else(|| tauri::Error::Io(io::Error::other("device identity is missing")))?;
+    let app_config = app_handle
+        .try_state::<Arc<AppConfig>>()
+        .ok_or_else(|| tauri::Error::Io(io::Error::other("app config is missing")))?;
     let allowlist = iroh_chain::DynamicEndpointIdStore::default();
-    let authorizer = LidpTunnelAuthorizer::new(state, control_plane.clone());
+    let authorizer = LidpTunnelAuthorizer::new(Arc::clone(&state), control_plane.clone());
     let local_authorizer = authorizer.local();
     let manager = Arc::new(DeviceTunnelManager::new(
         identity.endpoint(),
         allowlist.clone(),
         authorizer,
     ));
+    state
+        .pairing_acceptance
+        .bind(Arc::new(TimedPairingAcceptanceController::new(
+            (*manager).clone(),
+            Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
+        )))
+        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
     let listener = Arc::clone(&manager);
     tauri::async_runtime::spawn(async move {
         listener.listen().await;

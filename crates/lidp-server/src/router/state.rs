@@ -15,6 +15,8 @@ use lidp_service::{
     storage_session::StorageSessionService,
 };
 
+use super::PairingAcceptanceControllerSlot;
+
 #[derive(Clone)]
 pub struct DeviceIdentity {
     endpoint: Endpoint,
@@ -101,6 +103,7 @@ pub struct RouterState {
     pub storage_sessions: Arc<StorageSessionService>,
     pub devices: Arc<LibSqlDeviceRepo>,
     pub device_identity: Arc<DeviceIdentity>,
+    pub pairing_acceptance: Arc<PairingAcceptanceControllerSlot>,
     pub storage_scope_resolver: Option<Arc<dyn StorageScopeResolver>>,
 }
 
@@ -131,6 +134,7 @@ impl RouterState {
             storage_sessions,
             devices,
             device_identity,
+            pairing_acceptance: Arc::new(PairingAcceptanceControllerSlot::new()),
             storage_scope_resolver: None,
         }
     }

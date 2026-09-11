@@ -3,14 +3,12 @@ use axum::{
     extract::{Path, State},
 };
 use lidp_model::contract::{
-    DeviceEnrollment, DeviceEnrollmentRequest, DeviceInfo, DevicePairingApprovalPayload,
-    DevicePairingApprovalRequest, DevicePairingInvitation, DevicePairingInvitationRequest,
-    DevicePairingRedemptionRequest, ErrorCode, ErrorResponse, TrustedDevice, UpdateDeviceRequest,
+    DeviceEnrollment, DeviceEnrollmentRequest, DeviceInfo, ErrorCode, ErrorResponse,
+    PairingAcceptance, TrustedDevice, UpdateDeviceRequest,
 };
-use lidp_service::device_enrollment::DeviceEnrollmentService;
-use lidp_service::repo::DeviceRepo;
+use lidp_service::{device_enrollment::DeviceEnrollmentService, repo::DeviceRepo};
 
-use crate::router::{RouterState, middleware::StandardAuthorization};
+use crate::router::{PairingAcceptanceController, RouterState, middleware::StandardAuthorization};
 
 #[utoipa::path(
     get,
@@ -52,75 +50,39 @@ pub(crate) async fn enroll_device(
 }
 
 #[utoipa::path(
-    post,
-    path = "/devices/pairing-invitations",
-    request_body = DevicePairingInvitationRequest,
-    responses((status = 200, description = "Single-use pairing invitation", body = DevicePairingInvitation)),
-    security(("authorization" = []))
-)]
-pub(crate) async fn create_pairing_invitation(
-    State(state): State<RouterState>,
-    StandardAuthorization { .. }: StandardAuthorization,
-    Json(request): Json<DevicePairingInvitationRequest>,
-) -> Result<Json<DevicePairingInvitation>, ErrorResponse> {
-    DeviceEnrollmentService::new(state.devices)
-        .create_pairing_invitation(request)
-        .await
-        .map(Json)
-}
-
-#[utoipa::path(
-    post,
-    path = "/devices/pairing-invitations/redeem",
-    request_body = DevicePairingRedemptionRequest,
-    responses((status = 200, description = "Pending device enrollment", body = DeviceEnrollment))
-)]
-pub(crate) async fn redeem_pairing_invitation(
-    State(state): State<RouterState>,
-    Json(request): Json<DevicePairingRedemptionRequest>,
-) -> Result<Json<DeviceEnrollment>, ErrorResponse> {
-    DeviceEnrollmentService::new(state.devices)
-        .redeem_pairing_invitation(request)
-        .await
-        .map(Json)
-}
-
-#[utoipa::path(
     get,
-    path = "/devices/enrollments/{id}/approval-payload",
-    params(("id" = i64, Path, description = "Pending device enrollment ID")),
-    responses((status = 200, description = "Canonical approval payload", body = DevicePairingApprovalPayload)),
+    path = "/devices/pairing-accepting",
+    responses((status = 200, description = "Pairing acceptance state", body = PairingAcceptance)),
     security(("authorization" = []))
 )]
-pub(crate) async fn pairing_approval_payload(
+pub(crate) async fn pairing_acceptance(
     State(state): State<RouterState>,
-    Path(device_id): Path<i64>,
     StandardAuthorization { .. }: StandardAuthorization,
-) -> Result<Json<DevicePairingApprovalPayload>, ErrorResponse> {
-    DeviceEnrollmentService::new(state.devices)
-        .pairing_approval_payload(device_id)
-        .await
-        .map(|payload| Json(DevicePairingApprovalPayload { payload }))
+) -> Result<Json<PairingAcceptance>, ErrorResponse> {
+    state
+        .pairing_acceptance
+        .pairing_accepting()
+        .map(|accepting| Json(PairingAcceptance { accepting }))
+        .map_err(|_| ErrorResponse::new(ErrorCode::ServerError))
 }
 
 #[utoipa::path(
-    post,
-    path = "/devices/enrollments/{id}/approve",
-    params(("id" = i64, Path, description = "Pending device enrollment ID")),
-    request_body = DevicePairingApprovalRequest,
-    responses((status = 200, description = "Approved device", body = DeviceInfo)),
+    put,
+    path = "/devices/pairing-accepting",
+    request_body = PairingAcceptance,
+    responses((status = 200, description = "Pairing acceptance state", body = PairingAcceptance)),
     security(("authorization" = []))
 )]
-pub(crate) async fn approve_device(
+pub(crate) async fn set_pairing_acceptance(
     State(state): State<RouterState>,
-    Path(device_id): Path<i64>,
     StandardAuthorization { .. }: StandardAuthorization,
-    Json(request): Json<DevicePairingApprovalRequest>,
-) -> Result<Json<DeviceInfo>, ErrorResponse> {
-    DeviceEnrollmentService::new(state.devices)
-        .approve_pairing(device_id, request)
-        .await
-        .map(Json)
+    Json(PairingAcceptance { accepting }): Json<PairingAcceptance>,
+) -> Result<Json<PairingAcceptance>, ErrorResponse> {
+    state
+        .pairing_acceptance
+        .set_pairing_accepting(accepting)
+        .map(|()| Json(PairingAcceptance { accepting }))
+        .map_err(|_| ErrorResponse::new(ErrorCode::ServerError))
 }
 
 #[utoipa::path(

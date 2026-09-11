@@ -38,7 +38,7 @@ use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
 
 use crate::{
-    AppConfig, RouterState,
+    AppConfig, RouterState, TimedPairingAcceptanceController,
     router::{HostedStorageScopeResolver, openapi_router},
     storage_router,
 };
@@ -274,6 +274,13 @@ pub async fn run() -> io::Result<()> {
         )),
     };
     let manager = Server::new(device_identity.endpoint(), allowlist.clone(), authorizer);
+    router_state
+        .pairing_acceptance
+        .bind(Arc::new(TimedPairingAcceptanceController::new(
+            manager.clone(),
+            Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
+        )))
+        .map_err(io::Error::other)?;
     let listener = manager.clone();
     spawn(async move {
         listener.listen().await;

@@ -12,31 +12,20 @@ pub trait DeviceRepo {
         enrollment_expires_at: i64,
     ) -> impl Future<Output = RepoResult<Device>>;
 
-    fn create_pairing_invitation(
+    fn create_pairing(
         &self,
-        initiating_public_key: String,
-        secret_hash: Vec<u8>,
-        expires_at: i64,
-    ) -> impl Future<Output = RepoResult<Option<i64>>>;
-
-    fn redeem_pairing_invitation(
-        &self,
-        secret_hash: &[u8],
         name: String,
         public_key: String,
         address: String,
-    ) -> impl Future<Output = RepoResult<Option<(i64, Device)>>>;
+        accepting_public_key: String,
+    ) -> impl Future<Output = RepoResult<Device>>;
 
     fn pending_pairing(
         &self,
         device_id: i64,
-    ) -> impl Future<Output = RepoResult<Option<(i64, Device, String)>>>;
+    ) -> impl Future<Output = RepoResult<Option<(Device, String)>>>;
 
-    fn approve_pairing(
-        &self,
-        device_id: i64,
-        invitation_id: i64,
-    ) -> impl Future<Output = RepoResult<Option<Device>>>;
+    fn approve_pairing(&self, device_id: i64) -> impl Future<Output = RepoResult<Option<Device>>>;
 
     fn has_any(&self) -> impl Future<Output = RepoResult<bool>>;
 

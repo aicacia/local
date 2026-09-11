@@ -16,9 +16,13 @@ import { mapValues } from "../runtime.js";
 /**
  *
  * @export
- * @interface DevicePairingRedemptionRequest
+ * @interface DevicePairingRequest
  */
-export interface DevicePairingRedemptionRequest {
+export interface DevicePairingRequest {
+    /**
+     *
+     */
+    acceptingPublicKey: string;
     /**
      *
      */
@@ -31,55 +35,51 @@ export interface DevicePairingRedemptionRequest {
      *
      */
     publicKey: string;
-    /**
-     *
-     */
-    secret: string;
 }
 
 /**
- * Check if a given object implements the DevicePairingRedemptionRequest interface.
+ * Check if a given object implements the DevicePairingRequest interface.
  */
-export function instanceOfDevicePairingRedemptionRequest(
+export function instanceOfDevicePairingRequest(
     value: object,
-): value is DevicePairingRedemptionRequest {
+): value is DevicePairingRequest {
+    if (
+        !("acceptingPublicKey" in value) ||
+        value["acceptingPublicKey"] === undefined
+    )
+        return false;
     if (!("address" in value) || value["address"] === undefined) return false;
     if (!("name" in value) || value["name"] === undefined) return false;
     if (!("publicKey" in value) || value["publicKey"] === undefined)
         return false;
-    if (!("secret" in value) || value["secret"] === undefined) return false;
     return true;
 }
 
-export function DevicePairingRedemptionRequestFromJSON(
-    json: any,
-): DevicePairingRedemptionRequest {
-    return DevicePairingRedemptionRequestFromJSONTyped(json, false);
+export function DevicePairingRequestFromJSON(json: any): DevicePairingRequest {
+    return DevicePairingRequestFromJSONTyped(json, false);
 }
 
-export function DevicePairingRedemptionRequestFromJSONTyped(
+export function DevicePairingRequestFromJSONTyped(
     json: any,
     ignoreDiscriminator: boolean,
-): DevicePairingRedemptionRequest {
+): DevicePairingRequest {
     if (json == null) {
         return json;
     }
     return {
+        acceptingPublicKey: json["acceptingPublicKey"],
         address: json["address"],
         name: json["name"],
         publicKey: json["publicKey"],
-        secret: json["secret"],
     };
 }
 
-export function DevicePairingRedemptionRequestToJSON(
-    json: any,
-): DevicePairingRedemptionRequest {
-    return DevicePairingRedemptionRequestToJSONTyped(json, false);
+export function DevicePairingRequestToJSON(json: any): DevicePairingRequest {
+    return DevicePairingRequestToJSONTyped(json, false);
 }
 
-export function DevicePairingRedemptionRequestToJSONTyped(
-    value?: DevicePairingRedemptionRequest | null,
+export function DevicePairingRequestToJSONTyped(
+    value?: DevicePairingRequest | null,
     ignoreDiscriminator: boolean = false,
 ): any {
     if (value == null) {
@@ -87,9 +87,9 @@ export function DevicePairingRedemptionRequestToJSONTyped(
     }
 
     return {
+        acceptingPublicKey: value["acceptingPublicKey"],
         address: value["address"],
         name: value["name"],
         publicKey: value["publicKey"],
-        secret: value["secret"],
     };
 }

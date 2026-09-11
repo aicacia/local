@@ -53,6 +53,7 @@ tokio = { version = "1.53", default-features = false, features = [
   "macros",
   "rt",
   "sync",
+  "time",
 ] }
 tokio-util = { version = "0.7", default-features = false, features = [] }
 noq = { version = "1.2", default-features = false, features = [] }

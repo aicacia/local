@@ -15,7 +15,8 @@ pub async fn open_database(database_config: &DatabaseConfig) -> libsql::Result<l
     log::info!("initializing sqlite database: {}", database_url);
     match database_url.scheme() {
         "file" | "sqlite" => {
-            let path = Path::new(database_url.path());
+            let database_path = local_database_path(&database_url, &database_config.url);
+            let path = Path::new(database_path);
             if let Some(parent) = path.parent()
                 && !parent.as_os_str().is_empty()
                 && !parent.exists()
@@ -29,7 +30,7 @@ pub async fn open_database(database_config: &DatabaseConfig) -> libsql::Result<l
                 }
             }
 
-            libsql::Builder::new_local(database_url.as_str())
+            libsql::Builder::new_local(database_path)
                 .flags(OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_READ_WRITE)
                 .build()
                 .await
@@ -47,6 +48,31 @@ pub async fn open_database(database_config: &DatabaseConfig) -> libsql::Result<l
             "unsupported database scheme: {}",
             database_url.scheme()
         ))),
+    }
+}
+
+fn local_database_path<'a>(database_url: &'a Url, database_config_url: &'a str) -> &'a str {
+    database_config_url
+        .strip_prefix("file://")
+        .or_else(|| database_config_url.strip_prefix("sqlite://"))
+        .unwrap_or(database_url.path())
+}
+
+#[cfg(test)]
+mod tests {
+    use url::Url;
+
+    use super::local_database_path;
+
+    #[test]
+    fn preserves_relative_file_url_paths() {
+        let database_config_url = "file://./config/primary/database.db";
+        let database_url = Url::parse(database_config_url).unwrap();
+
+        assert_eq!(
+            local_database_path(&database_url, database_config_url),
+            "./config/primary/database.db"
+        );
     }
 }
 

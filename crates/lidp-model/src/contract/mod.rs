@@ -71,9 +71,8 @@ pub use device_enrollment::DeviceEnrollment;
 pub use device_enrollment_request::DeviceEnrollmentRequest;
 pub use device_info::DeviceInfo;
 pub use device_pairing::{
-    DevicePairingApprovalPayload, DevicePairingApprovalRequest, DevicePairingInvitation,
-    DevicePairingInvitationRequest, DevicePairingRedemptionRequest,
-    device_pairing_approval_payload,
+    DevicePairingApprovalPayload, DevicePairingApprovalRequest, DevicePairingRequest,
+    PairingAcceptance, device_pairing_approval_payload,
 };
 pub use device_state::DeviceState;
 pub use entity_type::EntityType;

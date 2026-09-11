@@ -1,14 +1,15 @@
 <script lang="ts">
     import { toDataURL } from "qrcode";
     import { onMount } from "svelte";
-    import { page } from "$app/state";
+
+    import Modal from "$lib/common/components/Modal.svelte";
     import {
         approveDevice,
-        createDeviceInvitation,
         type DeviceInfo,
         getDeviceApprovalPayload,
+        getPairingAccepting,
         listDevices,
-        redeemDeviceInvitation,
+        requestDevicePairing,
         renameDevice,
         revokeDevice,
     } from "$lib/common/state/devices.svelte";
@@ -34,16 +35,16 @@
     let pendingPrompt = $state<DeviceInfo | null>(null);
     let editingId = $state<number | null>(null);
     let editingName = $state("");
-    let invitationLink = $state<string | null>(null);
-    let invitationQr = $state<string | null>(null);
-    let creatingInvitation = $state(false);
-    let pairingName = $state("");
-    let pairingState = $state<"pending" | "approved" | null>(null);
-    let redeeming = $state(false);
+    let publicIdQr = $state<string | null>(null);
+    let pairingAccepting = $state(false);
+    let manualPairingName = $state("");
+    let manualPublicKey = $state("");
+    let startingManualPairing = $state(false);
     let scanning = $state(false);
     let scannerVideo = $state<HTMLVideoElement | undefined>(undefined);
     let scannerStream: MediaStream | null = null;
     let scannerTimer: ReturnType<typeof setInterval> | null = null;
+    let addDeviceModal = $state<Modal>();
 
     const initialLoading = $derived(!error && loading && devices.length === 0);
     const empty = $derived(!error && !loading && devices.length === 0);
@@ -55,11 +56,7 @@
                 device.publicKey === deviceEndpointId,
         ),
     );
-    const invitationId = $derived(page.url.searchParams.get("invitation"));
-    const invitationSecret = $derived(page.url.searchParams.get("secret"));
-    const hasPairingInvitation = $derived(
-        Boolean(invitationId && invitationSecret),
-    );
+
     const supportsScanner = $derived(
         typeof window !== "undefined" && "BarcodeDetector" in window,
     );
@@ -74,34 +71,15 @@
             : value;
     }
 
-    function pairingLink(id: number, secret: string): string {
-        const url = new URL("lidp://pair");
-        url.searchParams.set("invitation", String(id));
-        url.searchParams.set("secret", secret);
-        return url.toString();
-    }
-
-    function isPairingLink(value: string): boolean {
-        try {
-            const url = new URL(value);
-            return (
-                url.protocol === "lidp:" &&
-                url.hostname === "pair" &&
-                Boolean(
-                    url.searchParams.get("invitation") &&
-                    url.searchParams.get("secret"),
-                )
-            );
-        } catch {
-            return false;
-        }
-    }
-
     async function loadDevices() {
         loading = true;
         error = null;
         try {
-            const nextDevices = await listDevices();
+            const [nextDevices, accepting] = await Promise.all([
+                listDevices(),
+                getPairingAccepting(),
+            ]);
+            pairingAccepting = accepting;
             const newlyPending = nextDevices.find(
                 (device) =>
                     device.state === "pending" &&
@@ -122,57 +100,47 @@
         }
     }
 
-
-    async function onCreateInvitation() {
-        creatingInvitation = true;
+    async function onCopy(value: string, label: string) {
         try {
-            const device = await lidpApi.device();
-            const invitation = await createDeviceInvitation(device.publicKey);
-            invitationLink = pairingLink(invitation.id, invitation.secret);
-            invitationQr = await toDataURL(invitationLink);
-        } catch (cause) {
-            console.error(cause);
-            notifications.add("Failed to create pairing invitation", "error");
-        } finally {
-            creatingInvitation = false;
-        }
-    }
-
-    async function onCopyInvitation() {
-        if (!invitationLink) {
-            return;
-        }
-        try {
-            await navigator.clipboard.writeText(invitationLink);
-            notifications.add("Pairing link copied", "success");
+            pairingAccepting = await getPairingAccepting(true);
+            await navigator.clipboard.writeText(value);
+            notifications.add(`${label} copied`, "success");
         } catch {
-            notifications.add("Could not copy pairing link", "error");
+            notifications.add(`Could not copy ${label.toLowerCase()}`, "error");
         }
     }
 
-    async function onRedeemInvitation(event: SubmitEvent) {
+    async function onSetPairingAccepting(accepting: boolean) {
+        try {
+            pairingAccepting = await getPairingAccepting(accepting);
+        } catch {
+            notifications.add("Could not update pairing mode", "error");
+        }
+    }
+
+    async function onStartManualPairing(event: SubmitEvent) {
         event.preventDefault();
-        if (!invitationSecret || !pairingName.trim()) {
+        const publicKey = manualPublicKey.trim();
+        if (!manualPairingName.trim() || !publicKey) {
             return;
         }
-
-        redeeming = true;
+        startingManualPairing = true;
         try {
             const device = await lidpApi.device();
-            const enrollment = await redeemDeviceInvitation(
-                invitationSecret,
-                pairingName.trim(),
+            await requestDevicePairing(
+                manualPairingName.trim(),
                 device.publicKey,
                 device.address,
+                publicKey,
             );
-            pairingState =
-                enrollment.state === "approved" ? "approved" : "pending";
+            addDeviceModal?.close();
+            notifications.add("Pairing request sent for approval", "success");
             await loadDevices();
         } catch (cause) {
             console.error(cause);
-            notifications.add("Failed to redeem pairing invitation", "error");
+            notifications.add("Failed to start pairing", "error");
         } finally {
-            redeeming = false;
+            startingManualPairing = false;
         }
     }
 
@@ -264,11 +232,11 @@
             scannerTimer = setInterval(() => {
                 void detector.detect(video).then((codes) => {
                     const value = codes[0]?.rawValue;
-                    if (!value || !isPairingLink(value)) {
+                    if (!value) {
                         return;
                     }
+                    manualPublicKey = value;
                     stopScanner();
-                    window.location.assign(value);
                 });
             }, 500);
         } catch (cause) {
@@ -279,8 +247,11 @@
     }
 
     onMount(() => {
-        void lidpApi.device().then((device) => {
+        void lidpApi
+            .device()
+            .then(async (device) => {
                 deviceEndpointId = device.publicKey;
+                publicIdQr = await toDataURL(device.publicKey);
             })
             .catch(console.error);
         void loadDevices();
@@ -295,98 +266,101 @@
 <div class="flex flex-col gap-4">
     <div class="flex items-center justify-between">
         <h1 class="mb-0 text-4xl">Devices</h1>
-        <button
-            type="button"
-            class="btn secondary"
-            onclick={() => void loadDevices()}
-            disabled={loading}>Refresh</button
-        >
+        <div class="flex gap-2">
+            <button
+                type="button"
+                class="btn primary"
+                onclick={() => addDeviceModal?.show()}>Add device</button
+            >
+            <button
+                type="button"
+                class="btn secondary"
+                onclick={() => void loadDevices()}
+                disabled={loading}>Refresh</button
+            >
+        </div>
     </div>
 
-    {#if hasPairingInvitation}
-        <form
-            class="card secondary flex flex-col gap-3"
-            onsubmit={onRedeemInvitation}
-        >
-            <h2 class="mb-0 text-2xl">Pair this device</h2>
-            {#if pairingState === "pending"}
-                <p class="mb-0">
-                    Waiting for approval from an existing device.
-                </p>
-            {:else if pairingState === "approved"}
-                <p class="mb-0">This device is approved.</p>
+    <Modal bind:this={addDeviceModal} title="Add device">
+        {#if supportsScanner}
+            <p class="mb-0">
+                Scan a device QR code or paste its public ID or endpoint
+                address.
+            </p>
+            <video
+                class="max-w-full"
+                style:display={scanning ? "block" : "none"}
+                bind:this={scannerVideo}
+                muted
+                playsinline
+            ></video>
+            {#if scanning}
+                <button
+                    type="button"
+                    class="btn secondary"
+                    onclick={stopScanner}>Stop scanner</button
+                >
             {:else}
-                <label class="flex flex-col gap-1">
-                    <span>Device name</span>
-                    <input bind:value={pairingName} type="text" required />
-                </label>
-                <div class="flex justify-end">
-                    <button
-                        type="submit"
-                        class="btn primary"
-                        disabled={redeeming}
-                        >{redeeming ? "Pairing..." : "Pair device"}</button
-                    >
-                </div>
+                <button
+                    type="button"
+                    class="btn primary"
+                    onclick={() => void onStartScanner()}>Scan device QR</button
+                >
             {/if}
+        {/if}
+
+        <form class="flex flex-col gap-2" onsubmit={onStartManualPairing}>
+            <p class="mb-0">
+                The other device must be online and accepting join requests.
+            </p>
+            <label class="flex flex-col gap-1">
+                <span>Device name</span>
+                <input bind:value={manualPairingName} type="text" required />
+            </label>
+            <label class="flex flex-col gap-1">
+                <span>Public ID or endpoint address</span>
+                <input bind:value={manualPublicKey} type="text" required />
+            </label>
+            <button
+                type="submit"
+                class="btn secondary self-start"
+                disabled={startingManualPairing}
+                >{startingManualPairing
+                    ? "Starting pairing..."
+                    : "Start pairing"}</button
+            >
         </form>
-    {:else}
-        <div class="card secondary flex flex-col gap-3">
-            <h2 class="mb-0 text-2xl">Pair a device</h2>
-            {#if supportsScanner}
-                <p class="mb-0">Scan a pairing QR code to open the LIdP app.</p>
-                <video
-                    class="max-w-full"
-                    style:display={scanning ? "block" : "none"}
-                    bind:this={scannerVideo}
-                    muted
-                    playsinline
-                ></video>
-                {#if scanning}
-                    <button
-                        type="button"
-                        class="btn secondary"
-                        onclick={stopScanner}>Stop scanner</button
-                    >
-                {:else}
-                    <button
-                        type="button"
-                        class="btn primary"
-                        onclick={() => void onStartScanner()}
-                        >Scan pairing QR</button
-                    >
-                {/if}
-            {:else}
-                <p class="mb-0">Scan a pairing QR code on this device to add it.</p>
-            {/if}
-        </div>
-    {/if}
+    </Modal>
 
     {#if localDeviceApproved}
         <div class="card secondary flex flex-col gap-3">
             <h2 class="mb-0 text-2xl">Pair another device</h2>
+            <p class="mb-0">
+                Turn on join requests before sharing this device's public ID.
+            </p>
             <button
                 type="button"
-                class="btn primary self-start"
-                onclick={() => void onCreateInvitation()}
-                disabled={creatingInvitation}
-                >{creatingInvitation
-                    ? "Creating invitation..."
-                    : "Create pairing invitation"}</button
+                class="btn secondary self-start"
+                onclick={() => void onSetPairingAccepting(!pairingAccepting)}
+                >{pairingAccepting
+                    ? "Stop accepting join requests"
+                    : "Accept join requests"}</button
             >
-            {#if invitationQr && invitationLink}
+            <code class="break-all select-all">{deviceEndpointId}</code>
+            <button
+                type="button"
+                class="btn secondary self-start"
+                onclick={() =>
+                    deviceEndpointId &&
+                    void onCopy(deviceEndpointId, "Public key")}
+                >Copy public ID and accept requests</button
+            >
+            {#if publicIdQr}
                 <img
                     class="h-64 w-64 self-start bg-white p-2"
-                    src={invitationQr}
-                    alt="Pairing QR code"
+                    src={publicIdQr}
+                    alt="Device public ID QR code"
                 />
-                <code class="break-all select-all">{invitationLink}</code>
-                <button
-                    type="button"
-                    class="btn secondary self-start"
-                    onclick={() => void onCopyInvitation()}
-                    >Copy pairing link</button
-                >
             {/if}
         </div>
     {/if}
@@ -404,7 +378,8 @@
                 <button
                     type="button"
                     class="btn primary"
-                    onclick={() => pendingPrompt && void onApprove(pendingPrompt)}
+                    onclick={() =>
+                        pendingPrompt && void onApprove(pendingPrompt)}
                     >Approve</button
                 >
             </div>

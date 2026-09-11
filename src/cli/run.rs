@@ -40,6 +40,7 @@ use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
 
 use crate::{AppConfig, openapi_router};
+use lidp_server::TimedPairingAcceptanceController;
 
 enum CliTunnelAuthorizer {
     Hosted(HostedTunnelAuthorizer),
@@ -259,7 +260,7 @@ pub async fn run() -> io::Result<()> {
     };
     let storage_session_router =
         lidp_server::storage_session_openapi_router(lidp_router_state.clone());
-    let lidp_router = lidp_server::openapi_router(lidp_router_state, "/lidp");
+    let lidp_router = lidp_server::openapi_router(lidp_router_state.clone(), "/lidp");
     let storage_root = PathBuf::from(&args.config)
         .parent()
         .unwrap_or(Path::new("."))
@@ -275,6 +276,13 @@ pub async fn run() -> io::Result<()> {
         )),
     };
     let manager = Server::new(device_identity.endpoint(), allowlist.clone(), authorizer);
+    lidp_router_state
+        .pairing_acceptance
+        .bind(Arc::new(TimedPairingAcceptanceController::new(
+            manager.clone(),
+            Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
+        )))
+        .map_err(io::Error::other)?;
     let listener = manager.clone();
     spawn(async move {
         listener.listen().await;

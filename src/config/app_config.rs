@@ -2,6 +2,7 @@ use std::path::Path;
 
 use api::{Environment, ServerConfig};
 use db::DatabaseConfig;
+use lidp_server::PairingConfig;
 use lidp_service::{PasswordConfig, bootstrap::BootstrapConfig, oauth2::OAuth2Config};
 use serde::Deserialize;
 
@@ -14,6 +15,7 @@ pub struct AppConfig {
     pub oauth2: OAuth2Config,
     pub bootstrap: BootstrapConfig,
     pub password: PasswordConfig,
+    pub pairing: PairingConfig,
     pub key_namespace: String,
     pub control_plane_uri: Option<String>,
     pub lidp_ui_public_uri: String,
@@ -31,6 +33,7 @@ impl Default for AppConfig {
             oauth2: OAuth2Config::default(),
             bootstrap: BootstrapConfig::default(),
             password: PasswordConfig::default(),
+            pairing: PairingConfig::default(),
             key_namespace: "lidp".to_string(),
             control_plane_uri: None,
             lidp_ui_public_uri: "https://unified.localhost:1337".to_string(),

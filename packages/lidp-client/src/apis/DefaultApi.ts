@@ -75,20 +75,10 @@ import {
     DevicePairingApprovalRequestToJSON,
 } from "../models/DevicePairingApprovalRequest.js";
 import {
-    type DevicePairingInvitation,
-    DevicePairingInvitationFromJSON,
-    DevicePairingInvitationToJSON,
-} from "../models/DevicePairingInvitation.js";
-import {
-    type DevicePairingInvitationRequest,
-    DevicePairingInvitationRequestFromJSON,
-    DevicePairingInvitationRequestToJSON,
-} from "../models/DevicePairingInvitationRequest.js";
-import {
-    type DevicePairingRedemptionRequest,
-    DevicePairingRedemptionRequestFromJSON,
-    DevicePairingRedemptionRequestToJSON,
-} from "../models/DevicePairingRedemptionRequest.js";
+    type DevicePairingRequest,
+    DevicePairingRequestFromJSON,
+    DevicePairingRequestToJSON,
+} from "../models/DevicePairingRequest.js";
 import {
     type DeviceSignature,
     DeviceSignatureFromJSON,
@@ -110,6 +100,11 @@ import {
     IsAllowedForUserResponseToJSON,
 } from "../models/IsAllowedForUserResponse.js";
 import { type Jwks, JwksFromJSON, JwksToJSON } from "../models/Jwks.js";
+import {
+    type PairingAcceptance,
+    PairingAcceptanceFromJSON,
+    PairingAcceptanceToJSON,
+} from "../models/PairingAcceptance.js";
 import {
     type ResponseMode,
     ResponseModeFromJSON,
@@ -256,13 +251,6 @@ export interface AuthorizeQueryRequest {
     uiLocales: string | null;
 }
 
-export interface CreatePairingInvitationRequest {
-    /**
-     *
-     */
-    devicePairingInvitationRequest: DevicePairingInvitationRequest;
-}
-
 export interface CreateTunnelAuthorizationRequest {
     /**
      *
@@ -327,18 +315,18 @@ export interface PutRegisterRequest {
     clientRegistration: ClientRegistration;
 }
 
-export interface RedeemPairingInvitationRequest {
-    /**
-     *
-     */
-    devicePairingRedemptionRequest: DevicePairingRedemptionRequest;
-}
-
 export interface RegisterRequest {
     /**
      *
      */
     clientRegistration: ClientRegistration;
+}
+
+export interface RequestPairingRequest {
+    /**
+     *
+     */
+    devicePairingRequest: DevicePairingRequest;
 }
 
 export interface RevokeRequest {
@@ -357,6 +345,13 @@ export interface RevokeDeviceRequest {
      * Device ID
      */
     id: number;
+}
+
+export interface SetPairingAcceptanceRequest {
+    /**
+     *
+     */
+    pairingAcceptance: PairingAcceptance;
 }
 
 export interface SignDeviceMessageRequest {
@@ -598,35 +593,6 @@ export interface DefaultApiInterface {
         requestParameters: AuthorizeQueryRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
-
-    /**
-     * Creates request options for createPairingInvitation without sending the request
-     * @param {DevicePairingInvitationRequest} devicePairingInvitationRequest
-     * @throws {RequiredError}
-     * @memberof DefaultApiInterface
-     */
-    createPairingInvitationRequestOpts(
-        requestParameters: CreatePairingInvitationRequest,
-    ): Promise<runtime.RequestOpts>;
-
-    /**
-     *
-     * @param {DevicePairingInvitationRequest} devicePairingInvitationRequest
-     * @param {*} [options] Override http request option.
-     * @throws {RequiredError}
-     * @memberof DefaultApiInterface
-     */
-    createPairingInvitationRaw(
-        requestParameters: CreatePairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<DevicePairingInvitation>>;
-
-    /**
-     */
-    createPairingInvitation(
-        requestParameters: CreatePairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<DevicePairingInvitation>;
 
     /**
      * Creates request options for createStorageSession without sending the request
@@ -989,6 +955,29 @@ export interface DefaultApiInterface {
     ): Promise<AuthorizationServerMetadata>;
 
     /**
+     * Creates request options for pairingAcceptance without sending the request
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    pairingAcceptanceRequestOpts(): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    pairingAcceptanceRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<PairingAcceptance>>;
+
+    /**
+     */
+    pairingAcceptance(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<PairingAcceptance>;
+
+    /**
      * Creates request options for pairingApprovalPayload without sending the request
      * @param {number} id Pending device enrollment ID
      * @throws {RequiredError}
@@ -1049,35 +1038,6 @@ export interface DefaultApiInterface {
     ): Promise<ClientRegistration>;
 
     /**
-     * Creates request options for redeemPairingInvitation without sending the request
-     * @param {DevicePairingRedemptionRequest} devicePairingRedemptionRequest
-     * @throws {RequiredError}
-     * @memberof DefaultApiInterface
-     */
-    redeemPairingInvitationRequestOpts(
-        requestParameters: RedeemPairingInvitationRequest,
-    ): Promise<runtime.RequestOpts>;
-
-    /**
-     *
-     * @param {DevicePairingRedemptionRequest} devicePairingRedemptionRequest
-     * @param {*} [options] Override http request option.
-     * @throws {RequiredError}
-     * @memberof DefaultApiInterface
-     */
-    redeemPairingInvitationRaw(
-        requestParameters: RedeemPairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<DeviceEnrollment>>;
-
-    /**
-     */
-    redeemPairingInvitation(
-        requestParameters: RedeemPairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<DeviceEnrollment>;
-
-    /**
      * Creates request options for register without sending the request
      * @param {ClientRegistration} clientRegistration
      * @throws {RequiredError}
@@ -1105,6 +1065,35 @@ export interface DefaultApiInterface {
         requestParameters: RegisterRequest,
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration>;
+
+    /**
+     * Creates request options for requestPairing without sending the request
+     * @param {DevicePairingRequest} devicePairingRequest
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    requestPairingRequestOpts(
+        requestParameters: RequestPairingRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {DevicePairingRequest} devicePairingRequest
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    requestPairingRaw(
+        requestParameters: RequestPairingRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceEnrollment>>;
+
+    /**
+     */
+    requestPairing(
+        requestParameters: RequestPairingRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceEnrollment>;
 
     /**
      * Creates request options for revoke without sending the request
@@ -1188,6 +1177,35 @@ export interface DefaultApiInterface {
     sessionsLogout(
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void>;
+
+    /**
+     * Creates request options for setPairingAcceptance without sending the request
+     * @param {PairingAcceptance} pairingAcceptance
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    setPairingAcceptanceRequestOpts(
+        requestParameters: SetPairingAcceptanceRequest,
+    ): Promise<runtime.RequestOpts>;
+
+    /**
+     *
+     * @param {PairingAcceptance} pairingAcceptance
+     * @param {*} [options] Override http request option.
+     * @throws {RequiredError}
+     * @memberof DefaultApiInterface
+     */
+    setPairingAcceptanceRaw(
+        requestParameters: SetPairingAcceptanceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<PairingAcceptance>>;
+
+    /**
+     */
+    setPairingAcceptance(
+        requestParameters: SetPairingAcceptanceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<PairingAcceptance>;
 
     /**
      * Creates request options for signDeviceMessage without sending the request
@@ -1798,75 +1816,6 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void> {
         await this.authorizeQueryRaw(requestParameters, initOverrides);
-    }
-
-    /**
-     * Creates request options for createPairingInvitation without sending the request
-     */
-    async createPairingInvitationRequestOpts(
-        requestParameters: CreatePairingInvitationRequest,
-    ): Promise<runtime.RequestOpts> {
-        if (requestParameters["devicePairingInvitationRequest"] == null) {
-            throw new runtime.RequiredError(
-                "devicePairingInvitationRequest",
-                'Required parameter "devicePairingInvitationRequest" was null or undefined when calling createPairingInvitation().',
-            );
-        }
-
-        const queryParameters: any = {};
-
-        const headerParameters: runtime.HTTPHeaders = {};
-
-        headerParameters["Content-Type"] = "application/json";
-
-        if (this.configuration && this.configuration.accessToken) {
-            const token = this.configuration.accessToken;
-            const tokenString = await token("authorization", []);
-
-            if (tokenString) {
-                headerParameters["Authorization"] = `Bearer ${tokenString}`;
-            }
-        }
-
-        let urlPath = `/devices/pairing-invitations`;
-
-        return {
-            path: urlPath,
-            method: "POST",
-            headers: headerParameters,
-            query: queryParameters,
-            body: DevicePairingInvitationRequestToJSON(
-                requestParameters["devicePairingInvitationRequest"],
-            ),
-        };
-    }
-
-    /**
-     */
-    async createPairingInvitationRaw(
-        requestParameters: CreatePairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<DevicePairingInvitation>> {
-        const requestOptions =
-            await this.createPairingInvitationRequestOpts(requestParameters);
-        const response = await this.request(requestOptions, initOverrides);
-
-        return new runtime.JSONApiResponse(response, (jsonValue) =>
-            DevicePairingInvitationFromJSON(jsonValue),
-        );
-    }
-
-    /**
-     */
-    async createPairingInvitation(
-        requestParameters: CreatePairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<DevicePairingInvitation> {
-        const response = await this.createPairingInvitationRaw(
-            requestParameters,
-            initOverrides,
-        );
-        return await response.value();
     }
 
     /**
@@ -2604,6 +2553,55 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
+     * Creates request options for pairingAcceptance without sending the request
+     */
+    async pairingAcceptanceRequestOpts(): Promise<runtime.RequestOpts> {
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/pairing-accepting`;
+
+        return {
+            path: urlPath,
+            method: "GET",
+            headers: headerParameters,
+            query: queryParameters,
+        };
+    }
+
+    /**
+     */
+    async pairingAcceptanceRaw(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<PairingAcceptance>> {
+        const requestOptions = await this.pairingAcceptanceRequestOpts();
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            PairingAcceptanceFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async pairingAcceptance(
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<PairingAcceptance> {
+        const response = await this.pairingAcceptanceRaw(initOverrides);
+        return await response.value();
+    }
+
+    /**
      * Creates request options for pairingApprovalPayload without sending the request
      */
     async pairingApprovalPayloadRequestOpts(
@@ -2752,66 +2750,6 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     }
 
     /**
-     * Creates request options for redeemPairingInvitation without sending the request
-     */
-    async redeemPairingInvitationRequestOpts(
-        requestParameters: RedeemPairingInvitationRequest,
-    ): Promise<runtime.RequestOpts> {
-        if (requestParameters["devicePairingRedemptionRequest"] == null) {
-            throw new runtime.RequiredError(
-                "devicePairingRedemptionRequest",
-                'Required parameter "devicePairingRedemptionRequest" was null or undefined when calling redeemPairingInvitation().',
-            );
-        }
-
-        const queryParameters: any = {};
-
-        const headerParameters: runtime.HTTPHeaders = {};
-
-        headerParameters["Content-Type"] = "application/json";
-
-        let urlPath = `/devices/pairing-invitations/redeem`;
-
-        return {
-            path: urlPath,
-            method: "POST",
-            headers: headerParameters,
-            query: queryParameters,
-            body: DevicePairingRedemptionRequestToJSON(
-                requestParameters["devicePairingRedemptionRequest"],
-            ),
-        };
-    }
-
-    /**
-     */
-    async redeemPairingInvitationRaw(
-        requestParameters: RedeemPairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<runtime.ApiResponse<DeviceEnrollment>> {
-        const requestOptions =
-            await this.redeemPairingInvitationRequestOpts(requestParameters);
-        const response = await this.request(requestOptions, initOverrides);
-
-        return new runtime.JSONApiResponse(response, (jsonValue) =>
-            DeviceEnrollmentFromJSON(jsonValue),
-        );
-    }
-
-    /**
-     */
-    async redeemPairingInvitation(
-        requestParameters: RedeemPairingInvitationRequest,
-        initOverrides?: RequestInit | runtime.InitOverrideFunction,
-    ): Promise<DeviceEnrollment> {
-        const response = await this.redeemPairingInvitationRaw(
-            requestParameters,
-            initOverrides,
-        );
-        return await response.value();
-    }
-
-    /**
      * Creates request options for register without sending the request
      */
     async registerRequestOpts(
@@ -2874,6 +2812,66 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<ClientRegistration> {
         const response = await this.registerRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
+    }
+
+    /**
+     * Creates request options for requestPairing without sending the request
+     */
+    async requestPairingRequestOpts(
+        requestParameters: RequestPairingRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["devicePairingRequest"] == null) {
+            throw new runtime.RequiredError(
+                "devicePairingRequest",
+                'Required parameter "devicePairingRequest" was null or undefined when calling requestPairing().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        let urlPath = `/devices/pairing-requests`;
+
+        return {
+            path: urlPath,
+            method: "POST",
+            headers: headerParameters,
+            query: queryParameters,
+            body: DevicePairingRequestToJSON(
+                requestParameters["devicePairingRequest"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async requestPairingRaw(
+        requestParameters: RequestPairingRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<DeviceEnrollment>> {
+        const requestOptions =
+            await this.requestPairingRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            DeviceEnrollmentFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async requestPairing(
+        requestParameters: RequestPairingRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<DeviceEnrollment> {
+        const response = await this.requestPairingRaw(
             requestParameters,
             initOverrides,
         );
@@ -3051,6 +3049,75 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
         initOverrides?: RequestInit | runtime.InitOverrideFunction,
     ): Promise<void> {
         await this.sessionsLogoutRaw(initOverrides);
+    }
+
+    /**
+     * Creates request options for setPairingAcceptance without sending the request
+     */
+    async setPairingAcceptanceRequestOpts(
+        requestParameters: SetPairingAcceptanceRequest,
+    ): Promise<runtime.RequestOpts> {
+        if (requestParameters["pairingAcceptance"] == null) {
+            throw new runtime.RequiredError(
+                "pairingAcceptance",
+                'Required parameter "pairingAcceptance" was null or undefined when calling setPairingAcceptance().',
+            );
+        }
+
+        const queryParameters: any = {};
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        headerParameters["Content-Type"] = "application/json";
+
+        if (this.configuration && this.configuration.accessToken) {
+            const token = this.configuration.accessToken;
+            const tokenString = await token("authorization", []);
+
+            if (tokenString) {
+                headerParameters["Authorization"] = `Bearer ${tokenString}`;
+            }
+        }
+
+        let urlPath = `/devices/pairing-accepting`;
+
+        return {
+            path: urlPath,
+            method: "PUT",
+            headers: headerParameters,
+            query: queryParameters,
+            body: PairingAcceptanceToJSON(
+                requestParameters["pairingAcceptance"],
+            ),
+        };
+    }
+
+    /**
+     */
+    async setPairingAcceptanceRaw(
+        requestParameters: SetPairingAcceptanceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<runtime.ApiResponse<PairingAcceptance>> {
+        const requestOptions =
+            await this.setPairingAcceptanceRequestOpts(requestParameters);
+        const response = await this.request(requestOptions, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) =>
+            PairingAcceptanceFromJSON(jsonValue),
+        );
+    }
+
+    /**
+     */
+    async setPairingAcceptance(
+        requestParameters: SetPairingAcceptanceRequest,
+        initOverrides?: RequestInit | runtime.InitOverrideFunction,
+    ): Promise<PairingAcceptance> {
+        const response = await this.setPairingAcceptanceRaw(
+            requestParameters,
+            initOverrides,
+        );
+        return await response.value();
     }
 
     /**

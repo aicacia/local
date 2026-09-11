@@ -23,7 +23,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![app::get_localhost_server_base_url,])
+        .invoke_handler(tauri::generate_handler![app::get_localhost_server_base_url])
         .setup(|app| {
             let app_config =
                 app::init_app_config(app.handle(), app.handle().path().app_config_dir()?)?;

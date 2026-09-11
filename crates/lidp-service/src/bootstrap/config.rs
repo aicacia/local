@@ -23,7 +23,7 @@ pub struct BootstrapConfig {
 impl Default for BootstrapConfig {
     fn default() -> Self {
         Self {
-            is_master: false,
+            is_master: true,
             web: false,
             desktop: false,
             device_name: "API Server".to_string(),

@@ -1,25 +1,17 @@
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::Arc;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use iroh::{EndpointId, Signature};
 use lidp_model::{
     contract::{
         DeviceEnrollment, DeviceEnrollmentRequest, DeviceInfo, DevicePairingApprovalRequest,
-        DevicePairingInvitation, DevicePairingInvitationRequest, DevicePairingRedemptionRequest,
-        ErrorCode, ErrorResponse, ErrorResponseResult, UpdateDeviceRequest,
+        DevicePairingRequest, ErrorCode, ErrorResponse, ErrorResponseResult, UpdateDeviceRequest,
         device_pairing_approval_payload,
     },
     model::Device,
 };
-use sha2::{Digest, Sha256};
 
 use crate::repo::DeviceRepo;
-
-const PAIRING_SECRET_BYTES: usize = 32;
-const PAIRING_TTL_SECONDS: i64 = 300;
 
 pub struct DeviceEnrollmentService<R> {
     repo: Arc<R>,
@@ -59,50 +51,26 @@ where
         })
     }
 
-    pub async fn create_pairing_invitation(
+    pub async fn request_pairing(
         &self,
-        request: DevicePairingInvitationRequest,
-    ) -> ErrorResponseResult<DevicePairingInvitation> {
-        validate_public_key(&request.initiating_public_key)?;
-        let secret = generate_secret()?;
-        let expires_at = now() + PAIRING_TTL_SECONDS;
-        let id = self
-            .repo
-            .create_pairing_invitation(
-                request.initiating_public_key,
-                hash_secret(&secret),
-                expires_at,
-            )
-            .await
-            .map_err(ErrorResponse::from)?
-            .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
-        Ok(DevicePairingInvitation {
-            id,
-            secret,
-            expires_at,
-        })
-    }
-
-    pub async fn redeem_pairing_invitation(
-        &self,
-        request: DevicePairingRedemptionRequest,
+        request: DevicePairingRequest,
     ) -> ErrorResponseResult<DeviceEnrollment> {
         validate_enrollment(&DeviceEnrollmentRequest {
             name: request.name.clone(),
             public_key: request.public_key.clone(),
             address: request.address.clone(),
         })?;
-        let (_, device) = self
+        validate_public_key(&request.accepting_public_key)?;
+        let device = self
             .repo
-            .redeem_pairing_invitation(
-                &hash_secret(&request.secret),
+            .create_pairing(
                 request.name,
                 request.public_key,
                 request.address,
+                request.accepting_public_key,
             )
             .await
-            .map_err(ErrorResponse::from)?
-            .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
+            .map_err(ErrorResponse::from)?;
         Ok(DeviceEnrollment {
             id: device.id,
             state: device.state,
@@ -115,16 +83,15 @@ where
         device_id: i64,
         request: DevicePairingApprovalRequest,
     ) -> ErrorResponseResult<DeviceInfo> {
-        let (invitation_id, device, initiating_public_key) = self
+        let (device, accepting_public_key) = self
             .repo
             .pending_pairing(device_id)
             .await
             .map_err(ErrorResponse::from)?
             .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
         verify_signature(
-            &initiating_public_key,
+            &accepting_public_key,
             &device_pairing_approval_payload(
-                invitation_id,
                 device.id,
                 &device.name,
                 &device.public_key,
@@ -133,7 +100,7 @@ where
             &request.signature,
         )?;
         self.repo
-            .approve_pairing(device_id, invitation_id)
+            .approve_pairing(device_id)
             .await
             .map_err(ErrorResponse::from)?
             .map(Into::into)
@@ -141,14 +108,13 @@ where
     }
 
     pub async fn pairing_approval_payload(&self, device_id: i64) -> ErrorResponseResult<String> {
-        let (invitation_id, device, _) = self
+        let (device, _) = self
             .repo
             .pending_pairing(device_id)
             .await
             .map_err(ErrorResponse::from)?
             .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
         Ok(device_pairing_approval_payload(
-            invitation_id,
             device.id,
             &device.name,
             &device.public_key,
@@ -216,16 +182,6 @@ fn valid_value(value: &str) -> bool {
     !value.trim().is_empty() && value.len() <= 512
 }
 
-fn generate_secret() -> ErrorResponseResult<String> {
-    let mut bytes = [0_u8; PAIRING_SECRET_BYTES];
-    getrandom::fill(&mut bytes).map_err(|_| ErrorResponse::new(ErrorCode::ServerError))?;
-    Ok(URL_SAFE_NO_PAD.encode(bytes))
-}
-
-fn hash_secret(secret: &str) -> Vec<u8> {
-    Sha256::digest(secret.as_bytes()).to_vec()
-}
-
 fn verify_signature(public_key: &str, payload: &str, signature: &str) -> ErrorResponseResult<()> {
     let public_key = public_key
         .parse::<EndpointId>()
@@ -240,9 +196,73 @@ fn verify_signature(public_key: &str, payload: &str, signature: &str) -> ErrorRe
         .map_err(|_| ErrorResponse::new(ErrorCode::AccessDenied))
 }
 
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before Unix epoch")
-        .as_secs() as i64
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use iroh::SecretKey;
+    use libsql::Builder;
+    use lidp_model::contract::{
+        DevicePairingApprovalRequest, DevicePairingRequest, DeviceState,
+        device_pairing_approval_payload,
+    };
+
+    use super::DeviceEnrollmentService;
+    use crate::repo::LibSqlDeviceRepo;
+
+    #[tokio::test]
+    async fn pairing_approval_requires_the_accepting_device_signature() {
+        let path = std::env::temp_dir().join(format!(
+            "lidp-pairing-signature-test-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let database = Arc::new(Builder::new_local(&path).build().await.unwrap());
+        lidp_model::migrate::up(&database).await.unwrap();
+        let service =
+            DeviceEnrollmentService::new(Arc::new(LibSqlDeviceRepo::new(Arc::clone(&database))));
+        let accepting_key = SecretKey::generate();
+        let requesting_key = SecretKey::generate();
+        let enrollment = service
+            .request_pairing(DevicePairingRequest {
+                name: "pending".into(),
+                public_key: requesting_key.public().to_string(),
+                address: "address".into(),
+                accepting_public_key: accepting_key.public().to_string(),
+            })
+            .await
+            .unwrap();
+        let payload = device_pairing_approval_payload(
+            enrollment.id,
+            "pending",
+            &requesting_key.public().to_string(),
+            "address",
+        );
+        let wrong_signature =
+            URL_SAFE_NO_PAD.encode(requesting_key.sign(payload.as_bytes()).to_bytes());
+        assert!(
+            service
+                .approve_pairing(
+                    enrollment.id,
+                    DevicePairingApprovalRequest {
+                        signature: wrong_signature,
+                    },
+                )
+                .await
+                .is_err()
+        );
+        let signature = URL_SAFE_NO_PAD.encode(accepting_key.sign(payload.as_bytes()).to_bytes());
+        assert_eq!(
+            service
+                .approve_pairing(enrollment.id, DevicePairingApprovalRequest { signature })
+                .await
+                .unwrap()
+                .state,
+            DeviceState::Approved
+        );
+        drop(service);
+        drop(database);
+        std::fs::remove_file(path).unwrap();
+    }
 }

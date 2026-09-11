@@ -1,0 +1,6 @@
+lidp_ui_public_uri: "https://lidp.localhost:1337"
+device_key: "config/secondary/device.key"
+database:
+  url: "file://./config/secondary/database.db"
+bootstrap:
+  web: true

@@ -2,8 +2,12 @@ use std::{
     collections::BTreeMap,
     io::{Error, ErrorKind},
     pin::Pin,
-    sync::Arc,
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     task::{Context, Poll},
+    time::Duration,
 };
 
 use iroh::{Endpoint, EndpointAddr, EndpointId, endpoint::Connection};
@@ -13,8 +17,9 @@ use tokio::{
     sync::{Mutex, MutexGuard, broadcast},
 };
 
-use crate::AllowedEndpointId;
+use crate::{AllowedEndpointId, PairingOffer, pairing::validate_payload};
 
+pub const PAIRING_ALPN: &[u8] = b"lidp-pairing/1";
 pub const TUNNEL_ALPN: &[u8] = b"lidp-tunnel/1";
 const PROTOCOL_VERSION: u8 = 1;
 const MAX_AUTHORIZATION_LENGTH: usize = 4096;
@@ -158,6 +163,10 @@ where
     authorizer: V,
     tunnels: Mutex<BTreeMap<(EndpointId, VaultId), Tunnel>>,
     events: broadcast::Sender<TunnelEvent>,
+    pairing_offers: broadcast::Sender<PairingOffer>,
+    pairing_enabled: AtomicBool,
+    pairing_generation: AtomicU64,
+    pairing_lock: StdMutex<()>,
 }
 
 pub struct Server<A, V>
@@ -186,7 +195,9 @@ where
     V: TunnelAuthorizer,
 {
     pub fn new(endpoint: Endpoint, allowed: A, authorizer: V) -> Self {
+        endpoint.set_alpns(vec![TUNNEL_ALPN.to_vec(), PAIRING_ALPN.to_vec()]);
         let (events, _) = broadcast::channel(64);
+        let (pairing_offers, _) = broadcast::channel(64);
         Self {
             inner: Arc::new(ServerInner {
                 endpoint,
@@ -194,6 +205,10 @@ where
                 authorizer,
                 tunnels: Mutex::new(BTreeMap::new()),
                 events,
+                pairing_offers,
+                pairing_enabled: AtomicBool::new(false),
+                pairing_generation: AtomicU64::new(0),
+                pairing_lock: StdMutex::new(()),
             }),
         }
     }
@@ -206,8 +221,67 @@ where
         self.inner.events.subscribe()
     }
 
+    pub fn subscribe_pairing_offers(&self) -> broadcast::Receiver<PairingOffer> {
+        self.inner.pairing_offers.subscribe()
+    }
+
+    pub fn set_pairing_enabled(&self, enabled: bool) {
+        let _lock = self
+            .inner
+            .pairing_lock
+            .lock()
+            .expect("pairing lock is poisoned");
+        self.inner.pairing_generation.fetch_add(1, Ordering::AcqRel);
+        self.inner.pairing_enabled.store(enabled, Ordering::Release);
+    }
+
+    pub fn set_pairing_enabled_for(&self, duration: Duration) {
+        let generation = {
+            let _lock = self
+                .inner
+                .pairing_lock
+                .lock()
+                .expect("pairing lock is poisoned");
+            let generation = self.inner.pairing_generation.fetch_add(1, Ordering::AcqRel) + 1;
+            self.inner.pairing_enabled.store(true, Ordering::Release);
+            generation
+        };
+        let inner = Arc::clone(&self.inner);
+        tokio::spawn(async move {
+            tokio::time::sleep(duration).await;
+            let _lock = inner.pairing_lock.lock().expect("pairing lock is poisoned");
+            if inner.pairing_generation.load(Ordering::Acquire) == generation {
+                inner.pairing_enabled.store(false, Ordering::Release);
+            }
+        });
+    }
+
+    pub fn pairing_enabled(&self) -> bool {
+        self.inner.pairing_enabled.load(Ordering::Acquire)
+    }
+
     pub async fn is_allowed(&self, endpoint_id: EndpointId) -> bool {
         self.inner.allowed.allowed(endpoint_id).await
+    }
+
+    pub async fn send_pairing_offer(
+        &self,
+        endpoint: impl Into<EndpointAddr>,
+        payload: &[u8],
+    ) -> Result<Vec<u8>, Error> {
+        validate_payload(payload)?;
+        let connection = self
+            .inner
+            .endpoint
+            .connect(endpoint, PAIRING_ALPN)
+            .await
+            .map_err(Error::other)?;
+        let (mut send, mut recv) = connection.open_bi().await?;
+        send.write_all(payload).await.map_err(Error::other)?;
+        send.finish().map_err(Error::other)?;
+        recv.read_to_end(crate::MAX_PAIRING_PAYLOAD_LENGTH)
+            .await
+            .map_err(Error::other)
     }
 
     pub async fn connect(
@@ -309,6 +383,32 @@ where
     }
 
     async fn accept_connection(&self, connection: Connection) {
+        match connection.alpn() {
+            PAIRING_ALPN => self.accept_pairing_offer(connection).await,
+            TUNNEL_ALPN => self.accept_tunnel_connection(connection).await,
+            _ => {}
+        }
+    }
+
+    async fn accept_pairing_offer(&self, connection: Connection) {
+        let remote_id = connection.remote_id();
+        let Ok((mut send, mut recv)) = connection.accept_bi().await else {
+            return;
+        };
+        let Ok(payload) = recv.read_to_end(crate::MAX_PAIRING_PAYLOAD_LENGTH).await else {
+            return;
+        };
+        if !self.pairing_enabled() {
+            let _ = send.finish();
+            return;
+        }
+        let _ = self
+            .inner
+            .pairing_offers
+            .send(PairingOffer::new(remote_id, payload, send, connection));
+    }
+
+    async fn accept_tunnel_connection(&self, connection: Connection) {
         let remote_id = connection.remote_id();
         if !self.inner.allowed.allowed(remote_id).await {
             return;
@@ -420,7 +520,20 @@ async fn read_handshake(recv: &mut RecvStream) -> Result<(VaultId, EndpointId, V
 
 #[cfg(test)]
 mod tests {
-    use super::VaultId;
+    use std::time::Duration;
+
+    use iroh::{Endpoint, EndpointId, RelayMode, endpoint::presets};
+
+    use super::{Server, TunnelAuthorizer, VaultId};
+    use crate::InMemoryEndpointIdStore;
+
+    struct DenyTunnel;
+
+    impl TunnelAuthorizer for DenyTunnel {
+        async fn authorize(&self, _: VaultId, _: EndpointId, _: EndpointId, _: &[u8]) -> bool {
+            false
+        }
+    }
 
     #[test]
     fn derives_a_stable_scope_bound_vault_id() {
@@ -433,5 +546,54 @@ mod tests {
             VaultId::from_application("ab", 2)
         );
         assert_eq!(first.hash().len(), 64);
+    }
+
+    #[tokio::test]
+    async fn pairing_timeout_does_not_disable_a_newer_enable() {
+        let server = Server::new(endpoint().await, InMemoryEndpointIdStore::new(), DenyTunnel);
+        server.set_pairing_enabled_for(Duration::from_millis(20));
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        server.set_pairing_enabled_for(Duration::from_millis(40));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(server.pairing_enabled());
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!server.pairing_enabled());
+        server.close().await;
+    }
+
+    #[tokio::test]
+    async fn exchanges_pairing_offer_without_tunnel_authorization() {
+        let sender = Server::new(endpoint().await, InMemoryEndpointIdStore::new(), DenyTunnel);
+        let receiver = Server::new(endpoint().await, InMemoryEndpointIdStore::new(), DenyTunnel);
+        let mut offers = receiver.subscribe_pairing_offers();
+        let listener = tokio::spawn({
+            let receiver = receiver.clone();
+            async move { receiver.listen().await }
+        });
+        let receiver_addr = receiver.endpoint().addr();
+        let sender_id = sender.endpoint().id();
+        let request = tokio::spawn(async move {
+            sender
+                .send_pairing_offer(receiver_addr, b"offer")
+                .await
+                .unwrap()
+        });
+
+        let offer = offers.recv().await.unwrap();
+        assert_eq!(offer.remote_id, sender_id);
+        assert_eq!(offer.payload, b"offer");
+        offer.reply(b"accepted").await.unwrap();
+        assert_eq!(request.await.unwrap(), b"accepted");
+
+        receiver.close().await;
+        listener.await.unwrap();
+    }
+
+    async fn endpoint() -> Endpoint {
+        Endpoint::builder(presets::N0)
+            .relay_mode(RelayMode::Disabled)
+            .bind()
+            .await
+            .unwrap()
     }
 }

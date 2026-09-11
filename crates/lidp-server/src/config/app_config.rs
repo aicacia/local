@@ -5,6 +5,8 @@ use db::DatabaseConfig;
 use lidp_service::{PasswordConfig, bootstrap::BootstrapConfig, oauth2::OAuth2Config};
 use serde::{Deserialize, Serialize};
 
+use super::PairingConfig;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
@@ -14,6 +16,7 @@ pub struct AppConfig {
     pub oauth2: OAuth2Config,
     pub bootstrap: BootstrapConfig,
     pub password: PasswordConfig,
+    pub pairing: PairingConfig,
     pub key_namespace: String,
     pub control_plane_uri: Option<String>,
     pub log_level: String,
@@ -31,6 +34,7 @@ impl Default for AppConfig {
             oauth2: OAuth2Config::default(),
             bootstrap: BootstrapConfig::default(),
             password: PasswordConfig::default(),
+            pairing: PairingConfig::default(),
             key_namespace: "lidp".to_string(),
             control_plane_uri: None,
             ui_public_uri: "https://lidp.localhost:1337".to_string(),
