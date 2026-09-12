@@ -64,9 +64,32 @@ The built-in management application URI is `idp-management`.
 
 ## Device
 
-A Device is one installation's persistent transport endpoint identity, represented by its public key and reachable address. A device is pending, approved, or revoked. Device records are control-plane metadata, not application data.
+A Device is one installation's persistent transport endpoint identity, represented by its locally supplied name, public key, and reachable address. A device is pending, approved, or revoked. Device records are control-plane metadata, not application data.
 
 A pairing request creates a pending device. An approved device signs the pairing approval payload. Revocation removes future trust but cannot erase data already copied to the revoked device.
+
+## Reset Device
+
+Reset Device removes one runtime's local setup state, local synchronized data, and device identity, returning it to Installation Setup. It attempts to revoke its approved device record remotely but proceeds when offline. It does not remove data from other devices.
+
+## Installation Setup
+
+Installation Setup establishes a new installation or joins an existing one. It completes only after the initial synchronization succeeds.
+_Avoid_: Master setup, primary-node setup
+
+## Device Setup
+
+Device Setup configures and later edits the data an installation member stores locally after Installation Setup completes. Its completion is recorded in local device state.
+_Avoid_: Setup Mode, device initialization
+
+## Initial Administrator
+
+The Initial Administrator is the username/password user whose supplied credentials establish administrative access when a new installation is created.
+_Avoid_: Default admin, bootstrap admin
+
+## Setup Token
+
+A Setup Token is the one-time random credential a server generates at startup while Installation Setup is incomplete. It authorizes setup requests and is discarded after successful setup.
 
 ## Trusted Device
 
@@ -90,11 +113,15 @@ Client IDs, device IDs, local paths, and user-supplied namespace strings are not
 
 A Storage Namespace is the stable logical partition identified by `(user subject, application ID)`. Each namespace maps to one local filesystem per node. All clients for the same user and application share that namespace.
 
+## Storage Residency
+
+Storage Residency is a device-local choice for a Storage Namespace: full or passthrough. Full residency stores metadata and blobs; passthrough synchronizes metadata and obtains blobs from peers when read and writes blobs directly to an available full-residency peer. Passthrough is the initial default. It may be set for a namespace, folder, or file; the most-specific rule applies. A device may exclude an entire Application, meaning it stores no metadata or blobs for any of that application's Storage Namespaces. Changes apply by fetching or deleting local data to match the selected residency.
+
 ## Global Identity Namespace
 
 The Global Identity Namespace is the stable filesystem namespace for synchronized IdP and management records. It is distinct from application-scoped storage and must be available before normal user/application authorization, so it cannot be opened through a `StorageScope` derived from the records it contains.
 
-Bootstrap-capable authorization opens this namespace initially. After bootstrap, trusted-device authorization protects synchronization.
+Installation Setup synchronizes this namespace first. Trusted-device authorization protects subsequent synchronization.
 
 ## File System
 
