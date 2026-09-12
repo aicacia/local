@@ -25,9 +25,9 @@
     import Issues from "$lib/common/components/Issues.svelte";
     import { afterSigninRedirect } from "$lib/common/state/afterSigninRedirect.svelte";
     import {
-        ensureTauriLidpApiUrl,
-        lidpApi,
-    } from "$lib/common/state/lidpClient.svelte";
+        ensureTauriIdpApiUrl,
+        idpApi,
+    } from "$lib/common/state/idpClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
     import { getOidcClient } from "$lib/common/state/oidc.svelte";
 
@@ -46,10 +46,10 @@
         }
         try {
             if (isTauri()) {
-                await ensureTauriLidpApiUrl();
+                await ensureTauriIdpApiUrl();
             }
 
-            const token = await lidpApi.token({
+            const token = await idpApi.token({
                 grantType: "password",
                 clientId: isTauri() ? "management-desktop" : "management-web",
                 username: output.username,

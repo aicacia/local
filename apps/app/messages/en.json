@@ -104,9 +104,9 @@
   "home_signed_in_message": "You are currently signed in.",
   "home_sign_out": "Sign Out",
   "env_config": "Configuration",
-  "env_config_lipd_management_url": "Local IdP Management URL",
-  "env_config_lipd_management_url_placeholder": "Enter the Local IdP Management URL (e.g., https://idp-management.aicacia.com)",
-  "env_config_lipd_url": "Local IdP URL",
-  "env_config_lipd_url_placeholder": "Enter the Local IdP URL (e.g., https://lidp.aicacia.com)",
+  "env_config_management_url": "Management URL",
+  "env_config_management_url_placeholder": "Enter the Management URL (e.g., https://management.aicacia.com)",
+  "env_config_idp_url": "IdP URL",
+  "env_config_idp_url_placeholder": "Enter the IdP URL (e.g., https://local.aicacia.com)",
   "env_config_save": "Save"
 }

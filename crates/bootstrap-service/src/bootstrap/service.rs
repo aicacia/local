@@ -86,7 +86,7 @@ where
         }
 
         let idp_application = self
-            .ensure_application("Local IdP".to_string(), "lidp".to_string())
+            .ensure_application("IdP".to_string(), "lidp".to_string())
             .await?;
 
         if self.config.web {
@@ -94,7 +94,7 @@ where
                 .ensure_client(
                     &idp_application,
                     "idp-web".to_string(),
-                    "Local IdP Web".to_string(),
+                    "IdP Web".to_string(),
                     self.config.idp_url.clone(),
                     ClientProfile::Web,
                 )
@@ -103,7 +103,7 @@ where
                 .ensure_active_key(
                     EntityType::Client,
                     idp_web_client.id,
-                    "Local IdP Web",
+                    "IdP Web",
                     idp_web_client.client_secret.as_str(),
                     true,
                 )
@@ -114,7 +114,7 @@ where
                 .ensure_client(
                     &idp_application,
                     "idp-desktop".to_string(),
-                    "Local IdP Desktop".to_string(),
+                    "IdP Desktop".to_string(),
                     self.config.idp_url.clone(),
                     ClientProfile::Native,
                 )
@@ -123,7 +123,7 @@ where
                 .ensure_active_key(
                     EntityType::Client,
                     idp_desktop_client.id,
-                    "Local IdP Desktop",
+                    "IdP Desktop",
                     idp_desktop_client.client_secret.as_str(),
                     true,
                 )
@@ -131,10 +131,7 @@ where
         }
 
         let management_application = self
-            .ensure_application(
-                "Local IdP Management".to_string(),
-                "idp-management".to_string(),
-            )
+            .ensure_application("Management".to_string(), "idp-management".to_string())
             .await?;
 
         if self.config.web {
@@ -142,7 +139,7 @@ where
                 .ensure_client(
                     &management_application,
                     "management-web".to_string(),
-                    "Local IdP Management Web".to_string(),
+                    "Management Web".to_string(),
                     self.config.management_url.clone(),
                     ClientProfile::Web,
                 )
@@ -151,7 +148,7 @@ where
                 .ensure_active_key(
                     EntityType::Client,
                     management_web_client.id,
-                    "Local IdP Management Web",
+                    "Management Web",
                     management_web_client.client_secret.as_str(),
                     true,
                 )
@@ -163,7 +160,7 @@ where
                 .ensure_client(
                     &management_application,
                     "management-desktop".to_string(),
-                    "Local IdP Management Desktop".to_string(),
+                    "Management Desktop".to_string(),
                     self.config.management_url.clone(),
                     ClientProfile::Native,
                 )
@@ -172,7 +169,7 @@ where
                 .ensure_active_key(
                     EntityType::Client,
                     management_desktop_client.id,
-                    "Local IdP Management Desktop",
+                    "Management Desktop",
                     management_desktop_client.client_secret.as_str(),
                     true,
                 )

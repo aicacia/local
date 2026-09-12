@@ -13,7 +13,7 @@
         renameDevice,
         revokeDevice,
     } from "$lib/common/state/devices.svelte";
-    import { lidpApi } from "$lib/common/state/lidpClient.svelte";
+    import { idpApi } from "$lib/common/state/idpClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     interface BarcodeDetectorResult {
@@ -126,7 +126,7 @@
         }
         startingManualPairing = true;
         try {
-            const device = await lidpApi.device();
+            const device = await idpApi.device();
             await requestDevicePairing(
                 manualPairingName.trim(),
                 device.publicKey,
@@ -147,7 +147,7 @@
     async function onApprove(device: DeviceInfo) {
         try {
             const payload = await getDeviceApprovalPayload(device.id);
-            const { signature } = await lidpApi.signDeviceMessage({
+            const { signature } = await idpApi.signDeviceMessage({
                 signDeviceMessage: { message: payload },
             });
             await approveDevice(device.id, signature);
@@ -247,7 +247,7 @@
     }
 
     onMount(() => {
-        void lidpApi
+        void idpApi
             .device()
             .then(async (device) => {
                 deviceEndpointId = device.publicKey;

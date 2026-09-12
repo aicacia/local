@@ -6,7 +6,7 @@
     } from "@aicacia/management-client";
     import { onMount } from "svelte";
     import { page } from "$app/state";
-    import { lidpManagementApi } from "$lib/common/state/lidpManagementClient.svelte";
+    import { managementApi } from "$lib/common/state/lidpManagementClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     const parsedUserId = Number(page.params.userId);
@@ -31,11 +31,9 @@
         userRolesLoading = true;
         userRolesError = null;
         try {
-            userRoles = await lidpManagementApi.listUserRolesAcrossApplications(
-                {
-                    userId: parsedUserId,
-                },
-            );
+            userRoles = await managementApi.listUserRolesAcrossApplications({
+                userId: parsedUserId,
+            });
         } catch (cause) {
             console.error(cause);
             userRolesError =
@@ -56,7 +54,7 @@
         consentsLoading = true;
         consentsError = null;
         try {
-            consents = await lidpManagementApi.listUserConsents({
+            consents = await managementApi.listUserConsents({
                 userId: parsedUserId,
                 offset: 0,
                 limit: 100,
@@ -86,7 +84,7 @@
         loading = true;
         error = null;
         try {
-            user = await lidpManagementApi.getUser({
+            user = await managementApi.getUser({
                 userId: parsedUserId,
             });
             void loadRelatedData();
@@ -111,7 +109,7 @@
 
         revokingConsentId = consent.id;
         try {
-            await lidpManagementApi.revokeUserConsent({
+            await managementApi.revokeUserConsent({
                 userId: parsedUserId,
                 consentId: consent.id,
             });

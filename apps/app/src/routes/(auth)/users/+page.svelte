@@ -2,7 +2,7 @@
     import type { UserInfo } from "@aicacia/management-client";
     import { onMount } from "svelte";
     import { resolve } from "$app/paths";
-    import { lidpManagementApi } from "$lib/common/state/lidpManagementClient.svelte";
+    import { managementApi } from "$lib/common/state/lidpManagementClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     const limit = 25;
@@ -17,7 +17,7 @@
         error = null;
 
         try {
-            users = await lidpManagementApi.listUsers({ offset, limit });
+            users = await managementApi.listUsers({ offset, limit });
         } catch (cause) {
             console.error(cause);
             error =

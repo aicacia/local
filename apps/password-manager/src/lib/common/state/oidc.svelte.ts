@@ -2,7 +2,7 @@ import { OidcClient } from "@aicacia/oidc-client";
 
 import { env } from "$env/dynamic/public";
 import icon256x256Png from "$lib/assets/icon256x256.png";
-import { getLidpApiUrl } from "./lidpClient.svelte";
+import { getIdpApiUrl } from "./idpClient.svelte";
 
 const CLIENT_ID = "password-manager-web";
 
@@ -10,7 +10,7 @@ const oidcClient = $derived.by(
     () =>
         new OidcClient({
             clientConfig: {
-                authority: getLidpApiUrl(),
+                authority: getIdpApiUrl(),
                 redirectUri: `${env.PUBLIC_URL}/callback`,
                 clientId: CLIENT_ID,
                 responseType: "code",

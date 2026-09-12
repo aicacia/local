@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "LIdP",
+  "productName": "Local",
   "version": "0.1.0",
-  "identifier": "com.aicacia.lidp",
+  "identifier": "com.aicacia.local",
   "build": {
     "frontendDist": "../build",
     "devUrl": "https://idp-desktop.localhost:1337",

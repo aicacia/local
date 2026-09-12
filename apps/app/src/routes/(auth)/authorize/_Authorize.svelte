@@ -17,7 +17,7 @@
     import { LoaderCircle } from "@lucide/svelte";
     import { isTauri } from "@tauri-apps/api/core";
     import { goto } from "$app/navigation";
-    import { lidpApi } from "$lib/common/state/lidpClient.svelte";
+    import { idpApi } from "$lib/common/state/idpClient.svelte";
     import { m } from "$lib/paraglide/messages";
     import AuthorizeClient from "./_AuthorizeClient.svelte";
     import {
@@ -137,7 +137,7 @@
             return;
         }
         console.debug("Fetching client info for clientId", lookupClientId);
-        lidpApi
+        idpApi
             .getRegister({ clientId: lookupClientId })
             .catch((e) => {
                 console.error("Error fetching client info", e);
@@ -170,7 +170,7 @@
         console.debug(
             "Checking if user has already allowed this client and scopes",
         );
-        lidpApi
+        idpApi
             .isAllowedForUser({
                 isAllowedForUserRequest: {
                     clientId: effectiveClientId,
@@ -219,7 +219,7 @@
     }
     async function onAllow() {
         try {
-            await lidpApi.approveForUser({
+            await idpApi.approveForUser({
                 approveForUserRequest: {
                     clientId: effectiveClientId,
                     redirectUri: authorizationRequest.redirectUri ?? "",
@@ -291,7 +291,7 @@
             contacts: registrationCandidate.contacts,
         };
         try {
-            client = await lidpApi.register({ clientRegistration: payload });
+            client = await idpApi.register({ clientRegistration: payload });
         } catch (e) {
             console.error("Error registering client", e);
         } finally {

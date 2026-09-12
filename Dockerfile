@@ -38,7 +38,7 @@ WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --target $(cat /tmp/target) --recipe-path recipe.json
 
-ARG PROJECT=lidp
+ARG PROJECT=local
 
 COPY . .
 RUN rustup target add $(cat /tmp/target)
@@ -46,11 +46,11 @@ RUN cargo build -p ${PROJECT} --target $(cat /tmp/target) --release --bin ${PROJ
 
 
 FROM scratch
-LABEL org.opencontainers.image.source=https://github.com/aicacia/rs-lidp
+LABEL org.opencontainers.image.source=https://github.com/aicacia/rs-local
 
 WORKDIR /app
 
-ARG PROJECT=lidp
+ARG PROJECT=local
 
 COPY --from=builder /app/target/*/release/${PROJECT} /app/run
 

@@ -13,11 +13,11 @@ import { env } from "$env/dynamic/public";
 import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
-const defaultLidpApiUrl = env.PUBLIC_LIDP_BASE_URL ?? "";
-const lidpApiUrl = createStorage<string>("idp-api-url", defaultLidpApiUrl);
+const defaultIdpApiUrl = env.PUBLIC_LIDP_BASE_URL ?? "";
+const idpApiUrl = createStorage<string>("idp-api-url", defaultIdpApiUrl);
 
-if (!isHttpUrl(lidpApiUrl.item)) {
-    lidpApiUrl.item = isHttpUrl(defaultLidpApiUrl) ? defaultLidpApiUrl : "";
+if (!isHttpUrl(idpApiUrl.item)) {
+    idpApiUrl.item = isHttpUrl(defaultIdpApiUrl) ? defaultIdpApiUrl : "";
 }
 
 export const defaultConfigurationParameters: ConfigurationParameters = {
@@ -46,7 +46,7 @@ export const defaultConfigurationParameters: ConfigurationParameters = {
         return getOidcClient().getStoredTokenResponse()?.access_token ?? "";
     },
     get basePath() {
-        return lidpApiUrl.item;
+        return idpApiUrl.item;
     },
     credentials: "same-origin",
 };
@@ -55,17 +55,17 @@ export const lidpConfiguration = new Configuration(
     defaultConfigurationParameters,
 );
 
-export const lidpApi = new DefaultApi(lidpConfiguration);
+export const idpApi = new DefaultApi(lidpConfiguration);
 
-export function setLidpApiUrl(newLidpApiUrl: string) {
-    if (!isHttpUrl(newLidpApiUrl)) {
+export function setIdpApiUrl(newIdpApiUrl: string) {
+    if (!isHttpUrl(newIdpApiUrl)) {
         throw new Error("LIDP API URL must use HTTP or HTTPS");
     }
-    lidpApiUrl.item = newLidpApiUrl;
+    idpApiUrl.item = newIdpApiUrl;
 }
 
-export function getLidpApiUrl(): string | null {
-    return isHttpUrl(lidpApiUrl.item) ? lidpApiUrl.item : null;
+export function getIdpApiUrl(): string | null {
+    return isHttpUrl(idpApiUrl.item) ? idpApiUrl.item : null;
 }
 
 function isHttpUrl(value: string | null | undefined): value is string {
@@ -80,7 +80,7 @@ function isHttpUrl(value: string | null | undefined): value is string {
     }
 }
 
-export async function validateLidpApiUrl(basePath: string): Promise<boolean> {
+export async function validateIdpApiUrl(basePath: string): Promise<boolean> {
     if (!basePath) {
         return false;
     }

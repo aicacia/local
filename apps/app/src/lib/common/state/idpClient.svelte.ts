@@ -16,7 +16,7 @@ import {
 } from "./localhostBaseUrl.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
-const lidpApiUrl = createStorage<string | null>(
+const idpApiUrl = createStorage<string | null>(
   "idp-api-url",
   (isTauri() ? null : env.PUBLIC_LIDP_BASE_URL) ?? null,
 );
@@ -28,7 +28,7 @@ async function hydrateTauriApiUrl(): Promise<void> {
 
   const baseUrl = await loadLocalhostBaseUrl();
   if (baseUrl) {
-    lidpApiUrl.item = `${baseUrl}/lidp`;
+    idpApiUrl.item = `${baseUrl}/idp`;
   }
 }
 
@@ -43,7 +43,7 @@ function readAccessToken(): string {
 }
 
 function readBasePath(): string | undefined {
-  const basePath = lidpApiUrl.item;
+  const basePath = idpApiUrl.item;
   return basePath === null ? undefined : basePath;
 }
 
@@ -84,26 +84,26 @@ export const lidpConfiguration = new Configuration(
   defaultConfigurationParameters,
 );
 
-export const lidpApi = new DefaultApi(lidpConfiguration);
+export const idpApi = new DefaultApi(lidpConfiguration);
 
-export function setLidpApiUrl(newLidpApiUrl: string) {
-  lidpApiUrl.item = newLidpApiUrl;
+export function setIdpApiUrl(newIdpApiUrl: string) {
+  idpApiUrl.item = newIdpApiUrl;
 }
-export function getLidpApiUrl(): string | null {
-  return lidpApiUrl.item;
+export function getIdpApiUrl(): string | null {
+  return idpApiUrl.item;
 }
 
-export async function ensureTauriLidpApiUrl(): Promise<string | null> {
+export async function ensureTauriIdpApiUrl(): Promise<string | null> {
   if (!isTauri()) {
-    return lidpApiUrl.item;
+    return idpApiUrl.item;
   }
 
   const baseUrl = await ensureLocalhostBaseUrl();
-  lidpApiUrl.item = `${baseUrl}/lidp`;
-  return lidpApiUrl.item;
+  idpApiUrl.item = `${baseUrl}/lidp`;
+  return idpApiUrl.item;
 }
 
-export async function validateLidpApiUrl(basePath: string): Promise<boolean> {
+export async function validateIdpApiUrl(basePath: string): Promise<boolean> {
   if (!basePath) {
     return false;
   }
@@ -124,13 +124,13 @@ export async function validateLidpApiUrl(basePath: string): Promise<boolean> {
 }
 
 async function hydrateWebApiUrl(): Promise<void> {
-  if (isTauri() || (await validateLidpApiUrl(lidpApiUrl.item ?? ""))) {
+  if (isTauri() || (await validateIdpApiUrl(idpApiUrl.item ?? ""))) {
     return;
   }
 
   const fallback = env.PUBLIC_LIDP_BASE_URL;
-  if (fallback && (await validateLidpApiUrl(fallback))) {
-    lidpApiUrl.item = fallback;
+  if (fallback && (await validateIdpApiUrl(fallback))) {
+    idpApiUrl.item = fallback;
   }
 }
 

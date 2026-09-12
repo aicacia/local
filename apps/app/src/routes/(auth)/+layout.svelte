@@ -60,7 +60,7 @@
                 <span
                     class="truncate text-sm font-semibold tracking-tight text-gray-900 dark:text-white"
                 >
-                    LIdP Management
+                    Management
                 </span>
             {/if}
 

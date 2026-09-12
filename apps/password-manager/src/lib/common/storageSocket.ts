@@ -6,7 +6,7 @@ import {
     type StorageSocket,
 } from "@aicacia/storage-client";
 
-import { getLidpApiUrl } from "./state/lidpClient.svelte";
+import { getIdpApiUrl } from "./state/idpClient.svelte";
 import { getOidcClient } from "./state/oidc.svelte";
 
 export type { StorageEntry, StorageRequest, StorageResponse, StorageSocket };
@@ -19,7 +19,7 @@ export async function openStorageSocket(): Promise<StorageSocket> {
 }
 
 function storageEndpoint(): URL {
-    const configuredUrl = getLidpApiUrl();
+    const configuredUrl = getIdpApiUrl();
     if (!configuredUrl) {
         throw new Error("LIDP API URL is not configured");
     }

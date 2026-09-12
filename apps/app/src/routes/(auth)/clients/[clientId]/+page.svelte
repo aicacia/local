@@ -8,7 +8,7 @@
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { page } from "$app/state";
-    import { lidpManagementApi } from "$lib/common/state/lidpManagementClient.svelte";
+    import { managementApi } from "$lib/common/state/lidpManagementClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     const clientId = page.params.clientId;
@@ -53,7 +53,7 @@
         keysLoading = true;
         keysError = null;
         try {
-            keys = await lidpManagementApi.listClientKeys({ clientId });
+            keys = await managementApi.listClientKeys({ clientId });
         } catch (cause) {
             console.error(cause);
             keysError =
@@ -71,7 +71,7 @@
         error = null;
 
         try {
-            const currentClient = await lidpManagementApi.getClient({
+            const currentClient = await managementApi.getClient({
                 clientId,
             });
             applyClient(currentClient);
@@ -92,7 +92,7 @@
         jwkLoadingKeyId = key.id;
         jwkError = null;
         try {
-            jwk = await lidpManagementApi.getKeyJwk({ keyId: key.id });
+            jwk = await managementApi.getKeyJwk({ keyId: key.id });
             jwkKeyId = key.id;
             notifications.add("JWK loaded", "success");
         } catch (cause) {
@@ -114,7 +114,7 @@
 
         saving = true;
         try {
-            await lidpManagementApi.updateClient({
+            await managementApi.updateClient({
                 clientId,
                 clientRegistration: {
                     ...client,
@@ -142,7 +142,7 @@
 
         deleting = true;
         try {
-            await lidpManagementApi.deleteClient({ clientId });
+            await managementApi.deleteClient({ clientId });
             notifications.add("Client deleted", "success");
             await goto(resolve("/clients"));
         } catch (cause) {

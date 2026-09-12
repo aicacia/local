@@ -1,5 +1,5 @@
 import type { AuthorizationRequest } from "@aicacia/idp-client";
-import { lidpApi } from "$lib/common/state/lidpClient.svelte";
+import { idpApi } from "$lib/common/state/idpClient.svelte";
 import { redirectToUrl } from "$lib/common/util/redirectToUrl";
 
 export async function rejectAuthorizationRequest(
@@ -25,7 +25,7 @@ export async function rejectAuthorizationRequest(
 export async function resolveAuthorizationRequest(
   authorizationRequest: AuthorizationRequest,
 ) {
-  const authorizeResponse = await lidpApi.authorizeJson({
+  const authorizeResponse = await idpApi.authorizeJson({
     authorizationRequest,
   });
 

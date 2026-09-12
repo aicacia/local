@@ -3,9 +3,9 @@ import { redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { afterSigninRedirect } from "$lib/common/state/afterSigninRedirect.svelte";
 import {
-  ensureTauriLidpApiUrl,
-  getLidpApiUrl,
-} from "$lib/common/state/lidpClient.svelte";
+  ensureTauriIdpApiUrl,
+  getIdpApiUrl,
+} from "$lib/common/state/idpClient.svelte";
 import { getOidcClient } from "$lib/common/state/oidc.svelte";
 import type { LayoutLoad } from "./$types";
 
@@ -13,14 +13,14 @@ export const load: LayoutLoad = async (event) => {
   await event.parent();
 
   if (isTauri()) {
-    await ensureTauriLidpApiUrl();
+    await ensureTauriIdpApiUrl();
   }
 
   const oidcClient = getOidcClient();
   const token = oidcClient.getStoredTokenResponse();
   if (
     !token?.access_token ||
-    (isTauri() && token.iss && token.iss !== getLidpApiUrl())
+    (isTauri() && token.iss && token.iss !== getIdpApiUrl())
   ) {
     oidcClient.clearStoredTokenResponse();
     afterSigninRedirect.setURL(event.url);

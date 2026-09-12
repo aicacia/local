@@ -4,12 +4,12 @@ import type {
   DeviceState,
 } from "@aicacia/idp-client";
 import { getOidcClient } from "./oidc.svelte";
-import { getLidpApiUrl, lidpApi } from "./lidpClient.svelte";
+import { getIdpApiUrl, idpApi } from "./idpClient.svelte";
 
 export type { DeviceEnrollment, DeviceInfo, DeviceState };
 
 export function listDevices(): Promise<DeviceInfo[]> {
-  return lidpApi.listDevices();
+  return idpApi.listDevices();
 }
 
 export function enrollDevice(
@@ -17,7 +17,7 @@ export function enrollDevice(
   publicKey: string,
   address: string,
 ): Promise<DeviceEnrollment> {
-  return lidpApi.enrollDevice({
+  return idpApi.enrollDevice({
     deviceEnrollmentRequest: { name, publicKey, address },
   });
 }
@@ -28,16 +28,16 @@ export function requestDevicePairing(
   address: string,
   acceptingPublicKey: string,
 ): Promise<DeviceEnrollment> {
-  return lidpApi.requestPairing({
+  return idpApi.requestPairing({
     devicePairingRequest: { name, publicKey, address, acceptingPublicKey },
   });
 }
 export async function getPairingAccepting(
   accepting?: boolean,
 ): Promise<boolean> {
-  const baseUrl = getLidpApiUrl();
+  const baseUrl = getIdpApiUrl();
   if (!baseUrl) {
-    throw new Error("LIdP API URL is not available");
+    throw new Error("Local API URL is not available");
   }
   const token = getOidcClient()?.getStoredTokenResponse()?.access_token;
   const response = await fetch(`${baseUrl}/devices/pairing-accepting`, {
@@ -57,23 +57,23 @@ export async function getPairingAccepting(
 }
 
 export async function getDeviceApprovalPayload(id: number): Promise<string> {
-  return (await lidpApi.pairingApprovalPayload({ id })).payload;
+  return (await idpApi.pairingApprovalPayload({ id })).payload;
 }
 
 export function approveDevice(
   id: number,
   signature: string,
 ): Promise<DeviceInfo> {
-  return lidpApi.approveDevice({
+  return idpApi.approveDevice({
     id,
     devicePairingApprovalRequest: { signature },
   });
 }
 
 export function renameDevice(id: number, name: string): Promise<DeviceInfo> {
-  return lidpApi.updateDevice({ id, updateDeviceRequest: { name } });
+  return idpApi.updateDevice({ id, updateDeviceRequest: { name } });
 }
 
 export function revokeDevice(id: number): Promise<void> {
-  return lidpApi.revokeDevice({ id });
+  return idpApi.revokeDevice({ id });
 }

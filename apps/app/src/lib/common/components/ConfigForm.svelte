@@ -1,22 +1,22 @@
 <script lang="ts" module>
     import * as v from "valibot";
     import { m } from "$lib/paraglide/messages";
-    import { validateLidpApiUrl } from "$lib/common/state/lidpClient.svelte";
-    import { validateLidpManagementApiUrl } from "$lib/common/state/lidpManagementClient.svelte";
+    import { validateIdpApiUrl } from "$lib/common/state/idpClient.svelte";
+    import { validateManagementApiUrl } from "$lib/common/state/managementClient.svelte";
 
     const configSchema = v.objectAsync({
-        lidpApiUrl: v.pipeAsync(
+        idpApiUrl: v.pipeAsync(
             v.string(),
             v.nonEmpty(m.errors_message_required()),
             v.url(m.errors_message_invalid_url()),
-            v.checkAsync(validateLidpApiUrl, m.errors_message_invalid_url()),
+            v.checkAsync(validateIdpApiUrl, m.errors_message_invalid_url()),
         ),
-        lidpManagementApiUrl: v.pipeAsync(
+        managementApiUrl: v.pipeAsync(
             v.string(),
             v.nonEmpty(m.errors_message_required()),
             v.url(m.errors_message_invalid_url()),
             v.checkAsync(
-                validateLidpManagementApiUrl,
+                validateManagementApiUrl,
                 m.errors_message_invalid_url(),
             ),
         ),
@@ -27,13 +27,13 @@
     import { createForm } from "@aicacia/svelte-forms";
     import Issues from "$lib/common/components/Issues.svelte";
     import {
-        getLidpApiUrl,
-        setLidpApiUrl,
-    } from "$lib/common/state/lidpClient.svelte";
+        getIdpApiUrl,
+        setIdpApiUrl,
+    } from "$lib/common/state/idpClient.svelte";
     import {
-        getLidpManagementApiUrl,
-        setLidpManagementApiUrl,
-    } from "$lib/common/state/lidpManagementClient.svelte";
+        getManagementApiUrl,
+        setManagementApiUrl,
+    } from "$lib/common/state/managementClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     interface Props {
@@ -43,14 +43,13 @@
     let { onSaved = () => {} }: Props = $props();
 
     const form = createForm(configSchema, {
-        lidpApiUrl: getLidpApiUrl() ?? "",
-        lidpManagementApiUrl: getLidpManagementApiUrl() ?? "",
+        idpApiUrl: getIdpApiUrl() ?? "",
+        managementApiUrl: getManagementApiUrl() ?? "",
     });
 
     export function reset() {
-        form.fields.lidpApiUrl.value = getLidpApiUrl() ?? "";
-        form.fields.lidpManagementApiUrl.value =
-            getLidpManagementApiUrl() ?? "";
+        form.fields.idpApiUrl.value = getIdpApiUrl() ?? "";
+        form.fields.managementApiUrl.value = getManagementApiUrl() ?? "";
     }
 
     async function onSubmit(event: SubmitEvent) {
@@ -62,32 +61,32 @@
             return;
         }
 
-        setLidpApiUrl(output.lidpApiUrl);
-        setLidpManagementApiUrl(output.lidpManagementApiUrl);
+        setIdpApiUrl(output.idpApiUrl);
+        setManagementApiUrl(output.managementApiUrl);
         onSaved();
     }
 </script>
 
 <form onsubmit={onSubmit} class="flex flex-col gap-4">
     <label class="flex flex-col">
-        {m.env_config_lipd_url()}
+        {m.env_config_idp_url()}
         <input
             type="text"
-            aria-label={m.env_config_lipd_url()}
-            placeholder={m.env_config_lipd_url_placeholder()}
-            bind:value={form.fields.lidpApiUrl.value}
+            aria-label={m.env_config_idp_url()}
+            placeholder={m.env_config_idp_url_placeholder()}
+            bind:value={form.fields.idpApiUrl.value}
         />
-        <Issues issues={form.fields.lidpApiUrl.issues} />
+        <Issues issues={form.fields.idpApiUrl.issues} />
     </label>
     <label class="flex flex-col">
-        {m.env_config_lipd_management_url()}
+        {m.env_config_management_url()}
         <input
             type="text"
-            aria-label={m.env_config_lipd_management_url()}
-            placeholder={m.env_config_lipd_management_url_placeholder()}
-            bind:value={form.fields.lidpManagementApiUrl.value}
+            aria-label={m.env_config_management_url()}
+            placeholder={m.env_config_management_url_placeholder()}
+            bind:value={form.fields.managementApiUrl.value}
         />
-        <Issues issues={form.fields.lidpManagementApiUrl.issues} />
+        <Issues issues={form.fields.managementApiUrl.issues} />
     </label>
     <input type="submit" value={m.env_config_save()} class="btn primary" />
 </form>

@@ -14,7 +14,7 @@
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { page } from "$app/state";
-    import { lidpManagementApi } from "$lib/common/state/lidpManagementClient.svelte";
+    import { managementApi } from "$lib/common/state/lidpManagementClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     const applicationId = Number(page.params.applicationId);
@@ -143,7 +143,7 @@
         error = null;
 
         try {
-            application = await lidpManagementApi.getApplication({
+            application = await managementApi.getApplication({
                 applicationId,
             });
             appName = application.name;
@@ -167,7 +167,7 @@
         rolesError = null;
 
         try {
-            roles = await lidpManagementApi.listRoles({
+            roles = await managementApi.listRoles({
                 applicationId,
                 offset: 0,
                 limit: 200,
@@ -193,7 +193,7 @@
         permissionsError = null;
 
         try {
-            permissions = await lidpManagementApi.listPermissions({
+            permissions = await managementApi.listPermissions({
                 applicationId,
                 offset: 0,
                 limit: 200,
@@ -226,7 +226,7 @@
         rolePermissionsLoading = true;
         rolePermissionsError = null;
         try {
-            rolePermissions = await lidpManagementApi.listRolePermissions({
+            rolePermissions = await managementApi.listRolePermissions({
                 applicationId,
                 roleId,
             });
@@ -247,7 +247,7 @@
         clientsError = null;
 
         try {
-            clients = await lidpManagementApi.listClients({
+            clients = await managementApi.listClients({
                 offset: 0,
                 limit: 200,
             });
@@ -266,7 +266,7 @@
     async function onSaveApplication() {
         saving = true;
         try {
-            await lidpManagementApi.updateApplication({
+            await managementApi.updateApplication({
                 applicationId,
                 updateApplicationRequest: {
                     name: appName.trim() || undefined,
@@ -291,7 +291,7 @@
 
         deleting = true;
         try {
-            await lidpManagementApi.deleteApplication({ applicationId });
+            await managementApi.deleteApplication({ applicationId });
             notifications.add("Application deleted", "success");
             await goto(resolve("/applications"));
         } catch (cause) {
@@ -312,7 +312,7 @@
 
         creatingRole = true;
         try {
-            await lidpManagementApi.createRole({
+            await managementApi.createRole({
                 applicationId,
                 createRoleRequest: {
                     name: roleName.trim(),
@@ -338,7 +338,7 @@
 
         deletingRoleId = role.id;
         try {
-            await lidpManagementApi.deleteRole({
+            await managementApi.deleteRole({
                 applicationId,
                 roleId: role.id,
             });
@@ -362,7 +362,7 @@
 
         creatingPermission = true;
         try {
-            await lidpManagementApi.createPermission({
+            await managementApi.createPermission({
                 applicationId,
                 createPermissionRequest: {
                     name: permissionName.trim(),
@@ -389,7 +389,7 @@
 
         deletingPermissionId = permission.id;
         try {
-            await lidpManagementApi.deletePermission({
+            await managementApi.deletePermission({
                 applicationId,
                 permissionId: permission.id,
             });
@@ -415,7 +415,7 @@
 
         assigningPermission = true;
         try {
-            await lidpManagementApi.assignPermissionToRole({
+            await managementApi.assignPermissionToRole({
                 applicationId,
                 roleId,
                 permissionId,
@@ -438,7 +438,7 @@
 
         revokingRolePermissionId = permissionId;
         try {
-            await lidpManagementApi.revokePermissionFromRole({
+            await managementApi.revokePermissionFromRole({
                 applicationId,
                 roleId,
                 permissionId,
@@ -467,7 +467,7 @@
 
         creatingClient = true;
         try {
-            await lidpManagementApi.createClient({
+            await managementApi.createClient({
                 clientRegistration: {
                     applicationUri: application.uri,
                     clientName: clientName.trim(),

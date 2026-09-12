@@ -2,7 +2,7 @@
     import type { ApplicationResponse } from "@aicacia/management-client";
     import { onMount } from "svelte";
     import { resolve } from "$app/paths";
-    import { lidpManagementApi } from "$lib/common/state/lidpManagementClient.svelte";
+    import { managementApi } from "$lib/common/state/lidpManagementClient.svelte";
     import { notifications } from "$lib/common/state/notifications.svelte";
 
     const limit = 25;
@@ -26,7 +26,7 @@
         error = null;
 
         try {
-            applications = await lidpManagementApi.listApplications({
+            applications = await managementApi.listApplications({
                 offset,
                 limit,
             });
@@ -57,7 +57,7 @@
 
         creating = true;
         try {
-            await lidpManagementApi.createApplication({
+            await managementApi.createApplication({
                 createApplicationRequest: {
                     name: name.trim(),
                     uri: uri.trim(),

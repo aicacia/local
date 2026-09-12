@@ -13,7 +13,7 @@ use idp_service::{
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
 use libsql::Database;
-use management_service::{HostedControlPlane, ManagementService};
+use management_service::ManagementService;
 use management_service::StorageSessionService;
 use management_service::libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo};
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
@@ -25,7 +25,7 @@ use crate::localhost_server::{
 };
 use crate::{
     device_identity::{DeviceIdentity, open as open_device_identity},
-
+    hosted_control_plane::HostedControlPlane,
     local_api,
     scoped_transport::{AppFileSystemRuntime, TunnelContext},
     tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer},

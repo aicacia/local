@@ -1,53 +1,81 @@
-# Local First IdP and Storage
+# Local-First IdP and Storage
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)](LICENSE-MIT)
 ![Test Status](https://github.com/aicacia/rs-oauth/actions/workflows/ci.yml/badge.svg)
 
-OIDC/OAuth 2.x authority with local-first, application-scoped
-storage. Applications remain ordinary OAuth clients. They do not own device
-keys, peer addresses, or sync code.
+An OAuth 2.0 and OpenID Connect authority with local-first, application-scoped
+storage. Applications are ordinary OAuth clients: they do not own device keys,
+peer addresses, filesystem roots, or synchronization.
 
-## Boundaries
+See [`CONTEXT.md`](CONTEXT.md) for the domain glossary.
+
+## Service boundaries
 
 ### IdP
 
-Idp is the identity and device-control plane.
+`idp-service` owns OAuth and OIDC behavior:
 
-- Issues OAuth access tokens and maps a token's client to its application.
-- Stores user device membership in SQLite.
-- Approves and revokes device public keys and addresses.
-- Exposes the trusted-device list and short-lived tunnel authorizations.
-- Is the only source of user, application, and device authorization.
+- OAuth client registration and validation;
+- authorization, consent, PKCE, and authorization codes;
+- access, ID, and refresh token issuance and validation;
+- user identity, profile data, signing-key metadata, OIDC metadata, and JWKS.
 
-### Storage
+It does not own device enrollment, trusted-device policy, storage sessions, or
+tunnel authorization.
 
-`storage-model` defines the generic storage protocol, `storage-service`
-executes that protocol against `file-system`, and `storage-server` exposes the
-WebSocket API. Storage does not understand password-manager records or any
-other application's domain model.
+### Management
+
+`management-service` is the installation control plane. It owns:
+
+- management applications, roles, permissions, and user-role assignments;
+- device enrollment, pairing approval, revocation, and trusted-device policy;
+- one-use storage sessions and storage scopes;
+- hosted-control-plane access and tunnel authorization.
+
+### Bootstrap
+
+`bootstrap-service` creates the idempotent system baseline: built-in IdP and
+management applications and clients, the initial administrator and signing
+key, management access, and an optional bootstrap device.
+
+### Repository backends
+
+Each owning service exposes its own repository implementations through features:
+
+- `idp-service`: `fs` and `libsql`;
+- `management-service`: `fs` and `libsql`.
+
+The filesystem backend uses `file-system` and is intended for synchronized,
+local-first state. The LibSQL backend remains available during migration.
+
+## Storage
+
+`storage-model` defines the generic storage protocol, `storage-service` runs it
+against `file-system`, and `storage-server` exposes its WebSocket API. Storage
+does not know an application's domain model.
 
 Applications use this flow:
 
-1. Sign in with OAuth using their own client ID.
-2. Exchange the bearer token for a one-use, short-lived storage session at
-   `POST /storage/sessions`.
-3. Authenticate a WebSocket to `/storage` with that session token.
-4. Send generic file-system requests: read, write, append, delete, entry, and
+1. Sign in through OAuth using their own client ID.
+2. Exchange the storage-scoped bearer token for a one-use, short-lived storage
+   session at `POST /storage/sessions`.
+3. Authenticate `/storage` with that session token.
+4. Send generic filesystem requests: read, write, append, delete, entry, and
    list.
 
-The storage scope is derived internally as:
+A storage namespace is derived internally from:
 
 ```text
-(token subject, application ID)
+(user subject, application ID)
 ```
 
-Client IDs are not storage namespaces. Multiple web, desktop, and mobile
-clients for one application share one application-scoped filesystem.
+Client IDs are not namespaces. Web, desktop, and mobile clients belonging to
+the same application share a filesystem for the same user.
 
-### Filesystem
+## Filesystem synchronization
 
-Each `(subject, application ID)` scope has one local filesystem. LIDP derives
-its storage directory; applications never supply local paths.
+Each storage namespace has one local filesystem per node. The runtime derives
+its local directory; applications cannot provide paths.
 
 ```text
 vaults/
@@ -55,69 +83,77 @@ vaults/
     <application-id>/
 ```
 
-### Devices and transport
+`file-system` replicates folder metadata with Automerge and transfers missing
+content by hash. Deletes are tombstones, so a deleted file stays deleted when
+peers reconnect. Ordinary files use last-writer-wins metadata; `.automerge`
+and `.am` files use Automerge document merging.
 
-Each LIDP installation owns one persistent device endpoint identity. Iroh is
-used only as a `file-system` transport, never as an application API.
+Filesystem repositories store synchronized domain records as files. They use
+random positive IDs so offline nodes do not collide. Raw passwords and private
+or derived key material remain local and are never synchronized.
 
-For an active scope and approved peer, LIDP creates one isolated stream:
+## Devices and transport
+
+Each installation owns a persistent device endpoint identity. Iroh is only the
+`file-system` transport, never an application API.
+
+For an approved device pair and one namespace, the runtime creates an isolated
+stream:
 
 ```text
 (subject, application ID, local device, remote device)
 ```
 
-Tunnel setup validates a short-lived, single-use authorization bound to the
-subject, application, vault hash, both device public keys, and expiration.
-There is no cross-user or cross-application routing inside a tunnel.
+A tunnel authorization is short-lived and single-use. It binds the user,
+application, vault hash, both device public keys, issuer, and expiration. The
+control plane issues it only for trusted devices; the receiver verifies and
+consumes it before accepting a tunnel.
 
-The device allowlist is dynamic. The local runtime refreshes it from the
-configured hosted LIDP authority using the authenticated access token, removes
-revoked peers, closes their active tunnels, and synchronizes each approved
-peer through `FileSystem::sync_peer`.
+The trusted-device list is dynamic. A runtime refreshes it from its configured
+control plane, closes revoked peers' tunnels, and synchronizes approved peers
+through `FileSystem::sync_peer`.
 
-### Hosted authority trust
+## Hosted control-plane trust
 
-A local LIDP runtime can use a configured `control_plane_uri`. It trusts only
-that configured authority, verifies bearer tokens and tunnel grants against
-its JWKS, and does not derive an issuer URL from untrusted token claims.
+A local runtime may use a configured `control_plane_uri`. It trusts only that
+HTTP(S) authority, validates access tokens and tunnel grants against its JWKS,
+and never derives an issuer URL from untrusted claims.
 
-The local HTTPS server and hosted deployment use the same `/storage` WebSocket
-contract. Native applications use the local server; hosted applications use
+The local HTTPS server and hosted deployment share the `/storage` WebSocket
+contract. Native applications use the local server; hosted applications may use
 the hosted URL directly.
 
 ## Application responsibilities
 
 An application:
 
-- performs OAuth and keeps its access token;
+- performs OAuth and retains its access token;
 - uses the shared storage client and generic storage API;
 - validates and interprets its own file contents;
 - renders its own domain model.
 
-An application must not contain Iroh identities or tickets, filesystem roots,
-device allowlists, or direct synchronization code.
+An application must not manage device identities, Iroh tickets, filesystem
+roots, peer allowlists, or direct synchronization.
 
-## Final Goal
+## Goal
 
-The completed system provides application-scoped files that follow an
-authenticated user across approved devices:
+Approved devices converge application-scoped files after offline work and
+reconnection:
 
-1. A new device enrolls with its persistent public key and address.
-2. An existing approved device approves the enrollment.
-3. Approved devices synchronize the same filesystem through scoped Iroh
+1. A device enrolls with its persistent public key and address.
+2. An approved device confirms its pairing request.
+3. Trusted devices synchronize the same namespace through authorized Iroh
    transport.
-4. Revocation removes the device from the hosted allowlist, closes active
-   tunnels, rejects future grants, and prevents reconnects.
+4. Revocation closes active tunnels, rejects future grants, and prevents
+   reconnects.
 
-Revocation cannot erase data that a revoked device already copied.
+Revocation cannot erase data already copied to a revoked device.
 
-## Completion Criteria
+## Required guarantees
 
-- Storage paths cannot escape their authenticated scope.
-- A user or application cannot access another scope.
-- Invalid session tokens, bearer tokens, record paths, and peer identities are
-  rejected.
-- Two and three approved devices converge writes, concurrent updates, and
-  deletions after reconnecting.
-- Deleted data remains deleted after synchronization through tombstones.
+- Paths cannot escape their authenticated storage namespace.
+- A user or application cannot access another namespace.
+- Invalid sessions, bearer tokens, paths, peers, and tunnel grants are rejected.
+- Approved nodes converge writes, concurrent updates, and tombstones after
+  reconnecting.
 - Revoked devices cannot reconnect.

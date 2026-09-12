@@ -1,0 +1,137 @@
+# Domain Context
+
+## Identity Provider (IdP)
+
+The IdP is the OAuth 2.0 and OpenID Connect authority. It authenticates users, registers and validates OAuth clients, obtains consent, issues and verifies tokens, exposes OIDC metadata and JWKS, and manages signing-key metadata.
+
+The IdP does not own device enrollment, trusted-device policy, storage sessions, storage scopes, filesystem synchronization, or tunnel policy.
+
+## Management Service
+
+The Management Service is the control plane for an IdP installation. It owns management applications, roles, permissions, user-role assignments, device enrollment and revocation, trusted-device policy, storage sessions, hosted-control-plane access, and tunnel authorization.
+
+It may use IdP repositories for application records because an application is an OAuth resource, but management authorization and lifecycle policy belong here.
+
+## Bootstrap Service
+
+The Bootstrap Service establishes the idempotent system baseline for a new installation. It creates or updates the built-in IdP and management applications and clients, the initial administrator and signing key, management permissions and roles, and an optional bootstrap device.
+
+Bootstrap composes IdP and Management repositories but owns neither domain. It must be safe to run repeatedly.
+
+## User
+
+A User is the authenticated human subject. Its stable public identifier is the OAuth/OIDC `sub` claim. Profile, email, phone, password-verifier, and key records are stored separately from the core user record.
+
+Raw passwords are never persisted or synchronized.
+
+## Application
+
+An Application is a logical product or resource identified by a stable URI. It groups one or more OAuth Clients and defines the application side of an application-scoped Storage Namespace.
+
+An application is not an OAuth client.
+
+## OAuth Client
+
+An OAuth Client is a concrete web, native, or machine integration for an Application. It has a `client_id`, redirect URIs, grant and response types, allowed scopes, and client authentication configuration. Multiple clients may belong to one application and share that application's storage namespace for the same user.
+
+## OAuth Consent
+
+OAuth Consent records a User's approval for a client, redirect URI, and scope set. It allows the authorization flow to determine whether interaction is required before issuing an authorization code.
+
+## Authorization Code
+
+An Authorization Code is a short-lived OAuth credential bound to its client, redirect URI, scopes, signing key, optional resource, PKCE challenge, and optional OIDC nonce. It is single-use: redeeming it durably marks it consumed so only one redemption succeeds.
+
+## Access, ID, and Refresh Tokens
+
+An Access Token authorizes an API request. An ID Token conveys authenticated OIDC identity claims to a client. A Refresh Token obtains replacement tokens under its original grant constraints. Tokens are signed by a Key and are validated against the configured issuer, audience, use, lifetime, and signature.
+
+## Key
+
+A Key is signing-key metadata: its entity owner, derivation relationship and path, name, state, and validity period. Its public JWK may be published through JWKS.
+
+Private or derived key material is local secret state. It must not enter filesystem synchronization.
+
+## Principal
+
+A Principal is the entity represented by a signing key when the IdP issues or verifies a signed credential. Tunnel grants require a user principal.
+
+## Role and Permission
+
+A Permission is a named capability within an Application. A Role is a named collection of permissions within an Application. A user receives management authority through application-scoped role assignments.
+
+The built-in management application URI is `idp-management`.
+
+## Device
+
+A Device is one installation's persistent transport endpoint identity, represented by its public key and reachable address. A device is pending, approved, or revoked. Device records are control-plane metadata, not application data.
+
+A pairing request creates a pending device. An approved device signs the pairing approval payload. Revocation removes future trust but cannot erase data already copied to the revoked device.
+
+## Trusted Device
+
+A Trusted Device is an approved, non-revoked Device eligible to synchronize a scope and participate in a tunnel. The trusted-device list is dynamic; runtimes refresh it and close tunnels to revoked peers.
+
+## Hosted Control Plane
+
+A Hosted Control Plane is the configured HTTP(S) authority a local runtime trusts for access-token verification, trusted-device discovery, storage-session issuance, and tunnel grants. A runtime must validate token and grant issuer claims against this configured URL, never a URL derived from untrusted claims.
+
+## Storage Session
+
+A Storage Session is a random, short-lived, single-use token exchanged from a valid storage-scoped OAuth access token. It carries a Storage Scope into the storage WebSocket handshake and is consumed when used.
+
+## Storage Scope
+
+A Storage Scope is the authorization context for application storage: `(user subject, application ID)`, plus the active principal, trusted devices, and bearer token needed by the runtime. It implements `StorageNamespace`.
+
+Client IDs, device IDs, local paths, and user-supplied namespace strings are not storage scopes.
+
+## Storage Namespace
+
+A Storage Namespace is the stable logical partition identified by `(user subject, application ID)`. Each namespace maps to one local filesystem per node. All clients for the same user and application share that namespace.
+
+## Global Identity Namespace
+
+The Global Identity Namespace is the stable filesystem namespace for synchronized IdP and management records. It is distinct from application-scoped storage and must be available before normal user/application authorization, so it cannot be opened through a `StorageScope` derived from the records it contains.
+
+Bootstrap-capable authorization opens this namespace initially. After bootstrap, trusted-device authorization protects synchronization.
+
+## File System
+
+The File System is the local-first replicated storage engine. It stores file content by hash and maintains Automerge metadata per folder. It synchronizes metadata and obtains missing content from peers through an authorized transport.
+
+Filesystem repositories serialize domain records into this engine. They use random positive IDs because offline nodes cannot safely allocate sequential database IDs.
+
+## File Entry
+
+A File Entry is replicated metadata for one path: content hash, size, known content providers, locality, deletion state, and merge strategy. A content hash identifies immutable file bytes.
+
+## Tombstone
+
+A Tombstone is a replicated deleted File Entry. It prevents a deleted path from returning when nodes synchronize. Tombstones remain part of the filesystem metadata until an explicit future compaction policy removes them.
+
+## Merge Strategy
+
+A Merge Strategy determines how concurrent file updates reconcile. Ordinary files use last-writer-wins metadata. `.automerge` and `.am` files use Automerge document merging.
+
+Filesystem repositories should keep each mutable record in a stable path and rely on the documented strategy; they must not assume offline writes are globally serializable.
+
+## Sync Document
+
+A Sync Document is the persisted Automerge metadata document for one filesystem folder. It records that folder's File Entries and is exchanged with peers. Dirty-folder markers ensure local metadata changes survive restart before synchronization completes.
+
+## Transport Tunnel
+
+A Transport Tunnel is an isolated Iroh stream for one storage namespace and device pair. Iroh is a filesystem transport only; applications do not manage endpoint identities, tickets, peers, or synchronization directly.
+
+## Tunnel Authorization
+
+A Tunnel Authorization is a short-lived, single-use signed grant for one tunnel. It binds the user subject, application ID, vault hash, initiating and accepting device public keys, issuer, and expiration. The control plane issues it only after confirming both devices are trusted; the receiver verifies and consumes it before accepting the tunnel.
+
+## Vault ID
+
+A Vault ID identifies the filesystem being synchronized. Its hash is included in a Tunnel Authorization so a valid grant for one namespace cannot authorize another namespace's tunnel.
+
+## Repository Backend
+
+A Repository Backend persists a service trait using either `fs` or `libsql` features of its owning service crate. `fs` is the local-first implementation built on `file-system`; `libsql` is the current database implementation. Runtime code imports these feature exports directly from `idp-service` or `management-service`; compatibility backend crates do not exist.

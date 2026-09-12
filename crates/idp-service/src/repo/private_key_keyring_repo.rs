@@ -62,7 +62,7 @@ impl PrivateKeyRepo for PrivateKeyKeyringRepo {
 
 pub(crate) fn create_key_entry(service: &str, user: &str) -> keyring_core::Result<Entry> {
     let mut modifiers = HashMap::new();
-    modifiers.insert("target", "Local IdP");
+    modifiers.insert("target", "IdP");
     let entry = Entry::new_with_modifiers(service, user, &modifiers)?;
     Ok(entry)
 }

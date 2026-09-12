@@ -4,8 +4,8 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, Window, WindowEvent, Wry}
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::app;
+use crate::hosted_control_plane::HostedControlPlane;
 use crate::scoped_transport::AppFileSystemRuntime;
-use management_service::HostedControlPlane;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -106,7 +106,7 @@ pub fn run() {
 
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("LIdP")
+                    .title("Local")
                     .inner_size(800.0, 600.0)
                     .resizable(true)
                     .fullscreen(false)

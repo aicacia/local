@@ -13,7 +13,7 @@ import { afterSigninRedirect } from "./afterSigninRedirect.svelte";
 import { loadLocalhostBaseUrl } from "./localhostBaseUrl.svelte";
 import { getOidcClient } from "./oidc.svelte";
 
-const lidpManagementApiUrl = createStorage<string | null>(
+const managementApiUrl = createStorage<string | null>(
   "management-api-url",
   (isTauri() ? null : env.PUBLIC_LIDP_MANAGEMENT_BASE_URL) ?? null,
 );
@@ -25,7 +25,7 @@ async function hydrateTauriManagementApiUrl(): Promise<void> {
 
   const baseUrl = await loadLocalhostBaseUrl();
   if (baseUrl) {
-    lidpManagementApiUrl.item = `${baseUrl}/idp-management`;
+    managementApiUrl.item = `${baseUrl}/idp-management`;
   }
 }
 
@@ -40,7 +40,7 @@ function readAccessToken(): string {
 }
 
 function readBasePath(): string | undefined {
-  const basePath = lidpManagementApiUrl.item;
+  const basePath = managementApiUrl.item;
   return basePath === null ? undefined : basePath;
 }
 
@@ -81,17 +81,17 @@ export const lidpManagementConfiguration = new Configuration(
   defaultConfigurationParameters,
 );
 
-export const lidpManagementApi = new DefaultApi(lidpManagementConfiguration);
+export const managementApi = new DefaultApi(lidpManagementConfiguration);
 
-export function setLidpManagementApiUrl(newLidpManagementApiUrl: string) {
-  lidpManagementApiUrl.item = newLidpManagementApiUrl;
+export function setManagementApiUrl(newManagementApiUrl: string) {
+  managementApiUrl.item = newManagementApiUrl;
 }
 
-export function getLidpManagementApiUrl(): string | null {
-  return lidpManagementApiUrl.item;
+export function getManagementApiUrl(): string | null {
+  return managementApiUrl.item;
 }
 
-export async function validateLidpManagementApiUrl(
+export async function validateManagementApiUrl(
   basePath: string,
 ): Promise<boolean> {
   if (!basePath) {
