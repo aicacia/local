@@ -9,6 +9,7 @@ use super::openapi::{__path_openapi_json, openapi_json};
 use super::routes::device::{
     __path_device, __path_sign_device_message, device, sign_device_message,
 };
+use super::routes::device_self_revocation::{__path_revoke_self, revoke_self};
 use super::routes::devices::{
     __path_enroll_device, __path_list_devices, __path_pairing_acceptance, __path_revoke_device,
     __path_set_pairing_acceptance, __path_trusted_devices, __path_update_device, enroll_device,
@@ -32,6 +33,11 @@ use super::routes::oauth2::register::{
 use super::routes::oauth2::revoke::{__path_revoke, revoke};
 use super::routes::oauth2::sessions::{__path_sessions_logout, sessions_logout};
 use super::routes::oauth2::token::{__path_token, token};
+use super::routes::setup::{
+    __path_complete_device_setup, __path_device_residency, __path_set_device_residency,
+    __path_setup_join, __path_setup_new, __path_setup_status, complete_device_setup,
+    device_residency, set_device_residency, setup_join, setup_new, setup_status,
+};
 use super::routes::storage_sessions::{__path_create_storage_session, create_storage_session};
 use super::routes::tunnel_authorizations::{
     __path_create_tunnel_authorization, create_tunnel_authorization,
@@ -64,6 +70,7 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(health))
             .routes(routes!(device))
             .routes(routes!(sign_device_message))
+            .routes(routes!(revoke_self))
             .routes(routes!(trusted_devices))
             .routes(routes!(enroll_device))
             .routes(routes!(pairing_acceptance))
@@ -86,6 +93,12 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(sessions_logout))
             .routes(routes!(create_storage_session))
             .routes(routes!(create_tunnel_authorization))
+            .routes(routes!(setup_status))
+            .routes(routes!(setup_join))
+            .routes(routes!(setup_new))
+            .routes(routes!(complete_device_setup))
+            .routes(routes!(device_residency))
+            .routes(routes!(set_device_residency))
             .routes(routes!(version))
             .routes(routes!(jwks))
             .routes(routes!(openid_configuration))

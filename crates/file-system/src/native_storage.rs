@@ -1,7 +1,11 @@
 use std::{
-    fs, io,
+    fs,
+    io::{self, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
+
+static TEMP_FILE_ID: AtomicU64 = AtomicU64::new(0);
 
 use crate::Storage;
 
@@ -36,15 +40,31 @@ impl Storage for NativeStorage {
             .parent()
             .ok_or_else(|| invalid_input("path has no parent"))?;
         fs::create_dir_all(parent)?;
-        fs::write(path, content)
+        let temporary = parent.join(format!(
+            ".{}.{}.tmp",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| invalid_input("path has no file name"))?,
+            TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let result = (|| {
+            let mut file = fs::File::create(&temporary)?;
+            file.write_all(content)?;
+            file.sync_all()?;
+            fs::rename(&temporary, &path)?;
+            fs::File::open(parent)?.sync_all()
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(temporary);
+        }
+        result
     }
 
     async fn append(&mut self, path: &str, content: &[u8]) -> Result<(), Self::Error> {
-        use std::io::Write;
-
         let path = self.path(path)?;
         let mut file = fs::OpenOptions::new().append(true).open(path)?;
-        file.write_all(content)
+        file.write_all(content)?;
+        file.sync_all()
     }
 
     async fn remove(&mut self, path: &str) -> Result<(), Self::Error> {

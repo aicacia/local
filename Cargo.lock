@@ -3599,6 +3599,7 @@ dependencies = [
  "idp-service",
  "iroh",
  "iroh-chain",
+ "iroh-chain-file-system",
  "key",
  "libsql",
  "log",
@@ -4679,6 +4680,7 @@ dependencies = [
  "env_logger 0.10.2",
  "http 1.5.0",
  "idp-model",
+ "idp-server",
  "idp-service",
  "libsql",
  "log",
@@ -7567,9 +7569,12 @@ version = "0.1.0"
 dependencies = [
  "file-system",
  "futures-core",
+ "idp-model",
  "iroh",
  "iroh-chain",
  "iroh-chain-file-system",
+ "serde",
+ "serde_json",
  "storage-model",
  "tokio",
 ]

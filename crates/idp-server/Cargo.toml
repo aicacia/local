@@ -40,7 +40,7 @@ cli = { path = "../cli", default-features = false, features = [
 key = { path = "../key", default-features = false, features = ["std"] }
 api = { path = "../api", default-features = false, features = [] }
 db = { path = "../db", default-features = false, features = ["migrate"] }
-file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+file-system = { path = "../file-system", default-features = false, features = ["in-memory", "sync"] }
 model = { path = "../model", default-features = false, features = [
   "std",
   "utoipa",
@@ -58,6 +58,7 @@ management-service = { path = "../management-service", default-features = false,
 storage-server = { path = "../storage-server", default-features = false, features = [] }
 storage-service = { path = "../storage-service", default-features = false, features = [] }
 iroh-chain = { path = "../iroh-chain", default-features = false, features = [] }
+iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features = false, features = [] }
 
 # Iroh
 iroh = { version = "1.1", default-features = false, features = ["tls-ring"] }

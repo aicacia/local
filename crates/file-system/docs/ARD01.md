@@ -11,7 +11,7 @@ We need a Rust library for local file access that:
 - Works fully offline and online
 - Auto-syncs across a network of peers (our iroh-based chain)
 - Uses eventual consistency — no central coordinator
-- Supports files, streaming reads, and "passthrough" files for small devices that can't store full file content
+- Lets each device exclude applications or choose full/passthrough storage at namespace, folder, and file granularity
 - Keeps the transport (iroh) swappable behind a trait
 
 ## Decision
@@ -58,7 +58,7 @@ iroh is the default implementation. Swapping to a different transport later mean
   - `hash` (content address of the blob)
   - `size`
   - `providers` (known peers holding the blob)
-  - `local: bool` (true = full blob on disk, false = passthrough)
+  - `local: bool` (whether this device has the blob on disk)
   - `merge_strategy` (tag used for per-file-type conflict handling)
 - Automerge gives us hash-linked change history and a built-in sync protocol for free — no custom diffing logic needed.
 
@@ -90,17 +90,28 @@ iroh is the default implementation. Swapping to a different transport later mean
 - Folder documents are persisted under `.metadata/`.
 - Automerge docs never contain blob bytes — only metadata pointing at them.
 
-### 6. Passthrough files
+### 6. Device-local storage residency
 
-- Used on small/low-memory devices.
-- A file entry exists in the automerge metadata (`local: false`) with **no blob stored on disk** — no caching at all.
-- Every read of a passthrough file goes to the network: the sync engine requests the blob by hash via `Transport`, streamed chunk-by-chunk.
-- This falls naturally out of the metadata design — no special-cased code path, just `local: false`.
+Storage residency is device-local policy; it is not synchronized metadata.
 
-### 7. Streaming
+- A device may exclude an entire Application. Exclusion applies to every Storage Namespace for that application and prevents local metadata and blob storage from being created.
+- An included application defaults to **Passthrough**.
+- A device may set **Full** or **Passthrough** for a namespace, folder, or file. The longest matching path rule wins.
+- The Global Identity Namespace is always Full and cannot be excluded.
+- Full residency stores metadata and blobs locally. Passthrough stores metadata but no blob bytes.
+- Changing from Passthrough to Full fetches and verifies all selected blobs before marking the device as a provider. Changing from Full to Passthrough removes local references and garbage-collects only blobs unreferenced by other locally-full entries.
+
+### 7. Passthrough reads and writes
+
+- Every passthrough read goes to an online Full peer and streams the blob by hash. Passthrough content is not cached locally.
+- A passthrough write requires an online Full peer. The writer uploads the blob to that peer; the peer verifies and durably stores it before acknowledging.
+- Metadata naming the peer as a provider is published only after that acknowledgement. If no eligible Full peer is available, the write fails and publishes no metadata.
+- A peer must advertise support for durable blob storage before it can be selected for passthrough writes.
+
+### 8. Streaming
 
 - Files are chunked for content addressing anyway, so streaming reads = reading chunks in order.
-- Works identically for local and passthrough files: local reads hit the native blob store first, passthrough reads always go to the network. Same read API either way.
+- Local reads hit the native blob store. Passthrough reads always use an online Full peer. Both use the same read API.
 
 ## Consequences
 
@@ -108,11 +119,11 @@ iroh is the default implementation. Swapping to a different transport later mean
 
 - Transport is trivial to swap or mock (3 methods, no domain knowledge).
 - Automerge removes the need to hand-build CRDT merge logic and sync diffing.
-- Passthrough is "free" — a boolean flag, not a parallel implementation.
 - Per-folder docs keep sync traffic scoped and manageable as the file tree grows.
+- Residency lets constrained devices avoid blob storage without weakening metadata synchronization.
 
 **Trade-offs / risks**
 
 - Moving a file/folder across automerge doc boundaries is a delete in the source folder doc + create in the destination folder doc — not an atomic move. Two peers moving the same file differently while offline could result in odd end states (e.g. both, or neither) that the app layer should be aware of.
 - `merge_strategy` logic must stay deterministic across peers (all peers must resolve the same file conflict the same way, or content will keep diverging).
-- Passthrough files require network availability to read at all — acceptable trade-off given the target device constraints, but worth documenting clearly for API users.
+- Passthrough files require an online Full peer for reads and writes. A write remains unavailable until a Full peer durably acknowledges its blob.

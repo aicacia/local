@@ -18,6 +18,7 @@ use management_service::{
 };
 
 use crate::hosted_control_plane::HostedControlPlane;
+use idp_server::{GlobalBootstrapGrants, GlobalBootstrapTunnelAuthorizer};
 
 type LocalOAuth2Service = OAuth2Service<
     LibSqlApplicationRepo,
@@ -34,6 +35,8 @@ pub type LocalTunnelProvider =
 pub struct LidpTunnelAuthorizer {
     local: Arc<LocalTunnel>,
     control_plane: Option<Arc<HostedControlPlane>>,
+    global_grants: Arc<GlobalBootstrapGrants>,
+    global_identity_read_gate: Arc<idp_server::GlobalIdentityReadGateSlot>,
     used: Mutex<BTreeMap<String, i64>>,
 }
 
@@ -43,6 +46,7 @@ impl LidpTunnelAuthorizer {
     pub fn new(
         state: Arc<idp_server::RouterState>,
         control_plane: Option<Arc<HostedControlPlane>>,
+        global_grants: Arc<GlobalBootstrapGrants>,
     ) -> Self {
         Self {
             local: Arc::new(LocalTunnelAuthorizer::new(
@@ -50,6 +54,8 @@ impl LidpTunnelAuthorizer {
                 Arc::clone(&state.devices),
             )),
             control_plane,
+            global_grants,
+            global_identity_read_gate: Arc::clone(&state.global_identity_read_gate),
             used: Mutex::new(BTreeMap::new()),
         }
     }
@@ -67,6 +73,14 @@ impl TunnelAuthorizer for LidpTunnelAuthorizer {
         accepting_id: iroh::EndpointId,
         authorization: &[u8],
     ) -> bool {
+        if vault_id == VaultId::global_identity() {
+            return GlobalBootstrapTunnelAuthorizer::new(Arc::clone(&self.global_grants))
+                .authorize(vault_id, initiating_id, accepting_id, authorization)
+                .await;
+        }
+        if !self.global_identity_read_gate.verify().await {
+            return false;
+        }
         let Some(control_plane) = &self.control_plane else {
             return self
                 .local

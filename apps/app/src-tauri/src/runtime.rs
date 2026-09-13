@@ -23,7 +23,11 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![app::get_localhost_server_base_url])
+        .invoke_handler(tauri::generate_handler![
+            app::get_localhost_server_base_url,
+            app::get_setup_token,
+            app::reset_device
+        ])
         .setup(|app| {
             let app_config =
                 app::init_app_config(app.handle(), app.handle().path().app_config_dir()?)?;
@@ -43,7 +47,7 @@ pub fn run() {
                 app.deep_link().register_all()?;
             }
 
-            tauri::async_runtime::block_on(app::init_device_identity(app.handle(), &app_config))?;
+            tauri::async_runtime::block_on(app::init_device_identity(app.handle()))?;
             tauri::async_runtime::block_on(app::init_scoped_file_system_runtime(
                 app.handle(),
                 &app_config,
@@ -75,15 +79,23 @@ pub fn run() {
                     .expect("device identity must initialize")
                     .inner()
                     .clone();
+                let setup_state = app_handle
+                    .try_state::<idp_server::LocalSetupState>()
+                    .expect("setup state must initialize")
+                    .inner()
+                    .clone();
                 let (router, router_state) = app::init_router(
                     runtime_config,
                     database,
                     file_systems,
                     device_identity,
+                    setup_state,
+                    app_data_dir.clone(),
                     control_plane.clone(),
                 )
                 .map_err(tauri::Error::Io)?;
-                app::init_tunnel_manager(&app_handle, router_state, control_plane)?;
+                app_handle.manage(router_state.clone());
+                app::init_tunnel_manager(&app_handle, router_state, control_plane).await?;
                 app::init_unified_localhost_server(&app_handle, router, listener, base_url.clone())
                     .await?;
 

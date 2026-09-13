@@ -29,6 +29,8 @@ const PROTOCOL_VERSION: u8 = 1;
 const METADATA_MESSAGE: u8 = 0;
 const BLOB_REQUEST: u8 = 1;
 const BLOB_RESPONSE: u8 = 2;
+const BLOB_UPLOAD: u8 = 3;
+const BLOB_UPLOAD_ACK: u8 = 4;
 const REQUEST_CAPACITY: usize = 64;
 const READ_CHUNK_SIZE: usize = 64 * 1024;
 
@@ -40,6 +42,15 @@ type PendingStreams<S, C> =
     BTreeMap<u64, PendingStream<<S as Storage>::Error, <C as PeerCodec>::PeerId>>;
 type BlobRequest = (u64, String, ContentHash, u64, usize);
 type BlobResponse = (u64, ContentHash, u64, bool, ContentHash, Vec<u8>);
+type BlobUpload = (u64, String, ContentHash, u64, Vec<u8>);
+type BlobUploadAck = (u64, ContentHash, bool);
+type UploadReceiver<S> = oneshot::Receiver<Result<(), FileSystemError<<S as Storage>::Error>>>;
+
+struct PendingUpload<StorageError, PeerId> {
+    peer: PeerId,
+    hash: ContentHash,
+    sender: oneshot::Sender<Result<(), FileSystemError<StorageError>>>,
+}
 
 struct PendingRead<StorageError, PeerId> {
     hash: ContentHash,
@@ -66,6 +77,7 @@ struct PendingStream<StorageError, PeerId> {
 enum SyncRequest<P> {
     Broadcast(Vec<u8>),
     Send { peer: P, data: Vec<u8> },
+    Upload { peer: P, data: Vec<u8>, id: u64 },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -142,6 +154,7 @@ impl<StorageError: fmt::Display, TransportError: fmt::Display> fmt::Display
 pub enum FileSystemError<StorageError> {
     Storage(StorageError),
     NotFound,
+    NoProvider,
     InvalidPath,
     InvalidMetadata,
     Metadata(automerge::AutomergeError),
@@ -152,6 +165,7 @@ impl<StorageError: fmt::Display> fmt::Display for FileSystemError<StorageError> 
         match self {
             Self::Storage(error) => error.fmt(formatter),
             Self::NotFound => formatter.write_str("file metadata was not found"),
+            Self::NoProvider => formatter.write_str("file has no remaining content provider"),
             Self::InvalidPath => formatter.write_str("invalid file path"),
             Self::InvalidMetadata => formatter.write_str("invalid file metadata"),
             Self::Metadata(error) => error.fmt(formatter),
@@ -183,7 +197,8 @@ impl<StorageError: fmt::Display, PeerError: fmt::Display> fmt::Display
 #[must_use]
 pub struct FileSystem<S: Storage, C: PeerCodec, T: Transport<PeerId = C::PeerId>> {
     state: Arc<Mutex<FileSystemState<S, C>>>,
-    _transport: Arc<T>,
+    uploads: Arc<Mutex<()>>,
+    transport: Arc<T>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -195,8 +210,12 @@ struct FileSystemState<S: Storage, C: PeerCodec> {
     broadcast_states: BTreeMap<String, State>,
     peer_states: BTreeMap<(C::PeerId, String), State>,
     sync_sender: mpsc::Sender<SyncRequest<C::PeerId>>,
+    pending_uploads: BTreeMap<u64, PendingUpload<S::Error, C::PeerId>>,
+    completed_uploads: BTreeMap<(C::PeerId, u64), (String, ContentHash, u64)>,
     pending_reads: PendingReads<S, C>,
     pending_streams: PendingStreams<S, C>,
+    passthrough_admission: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    next_upload_id: u64,
     next_read_id: u64,
 }
 
@@ -216,8 +235,12 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
             broadcast_states: BTreeMap::new(),
             peer_states: BTreeMap::new(),
             sync_sender,
+            pending_uploads: BTreeMap::new(),
+            completed_uploads: BTreeMap::new(),
             pending_reads: BTreeMap::new(),
             pending_streams: BTreeMap::new(),
+            passthrough_admission: Arc::new(|_| true),
+            next_upload_id: 0,
             next_read_id: 0,
         }
     }
@@ -241,6 +264,82 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
             u64::try_from(content.len()).expect("content length exceeds u64"),
             providers,
             true,
+        );
+        let message = {
+            let document = self.documents.entry(folder.to_string()).or_default();
+            store_entry::<C>(document, &entry).map_err(FileSystemError::Metadata)?;
+            let state = self.broadcast_states.entry(folder.to_string()).or_default();
+            document
+                .sync()
+                .generate_sync_message(state)
+                .map(|message| encode_envelope(folder, message.encode()))
+        };
+        self.persist_dirty(folder)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        self.garbage_collect()
+            .await
+            .map_err(sync_file_system_error)?;
+        if let Some(data) = message {
+            let _ = self.emit(SyncRequest::Broadcast(data));
+        }
+        Ok(entry)
+    }
+
+    pub fn start_passthrough_upload(
+        &mut self,
+        peer: C::PeerId,
+        path: &str,
+        content: &[u8],
+    ) -> Result<UploadReceiver<S>, FileSystemError<S::Error>> {
+        split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        let id = self.next_upload_id;
+        self.next_upload_id = self.next_upload_id.wrapping_add(1);
+        let hash = ContentHash::of(content);
+        let size = u64::try_from(content.len()).expect("content length exceeds u64");
+        let (sender, receiver) = oneshot::channel();
+        self.pending_uploads.insert(
+            id,
+            PendingUpload {
+                peer: peer.clone(),
+                hash,
+                sender,
+            },
+        );
+        if self
+            .sync_sender
+            .try_send(SyncRequest::Upload {
+                peer,
+                data: encode_blob_upload(id, path, hash, size, content),
+                id,
+            })
+            .is_err()
+        {
+            self.pending_uploads.remove(&id);
+            return Err(FileSystemError::InvalidMetadata);
+        }
+        Ok(receiver)
+    }
+
+    pub async fn publish_passthrough_upload(
+        &mut self,
+        peer: C::PeerId,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        self.content_store
+            .register_passthrough(path)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        let mut providers = BTreeSet::new();
+        providers.insert(peer);
+        let entry = FileEntry::new(
+            name.to_string(),
+            ContentHash::of(content),
+            u64::try_from(content.len()).expect("content length exceeds u64"),
+            providers,
+            false,
         );
         let message = {
             let document = self.documents.entry(folder.to_string()).or_default();
@@ -297,10 +396,105 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         self.persist_dirty(folder)
             .await
             .map_err(FileSystemError::Storage)?;
+        self.garbage_collect()
+            .await
+            .map_err(sync_file_system_error)?;
         if let Some(data) = message {
             let _ = self.emit(SyncRequest::Broadcast(data));
         }
         Ok(entry)
+    }
+
+    pub async fn materialize(
+        &mut self,
+        path: &str,
+        content: &[u8],
+    ) -> Result<(), FileSystemError<S::Error>> {
+        let entry = self.entry(path)?;
+        if entry.local {
+            return Ok(());
+        }
+        if ContentHash::of(content) != entry.hash
+            || u64::try_from(content.len()).expect("content length exceeds u64") != entry.size
+        {
+            return Err(FileSystemError::InvalidMetadata);
+        }
+        let (folder, _) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        self.content_store
+            .write(path, content)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        let message = {
+            let document = self
+                .documents
+                .get_mut(folder)
+                .ok_or(FileSystemError::NotFound)?;
+            let mut entry = load_entry::<C>(document, &entry.name).map_err(file_system_error)?;
+            entry.providers.insert(self.local_peer.clone());
+            store_entry::<C>(document, &entry).map_err(FileSystemError::Metadata)?;
+            let state = self.broadcast_states.entry(folder.to_string()).or_default();
+            document
+                .sync()
+                .generate_sync_message(state)
+                .map(|message| encode_envelope(folder, message.encode()))
+        };
+        self.persist_dirty(folder)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        if let Some(data) = message {
+            let _ = self.emit(SyncRequest::Broadcast(data));
+        }
+        Ok(())
+    }
+
+    pub async fn evict(&mut self, path: &str) -> Result<(), FileSystemError<S::Error>> {
+        let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
+        let message = {
+            let document = self
+                .documents
+                .get_mut(folder)
+                .ok_or(FileSystemError::NotFound)?;
+            let mut entry = load_entry::<C>(document, name).map_err(file_system_error)?;
+            if entry.tombstoned {
+                return Err(FileSystemError::NotFound);
+            }
+            entry.providers.remove(&self.local_peer);
+            if entry.providers.is_empty() {
+                return Err(FileSystemError::NoProvider);
+            }
+            store_entry::<C>(document, &entry).map_err(FileSystemError::Metadata)?;
+            let state = self.broadcast_states.entry(folder.to_string()).or_default();
+            document
+                .sync()
+                .generate_sync_message(state)
+                .map(|message| encode_envelope(folder, message.encode()))
+        };
+        self.content_store
+            .register_passthrough(path)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        self.persist_dirty(folder)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        self.garbage_collect()
+            .await
+            .map_err(sync_file_system_error)?;
+        if let Some(data) = message {
+            let _ = self.emit(SyncRequest::Broadcast(data));
+        }
+        Ok(())
+    }
+
+    pub fn paths(&self) -> Result<Vec<String>, FileSystemError<S::Error>> {
+        let mut paths = Vec::new();
+        for (folder, document) in &self.documents {
+            for entry in load_entries::<C>(document).map_err(file_system_error)? {
+                if !entry.tombstoned {
+                    paths.push(join_path(folder, &entry.name));
+                }
+            }
+        }
+        Ok(paths)
     }
 
     pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError<S::Error>> {
@@ -324,6 +518,9 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         self.persist_dirty(folder)
             .await
             .map_err(FileSystemError::Storage)?;
+        self.garbage_collect()
+            .await
+            .map_err(sync_file_system_error)?;
         if let Some(data) = message {
             let _ = self.emit(SyncRequest::Broadcast(data));
         }
@@ -491,6 +688,8 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         match data.get(1).copied() {
             Some(BLOB_REQUEST) => return self.receive_blob_request(peer, &data).await,
             Some(BLOB_RESPONSE) => return self.receive_blob_response(&data),
+            Some(BLOB_UPLOAD) => return self.receive_blob_upload(peer, &data).await,
+            Some(BLOB_UPLOAD_ACK) => return self.receive_blob_upload_ack(peer, &data),
             Some(METADATA_MESSAGE) => {}
             _ => return Err(SyncError::InvalidMessage),
         }
@@ -517,10 +716,19 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         self.persist_dirty(&folder)
             .await
             .map_err(SyncError::Storage)?;
+        self.garbage_collect().await?;
 
         for entry in entries {
             let path = join_path(&folder, &entry.name);
-            if !entry.tombstoned && !entry.providers.contains(&self.local_peer) {
+            if entry.tombstoned {
+                continue;
+            }
+            if entry.providers.contains(&self.local_peer) {
+                self.content_store
+                    .link(&path, entry.hash)
+                    .await
+                    .map_err(SyncError::Storage)?;
+            } else {
                 self.content_store
                     .register_passthrough(&path)
                     .await
@@ -531,6 +739,67 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         if let Some(data) = reply {
             self.emit(SyncRequest::Send { peer, data })?;
         }
+        Ok(())
+    }
+
+    async fn receive_blob_upload(
+        &mut self,
+        peer: C::PeerId,
+        data: &[u8],
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
+        let (id, path, hash, size, content) = decode_blob_upload(data)?;
+        let accepted = (self.passthrough_admission)(&path)
+            && u64::try_from(content.len()).expect("content length exceeds u64") == size
+            && ContentHash::of(&content) == hash;
+        if accepted {
+            match self.completed_uploads.get(&(peer.clone(), id)) {
+                Some((known_path, known_hash, known_size))
+                    if *known_path != path || *known_hash != hash || *known_size != size =>
+                {
+                    return self.emit(SyncRequest::Send {
+                        peer,
+                        data: encode_blob_upload_ack(id, hash, false),
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    self.content_store
+                        .store_blob(hash, &content)
+                        .await
+                        .map_err(SyncError::Storage)?;
+                    self.content_store
+                        .link(&path, hash)
+                        .await
+                        .map_err(SyncError::Storage)?;
+                    self.completed_uploads
+                        .insert((peer.clone(), id), (path, hash, size));
+                }
+            }
+        }
+        self.emit(SyncRequest::Send {
+            peer,
+            data: encode_blob_upload_ack(id, hash, accepted),
+        })
+    }
+
+    fn receive_blob_upload_ack(
+        &mut self,
+        peer: C::PeerId,
+        data: &[u8],
+    ) -> Result<(), SyncError<S::Error, <C as PeerCodec>::Error>> {
+        let (id, hash, accepted) = decode_blob_upload_ack(data)?;
+        let pending = self
+            .pending_uploads
+            .remove(&id)
+            .ok_or(SyncError::InvalidMessage)?;
+        if pending.peer != peer || pending.hash != hash {
+            return Err(SyncError::InvalidMessage);
+        }
+        let _ = pending.sender.send(if accepted {
+            Ok(())
+        } else {
+            Err(FileSystemError::InvalidMetadata)
+        });
         Ok(())
     }
 
@@ -656,6 +925,25 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(())
     }
 
+    async fn garbage_collect(&mut self) -> Result<(), SyncError<S::Error, C::Error>> {
+        let mut referenced_hashes = self
+            .completed_uploads
+            .values()
+            .map(|(_, hash, _)| *hash)
+            .collect::<BTreeSet<_>>();
+        for document in self.documents.values() {
+            for entry in load_entries::<C>(document).map_err(map_metadata_error)? {
+                if !entry.tombstoned && entry.providers.contains(&self.local_peer) {
+                    referenced_hashes.insert(entry.hash);
+                }
+            }
+        }
+        self.content_store
+            .remove_unreferenced(&referenced_hashes)
+            .await
+            .map_err(SyncError::Storage)
+    }
+
     fn sync_peer(
         &mut self,
         peer: C::PeerId,
@@ -768,6 +1056,13 @@ where
                         Some(SyncRequest::Send { peer, data }) => {
                             let _ = task_transport.send(peer, data).await;
                         }
+                        Some(SyncRequest::Upload { peer, data, id }) => {
+                            if task_transport.send(peer, data).await.is_err()
+                                && let Some(pending) = task_state.lock().await.pending_uploads.remove(&id)
+                            {
+                                let _ = pending.sender.send(Err(FileSystemError::InvalidMetadata));
+                            }
+                        }
                         None => return,
                     },
                     message = poll_fn(|context| incoming.as_mut().poll_next(context)) => match message {
@@ -785,7 +1080,8 @@ where
         });
         Ok(Self {
             state,
-            _transport: transport,
+            uploads: Arc::new(Mutex::new(())),
+            transport,
             task,
         })
     }
@@ -812,12 +1108,83 @@ where
         self.state.lock().await.write(path, content).await
     }
 
+    pub async fn set_passthrough_admission(
+        &self,
+        admission: impl Fn(&str) -> bool + Send + Sync + 'static,
+    ) {
+        self.state.lock().await.passthrough_admission = Arc::new(admission);
+    }
+
+    pub async fn write_passthrough_to_peer_or_any(
+        &self,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let peers = self.transport.peers();
+        if peers.is_empty() {
+            return Err(FileSystemError::NoProvider);
+        }
+        let mut last_error = FileSystemError::NoProvider;
+        for peer in peers {
+            match self.write_passthrough(peer, path, content).await {
+                Ok(entry) => return Ok(entry),
+                Err(error) => last_error = error,
+            }
+        }
+        Err(last_error)
+    }
+
+    pub async fn write_passthrough(
+        &self,
+        peer: C::PeerId,
+        path: &str,
+        content: &[u8],
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let _upload = self.uploads.lock().await;
+        let receiver =
+            self.state
+                .lock()
+                .await
+                .start_passthrough_upload(peer.clone(), path, content)?;
+        match receiver.await {
+            Ok(Ok(())) => {
+                self.state
+                    .lock()
+                    .await
+                    .publish_passthrough_upload(peer, path, content)
+                    .await
+            }
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(FileSystemError::InvalidMetadata),
+        }
+    }
+
     pub async fn append(
         &self,
         path: &str,
         content: &[u8],
     ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
         self.state.lock().await.append(path, content).await
+    }
+
+    pub async fn materialize(&self, path: &str) -> Result<(), FileSystemError<S::Error>> {
+        let read = self.start_read(path).await.map_err(|error| match error {
+            ReadError::Storage(error) => FileSystemError::Storage(error),
+            _ => FileSystemError::InvalidMetadata,
+        })?;
+        let content = read.await.map_err(|error| match error {
+            ReadError::Storage(error) => FileSystemError::Storage(error),
+            _ => FileSystemError::InvalidMetadata,
+        })?;
+        self.state.lock().await.materialize(path, &content).await
+    }
+
+    pub async fn evict(&self, path: &str) -> Result<(), FileSystemError<S::Error>> {
+        self.state.lock().await.evict(path).await
+    }
+
+    pub async fn paths(&self) -> Result<Vec<String>, FileSystemError<S::Error>> {
+        self.state.lock().await.paths()
     }
 
     pub async fn delete(&self, path: &str) -> Result<(), FileSystemError<S::Error>> {
@@ -875,6 +1242,16 @@ fn file_system_error<StorageError, PeerError>(
         SyncError::Metadata(error) => FileSystemError::Metadata(error),
         SyncError::Peer(_) | SyncError::InvalidMessage => FileSystemError::InvalidMetadata,
         SyncError::Storage(()) => unreachable!(),
+    }
+}
+
+fn sync_file_system_error<StorageError, PeerError>(
+    error: SyncError<StorageError, PeerError>,
+) -> FileSystemError<StorageError> {
+    match error {
+        SyncError::Storage(error) => FileSystemError::Storage(error),
+        SyncError::Peer(_) | SyncError::InvalidMessage => FileSystemError::InvalidMetadata,
+        SyncError::Metadata(error) => FileSystemError::Metadata(error),
     }
 }
 
@@ -1070,6 +1447,101 @@ fn decode_envelope<StorageError, PeerError>(
         return Err(SyncError::InvalidMessage);
     }
     Ok((folder.to_string(), message.to_vec()))
+}
+
+fn encode_blob_upload(
+    id: u64,
+    path: &str,
+    hash: ContentHash,
+    size: u64,
+    content: &[u8],
+) -> Vec<u8> {
+    let path = path.as_bytes();
+    let length = u32::try_from(path.len()).expect("path exceeds u32");
+    let mut data = Vec::with_capacity(54 + path.len() + content.len());
+    data.extend_from_slice(&[PROTOCOL_VERSION, BLOB_UPLOAD]);
+    data.extend_from_slice(&id.to_be_bytes());
+    data.extend_from_slice(hash.as_bytes());
+    data.extend_from_slice(&size.to_be_bytes());
+    data.extend_from_slice(&length.to_be_bytes());
+    data.extend_from_slice(path);
+    data.extend_from_slice(content);
+    data
+}
+
+fn decode_blob_upload<StorageError, PeerError>(
+    data: &[u8],
+) -> Result<BlobUpload, SyncError<StorageError, PeerError>> {
+    let id = u64::from_be_bytes(
+        data.get(2..10)
+            .ok_or(SyncError::InvalidMessage)?
+            .try_into()
+            .map_err(|_| SyncError::InvalidMessage)?,
+    );
+    let hash = data
+        .get(10..42)
+        .ok_or(SyncError::InvalidMessage)?
+        .try_into()
+        .map_err(|_| SyncError::InvalidMessage)?;
+    let size = u64::from_be_bytes(
+        data.get(42..50)
+            .ok_or(SyncError::InvalidMessage)?
+            .try_into()
+            .map_err(|_| SyncError::InvalidMessage)?,
+    );
+    let length = u32::from_be_bytes(
+        data.get(50..54)
+            .ok_or(SyncError::InvalidMessage)?
+            .try_into()
+            .map_err(|_| SyncError::InvalidMessage)?,
+    ) as usize;
+    let end = 54usize
+        .checked_add(length)
+        .ok_or(SyncError::InvalidMessage)?;
+    let path = core::str::from_utf8(data.get(54..end).ok_or(SyncError::InvalidMessage)?)
+        .map_err(|_| SyncError::InvalidMessage)?;
+    split_path(path).map_err(|_| SyncError::InvalidMessage)?;
+    Ok((
+        id,
+        path.to_string(),
+        ContentHash::from_bytes(hash),
+        size,
+        data.get(end..).ok_or(SyncError::InvalidMessage)?.to_vec(),
+    ))
+}
+
+fn encode_blob_upload_ack(id: u64, hash: ContentHash, accepted: bool) -> Vec<u8> {
+    let mut data = Vec::with_capacity(43);
+    data.extend_from_slice(&[PROTOCOL_VERSION, BLOB_UPLOAD_ACK]);
+    data.extend_from_slice(&id.to_be_bytes());
+    data.extend_from_slice(hash.as_bytes());
+    data.push(u8::from(accepted));
+    data
+}
+
+fn decode_blob_upload_ack<StorageError, PeerError>(
+    data: &[u8],
+) -> Result<BlobUploadAck, SyncError<StorageError, PeerError>> {
+    let id = u64::from_be_bytes(
+        data.get(2..10)
+            .ok_or(SyncError::InvalidMessage)?
+            .try_into()
+            .map_err(|_| SyncError::InvalidMessage)?,
+    );
+    let hash = data
+        .get(10..42)
+        .ok_or(SyncError::InvalidMessage)?
+        .try_into()
+        .map_err(|_| SyncError::InvalidMessage)?;
+    let accepted = match data.get(42) {
+        Some(0) => false,
+        Some(1) => true,
+        _ => return Err(SyncError::InvalidMessage),
+    };
+    if data.len() != 43 {
+        return Err(SyncError::InvalidMessage);
+    }
+    Ok((id, ContentHash::from_bytes(hash), accepted))
 }
 
 fn encode_blob_request(

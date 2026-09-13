@@ -31,6 +31,10 @@ where
             let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
 
             let router_state = RouterState::from_ref(state);
+            if !router_state.global_identity_read_gate.verify().await {
+                return Err(ErrorResponse::new(ErrorCode::NotAuthorized)
+                    .with_description("global identity cache is not current"));
+            }
             let principal = router_state
                 .oauth2_service
                 .find_principal(jwt_header.kid)

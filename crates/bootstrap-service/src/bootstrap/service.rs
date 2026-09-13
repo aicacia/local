@@ -17,7 +17,7 @@ use idp_model::{
     model::{Application, Client, Key, User},
 };
 
-use super::config::BootstrapConfig;
+use super::{BootstrapConfig, BootstrapInput};
 use idp_service::{
     generate_random_string,
     repo::{ApplicationRepo, ClientRepo, KeyRepo, KeyService, PrivateKeyRepo, UserRepo},
@@ -71,13 +71,14 @@ where
 
     pub async fn ensure_system_baseline(
         &self,
+        input: &BootstrapInput,
         device: Option<(String, String)>,
     ) -> BootstrapResult<User> {
         if let Some((public_key, address)) = device {
             super::ensure_bootstrap_device(
                 &self.device_repo,
                 DeviceEnrollmentRequest {
-                    name: self.config.device_name.clone(),
+                    name: input.device_name.clone(),
                     public_key,
                     address,
                 },
@@ -176,15 +177,15 @@ where
                 .await?;
         }
 
-        let admin_user = self.ensure_admin_user().await?;
+        let admin_user = self.ensure_admin_user(input).await?;
         self.ensure_management_admin_access(admin_user.id, management_application.id)
             .await?;
         let _admin_user_key = self
             .ensure_active_key(
                 EntityType::User,
                 admin_user.id,
-                &self.config.admin_username,
-                &self.config.admin_password,
+                &input.admin_username,
+                &input.admin_password,
                 true,
             )
             .await?;
@@ -312,29 +313,22 @@ where
         }
     }
 
-    async fn ensure_admin_user(&self) -> BootstrapResult<User> {
+    async fn ensure_admin_user(&self, input: &BootstrapInput) -> BootstrapResult<User> {
         if let Some(user) = self
             .user_repo
-            .find_user_by_username_or_email(&self.config.admin_email)
+            .find_user_by_username_or_email(&input.admin_username)
             .await?
         {
-            log::debug!(
-                "Found existing admin user with email: {}",
-                self.config.admin_email
-            );
+            log::debug!("Found existing admin user: {}", input.admin_username);
             return Ok(user);
         }
 
         let user = self
             .user_repo
-            .create_user_with_email_and_password(
-                &self.config.admin_username,
-                &self.config.admin_email,
-                &self.config.admin_password,
-            )
+            .create_user_with_password(&input.admin_username, &input.admin_password)
             .await?;
 
-        log::debug!("Created admin user with email: {}", self.config.admin_email);
+        log::debug!("Created admin user: {}", input.admin_username);
         Ok(user)
     }
 

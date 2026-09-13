@@ -275,6 +275,31 @@ impl DeviceRepo for LibSqlDeviceRepo {
             .await?;
         Ok(changed != 0)
     }
+
+    async fn revoke_self(&self, public_key: &str) -> ManagementResult<bool> {
+        let connection = self.database.connect()?;
+        connection
+            .execute(
+                r#"
+                    UPDATE devices
+                    SET state = 2, revoked_at = unixepoch(), updated_at = unixepoch()
+                    WHERE public_key = ? AND state != 2
+                "#,
+                libsql::params![public_key],
+            )
+            .await?;
+        let mut rows = connection
+            .query(
+                "SELECT EXISTS(SELECT 1 FROM devices WHERE public_key = ?)",
+                libsql::params![public_key],
+            )
+            .await?;
+        let row = rows
+            .next()
+            .await?
+            .ok_or(libsql::Error::QueryReturnedNoRows)?;
+        Ok(row.get::<i64>(0)? != 0)
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +358,38 @@ mod tests {
         assert!(repo.revoke(pending.id, &first.public_key).await.unwrap());
         assert!(!repo.revoke(first.id, &first.public_key).await.unwrap());
         assert_eq!(repo.list_approved().await.unwrap().len(), 1);
+        drop(repo);
+        drop(database);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn self_revocation_allows_the_final_approved_device_idempotently() {
+        let path = std::env::temp_dir().join(format!(
+            "idp-self-revocation-test-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let database = Arc::new(Builder::new_local(&path).build().await.unwrap());
+        idp_model::migrate::up(&database).await.unwrap();
+        let repo = Arc::new(LibSqlDeviceRepo::new(Arc::clone(&database)));
+        let device = repo
+            .create(
+                "device".into(),
+                "device-key".into(),
+                "device-address".into(),
+                vec![],
+                0,
+            )
+            .await
+            .unwrap();
+        let service = DeviceEnrollmentService::new(Arc::clone(&repo));
+
+        assert!(service.revoke(device.id, &device.public_key).await.is_err());
+        service.revoke_self(&device.public_key).await.unwrap();
+        service.revoke_self(&device.public_key).await.unwrap();
+        assert_eq!(repo.list_approved().await.unwrap().len(), 0);
+        drop(service);
         drop(repo);
         drop(database);
         std::fs::remove_file(path).unwrap();

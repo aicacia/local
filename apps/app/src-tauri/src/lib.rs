@@ -1,5 +1,5 @@
 mod app;
-mod device_identity;
+mod global_identity;
 mod hosted_control_plane;
 mod local_api;
 mod localhost_server;

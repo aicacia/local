@@ -156,6 +156,15 @@ where
             .then_some(())
             .ok_or_else(|| ErrorResponse::new(ErrorCode::NotFound))
     }
+
+    pub async fn revoke_self(&self, public_key: &str) -> ErrorResponseResult<()> {
+        self.repo
+            .revoke_self(public_key)
+            .await
+            .map_err(ErrorResponse::from)?
+            .then_some(())
+            .ok_or_else(|| ErrorResponse::new(ErrorCode::NotFound))
+    }
 }
 
 fn validate_enrollment(request: &DeviceEnrollmentRequest) -> ErrorResponseResult<()> {

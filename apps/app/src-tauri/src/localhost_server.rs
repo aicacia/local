@@ -12,6 +12,7 @@ use rcgen::{
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::{
     net::TcpListener,
+    sync::oneshot,
     time::{Duration, sleep},
 };
 use tokio_rustls::TlsAcceptor;
@@ -263,7 +264,37 @@ pub async fn reserve_localhost_listener(_: &Path) -> Result<(TcpListener, u16), 
     Ok((listener, port))
 }
 
-pub fn start_unified_localhost_server(router: Router, listener: TcpListener, data_dir: &Path) {
+#[allow(
+    dead_code,
+    reason = "app::close owns this state after startup retains the server handle"
+)]
+#[derive(Debug)]
+pub struct LocalhostServer {
+    shutdown: Option<oneshot::Sender<()>>,
+    task: Option<tauri::async_runtime::JoinHandle<()>>,
+}
+
+#[allow(
+    dead_code,
+    reason = "app::close shuts down the retained localhost server owner"
+)]
+impl LocalhostServer {
+    pub async fn close(self) -> io::Result<()> {
+        if let Some(shutdown) = self.shutdown {
+            let _ = shutdown.send(());
+        }
+        if let Some(task) = self.task {
+            task.await.map_err(io::Error::other)?;
+        }
+        Ok(())
+    }
+}
+
+pub fn start_unified_localhost_server(
+    router: Router,
+    listener: TcpListener,
+    data_dir: &Path,
+) -> LocalhostServer {
     let tls_listener = match build_server_config(data_dir) {
         Ok(server_config) => TlsListener {
             inner: listener,
@@ -271,16 +302,32 @@ pub fn start_unified_localhost_server(router: Router, listener: TcpListener, dat
         },
         Err(err) => {
             log::error!("failed to build localhost TLS config: {err}");
-            return;
+            return LocalhostServer {
+                shutdown: None,
+                task: None,
+            };
         }
     };
 
-    let app = router;
-    tauri::async_runtime::spawn(async move {
-        if let Err(err) = axum::serve(tls_listener, app).await {
+    let (shutdown, shutdown_signal) = oneshot::channel();
+    let task = tauri::async_runtime::spawn(async move {
+        let shutdown = async move {
+            if shutdown_signal.await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        };
+        if let Err(err) = axum::serve(tls_listener, router)
+            .with_graceful_shutdown(shutdown)
+            .await
+        {
             log::error!("unified localhost server failed: {err}");
         }
     });
+
+    LocalhostServer {
+        shutdown: Some(shutdown),
+        task: Some(task),
+    }
 }
 
 #[cfg(test)]
@@ -306,5 +353,24 @@ mod tests {
     async fn reserves_localhost_listener() {
         let (listener, port) = reserve_localhost_listener(Path::new("")).await.unwrap();
         assert_eq!(listener.local_addr().unwrap().port(), port);
+    }
+
+    #[tokio::test]
+    async fn localhost_server_closes_gracefully() {
+        let data_dir = std::env::temp_dir().join(format!("idp-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&data_dir).unwrap();
+        let (ca, _) = load_or_create_ca(&data_dir).await.unwrap();
+        ensure_ca_certificate_pem(&data_dir, &ca).await.unwrap();
+        load_or_create_server_cert(&data_dir, &ca).await.unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        start_unified_localhost_server(Router::new(), listener, &data_dir)
+            .close()
+            .await
+            .unwrap();
+        TcpListener::bind(addr).await.unwrap();
+
+        fs::remove_dir_all(data_dir).unwrap();
     }
 }

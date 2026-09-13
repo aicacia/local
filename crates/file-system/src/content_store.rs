@@ -1,4 +1,4 @@
-use alloc::{string::String, vec::Vec};
+use alloc::{collections::BTreeSet, string::String, vec::Vec};
 
 use crate::{ContentHash, Storage};
 
@@ -31,12 +31,28 @@ impl<S: Storage> ContentStore<S> {
         content: &[u8],
     ) -> Result<ContentHash, S::Error> {
         let hash = ContentHash::of(content);
-        self.storage.write(&blob_path(hash), content).await?;
+        self.store_blob(hash, content).await?;
         self.storage
             .write(&path_path(path), hash.as_bytes())
             .await?;
         let _ = self.storage.remove(&passthrough_path(path)).await;
         Ok(hash)
+    }
+
+    pub(crate) async fn store_blob(
+        &mut self,
+        hash: ContentHash,
+        content: &[u8],
+    ) -> Result<(), S::Error> {
+        self.storage.write(&blob_path(hash), content).await
+    }
+
+    pub(crate) async fn link(&mut self, path: &str, hash: ContentHash) -> Result<(), S::Error> {
+        self.storage
+            .write(&path_path(path), hash.as_bytes())
+            .await?;
+        let _ = self.storage.remove(&passthrough_path(path)).await;
+        Ok(())
     }
 
     pub(crate) async fn append(
@@ -61,6 +77,22 @@ impl<S: Storage> ContentStore<S> {
     pub(crate) async fn register_passthrough(&mut self, path: &str) -> Result<(), S::Error> {
         self.storage.write(&passthrough_path(path), &[]).await?;
         let _ = self.storage.remove(&path_path(path)).await;
+        Ok(())
+    }
+
+    pub(crate) async fn remove_unreferenced(
+        &mut self,
+        referenced_hashes: &BTreeSet<ContentHash>,
+    ) -> Result<(), S::Error> {
+        let referenced_paths = referenced_hashes
+            .iter()
+            .map(|hash| blob_path(*hash))
+            .collect::<BTreeSet<_>>();
+        for path in self.storage.list(BLOBS_DIRECTORY).await? {
+            if !referenced_paths.contains(&path) {
+                self.storage.remove(&path).await?;
+            }
+        }
         Ok(())
     }
 }

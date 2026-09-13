@@ -6,7 +6,10 @@ use management_service::{StorageScope, StorageSessionService};
 use storage_server::{
     StorageSessionResolver, StorageSocketSession, storage_router as socket_router,
 };
-use storage_service::{ScopedFileSystemRuntime, ScopedTransportFactory, StorageService};
+use storage_service::{
+    ScopedFileSystemRuntime, ScopedStorageService, ScopedTransportFactory, StorageErrorCode,
+    StorageRequest, StorageResponse,
+};
 
 pub fn storage_router<C, T, F>(
     sessions: Arc<StorageSessionService>,
@@ -37,6 +40,40 @@ where
     file_systems: Arc<ScopedFileSystemRuntime<C, T, F, StorageScope>>,
 }
 
+struct ScopedStorageSocketSession<C, T, F>
+where
+    C: PeerCodec,
+    T: Transport<PeerId = C::PeerId>,
+    F: ScopedTransportFactory<C, T, StorageScope>,
+{
+    storage: ScopedStorageService<C, T, F, StorageScope>,
+}
+
+impl<C, T, F> StorageSocketSession for ScopedStorageSocketSession<C, T, F>
+where
+    C: PeerCodec + Send + Sync + 'static,
+    C::Error: Send + Sync + 'static,
+    C::PeerId: Clone + Send + Sync + 'static,
+    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T::Error: std::fmt::Display + Send + Sync + 'static,
+    T::Incoming: Send + 'static,
+    F: ScopedTransportFactory<C, T, StorageScope>,
+{
+    fn execute(
+        &self,
+        request: StorageRequest,
+    ) -> Pin<Box<dyn Future<Output = StorageResponse> + Send + '_>> {
+        Box::pin(async move {
+            self.storage
+                .execute(request)
+                .await
+                .unwrap_or(StorageResponse::Error {
+                    code: StorageErrorCode::OperationFailed,
+                })
+        })
+    }
+}
+
 impl<C, T, F> StorageSessionResolver for ScopedFileSystemSessionResolver<C, T, F>
 where
     C: PeerCodec + Send + Sync + 'static,
@@ -56,7 +93,9 @@ where
         Box::pin(async move {
             let scope = scope?;
             let file_system = file_systems.open(&scope).await.ok()?;
-            let session: Arc<dyn StorageSocketSession> = Arc::new(StorageService::new(file_system));
+            let session: Arc<dyn StorageSocketSession> = Arc::new(ScopedStorageSocketSession {
+                storage: ScopedStorageService::new(file_systems, scope, file_system),
+            });
             Some(session)
         })
     }

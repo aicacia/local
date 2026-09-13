@@ -48,10 +48,22 @@ where
     }
 }
 
+pub async fn require_current_global_identity(
+    router_state: &RouterState,
+) -> Result<(), ErrorResponse> {
+    if router_state.global_identity_is_current().await {
+        Ok(())
+    } else {
+        Err(ErrorResponse::new(ErrorCode::NotAuthorized)
+            .with_description("global identity cache is not current"))
+    }
+}
+
 pub async fn authorize_bearer(
     router_state: &RouterState,
     authorization_string: &str,
 ) -> Result<Authorization<StandardClaims>, ErrorResponse> {
+    require_current_global_identity(router_state).await?;
     let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
     let principal = router_state
         .oauth2_service

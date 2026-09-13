@@ -201,12 +201,7 @@ impl UserRepo for LibSqlUserRepo {
         }
     }
 
-    async fn create_user_with_email_and_password(
-        &self,
-        username: &str,
-        email: &str,
-        password: &str,
-    ) -> RepoResult<User> {
+    async fn create_user_with_password(&self, username: &str, password: &str) -> RepoResult<User> {
         if password.trim().is_empty() {
             return Err(RepoError::InvalidInput(
                 "password is required for user key material".to_string(),
@@ -218,12 +213,11 @@ impl UserRepo for LibSqlUserRepo {
         let key_service = self.key_service.clone();
 
         let username = username.to_string();
-        let email = email.to_string();
         let password = password.to_string();
         let password_hash = encrypt_password(&self.password_config, password.as_str())
             .map_err(|e| RepoError::Other(e.into()))?;
 
-        let (user, _email, _password) = run_transaction(&connection, move |transaction| {
+        let (user, _password) = run_transaction(&connection, move |transaction| {
             Box::pin(async move {
                 let user_query = r#"
                 INSERT INTO users (name) VALUES (?)
@@ -244,25 +238,6 @@ impl UserRepo for LibSqlUserRepo {
                 key_service
                     .ensure_entity_master_key(EntityType::User, user.id, password.as_str())
                     .map_err(RepoError::into_libsql)?;
-
-                let email_query = r#"
-                INSERT INTO `user_emails` (
-                    `user_id`,
-                    `email`,
-                    `verified`,
-                    `primary`
-                ) VALUES (?, ?, ?, ?)
-                RETURNING *;"#;
-
-                let mut rows = transaction
-                    .query(email_query, libsql::params![user.id, email, false, true])
-                    .await?;
-                let row = rows.next().await?.ok_or_else(|| {
-                    libsql::Error::Misuse("user email not found after insert".into())
-                })?;
-                let email: UserEmail = from_row(&row).map_err(|e| {
-                    libsql::Error::Misuse(format!("invalid rows returned for user email: {}", e))
-                })?;
 
                 let password_query = r#"
                 INSERT INTO `user_passwords` (
@@ -307,7 +282,7 @@ impl UserRepo for LibSqlUserRepo {
                     )
                     .map_err(RepoError::into_libsql)?;
 
-                Ok((user, email, password))
+                Ok((user, password))
             })
         })
         .await?;

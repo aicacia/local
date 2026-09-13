@@ -9,7 +9,7 @@ use std::{
 };
 
 use api::serve;
-use bootstrap_service::bootstrap::BootstrapService;
+
 use clap::Parser;
 use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::{close_database, open_database};
@@ -22,8 +22,8 @@ use idp_service::{
     oauth2::OAuth2Service,
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
-use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey, endpoint::presets};
-use iroh_chain::{DynamicEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
+use iroh::{EndpointAddr, EndpointId};
+use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
 use management_service::ManagementService;
 use management_service::{
     HostedControlPlane, StorageScope, StorageSessionService,
@@ -146,29 +146,6 @@ impl TrustedEndpointAddrLookup<StorageScope> for ScopeTrustedEndpoints {
     }
 }
 
-async fn open_device_identity(key_path: &Path) -> io::Result<idp_server::DeviceIdentity> {
-    let secret_key = match std::fs::read(&key_path) {
-        Ok(bytes) => SecretKey::from_bytes(
-            &bytes
-                .try_into()
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid Iroh key"))?,
-        ),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let key = SecretKey::generate();
-            std::fs::write(&key_path, key.to_bytes())?;
-            key
-        }
-        Err(error) => return Err(error),
-    };
-    let endpoint = Endpoint::builder(presets::N0)
-        .secret_key(secret_key.clone())
-        .alpns(vec![TUNNEL_ALPN.to_vec()])
-        .bind()
-        .await
-        .map_err(io::Error::other)?;
-    Ok(idp_server::DeviceIdentity::new(endpoint, secret_key))
-}
-
 pub async fn run() -> io::Result<()> {
     match dotenvy::dotenv() {
         Ok(_) => {}
@@ -208,31 +185,9 @@ pub async fn run() -> io::Result<()> {
     ));
 
     let devices = Arc::new(LibSqlDeviceRepo::new(database.clone()));
-    let bootstrap_service = BootstrapService::new(
-        LibSqlApplicationRepo::new(database.clone()),
-        LibSqlClientRepo::new(database.clone(), key_service.clone()),
-        LibSqlUserRepo::new(
-            database.clone(),
-            key_service.clone(),
-            app_config.password.clone(),
-        ),
-        LibSqlRoleRepo::new(database.clone()),
-        LibSqlPermissionRepo::new(database.clone()),
-        LibSqlDeviceRepo::new(database.clone()),
-        key_service.clone(),
-        app_config.bootstrap.clone(),
-    );
 
-    let device_identity = Arc::new(open_device_identity(Path::new(&app_config.device_key)).await?);
-    bootstrap_service
-        .ensure_system_baseline(Some((
-            device_identity.endpoint_id().to_string(),
-            device_identity
-                .endpoint_address()
-                .map_err(io::Error::other)?,
-        )))
-        .await
-        .map_err(io::Error::other)?;
+    let setup_state = idp_server::LocalSetupState::load_or_create(&app_config.data_dir)?;
+    let device_identity = Arc::new(idp_server::open_device_identity(&setup_state).await?);
 
     let oauth2_config = app_config.oauth2.clone();
     let oauth2_service = Arc::new(OAuth2Service::new(
@@ -265,13 +220,17 @@ pub async fn run() -> io::Result<()> {
         storage_sessions.clone(),
         Arc::clone(&devices),
         Arc::clone(&device_identity),
-    );
+    )
+    .with_local_setup(&app_config.data_dir, setup_state);
     let idp_router_state = match &control_plane {
         Some(control_plane) => idp_router_state.with_storage_scope_resolver(Arc::new(
             idp_server::HostedStorageScopeResolver::new(Arc::clone(control_plane)),
         )),
         None => idp_router_state,
     };
+    if let Some(token) = idp_router_state.setup_token() {
+        log::info!("Setup token: {token}");
+    }
     let storage_session_router =
         idp_server::storage_session_openapi_router(idp_router_state.clone());
     let idp_router = idp_server::openapi_router(idp_router_state.clone(), "/lidp");
@@ -332,6 +291,7 @@ pub async fn run() -> io::Result<()> {
     let management_router_state = management_server::RouterState::new(
         &app_config.api_public_base_uri,
         database.clone(),
+        Arc::clone(&idp_router_state.global_identity_read_gate),
         management_service,
         oauth2_service,
     );

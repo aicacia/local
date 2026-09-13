@@ -14,5 +14,6 @@ pub trait Transport {
         data: Vec<u8>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
     fn broadcast(&self, data: Vec<u8>) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    fn peers(&self) -> Vec<Self::PeerId>;
     fn subscribe(&self) -> impl Future<Output = Result<Self::Incoming, Self::Error>> + Send;
 }

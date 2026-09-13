@@ -11,6 +11,9 @@ use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
 use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, TunnelAuthorizationProvider};
 
 pub type IrohTransport<A, P> = ScopedIrohTransport<DynamicEndpointIdStore, A, P>;
+type IrohFactory<A, P, L, S> = IrohTransportFactory<A, P, L, S>;
+type DeferredIrohFactory<A, P, L, S> = Arc<Mutex<Option<Arc<IrohFactory<A, P, L, S>>>>>;
+type IrohTransports<A, P> = Arc<Mutex<BTreeMap<String, IrohTransport<A, P>>>>;
 
 pub trait ScopedTunnelAuthorizationProvider<S>: Send + Sync + 'static {
     type Authorization: TunnelAuthorizationProvider;
@@ -31,7 +34,7 @@ where
     P: ScopedTunnelAuthorizationProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
-    inner: Arc<Mutex<Option<Arc<IrohTransportFactory<A, P, L, S>>>>>,
+    inner: DeferredIrohFactory<A, P, L, S>,
 }
 
 impl<A, P, L, S> Clone for DeferredIrohTransportFactory<A, P, L, S>
@@ -114,7 +117,7 @@ where
     allowlist: DynamicEndpointIdStore,
     authorization_provider: P,
     trusted_endpoint_addrs: L,
-    transports: Arc<Mutex<BTreeMap<String, IrohTransport<A, P::Authorization>>>>,
+    transports: IrohTransports<A, P::Authorization>,
     listeners: Arc<Mutex<BTreeSet<String>>>,
     _scope: core::marker::PhantomData<fn(S)>,
 }

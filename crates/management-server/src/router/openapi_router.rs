@@ -108,7 +108,7 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
         routes!(@resolve_types openapi_json : schemas);
 
     openapi_spec.paths.add_path_operation(
-        openapi_json_path.to_string(),
+        &openapi_json_path,
         openapi_json_types,
         openapi_json_item,
     );

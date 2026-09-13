@@ -2,6 +2,7 @@ use core::{future::Future, pin::Pin};
 use std::sync::Arc;
 
 use idp_model::model::{Application, Permission, Role};
+use idp_server::GlobalIdentityReadGateSlot;
 use idp_service::libsql::{
     LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
     LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
@@ -329,6 +330,7 @@ pub struct RouterState {
     pub(crate) api_base_uri: String,
     pub(crate) database: Arc<Database>,
     pub(crate) management_service: Arc<ManagementRouterService>,
+    pub(crate) global_identity_read_gate: Arc<GlobalIdentityReadGateSlot>,
     pub(crate) oauth2_service: Arc<
         OAuth2Service<
             LibSqlApplicationRepo,
@@ -345,6 +347,7 @@ impl RouterState {
     pub fn new<A, P, R>(
         api_base_uri: impl Into<String>,
         database: Arc<Database>,
+        global_identity_read_gate: Arc<GlobalIdentityReadGateSlot>,
         management_service: Arc<ManagementService<A, P, R>>,
         oauth2_service: Arc<
             OAuth2Service<
@@ -365,6 +368,7 @@ impl RouterState {
         Self {
             api_base_uri: api_base_uri.into(),
             database,
+            global_identity_read_gate,
             management_service,
             oauth2_service,
         }

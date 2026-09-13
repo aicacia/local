@@ -2,12 +2,16 @@
 
 use std::{convert::Infallible, pin::Pin, sync::Arc};
 #[cfg(feature = "native")]
-use std::{env, fs};
+use std::{
+    env, fs,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[cfg(feature = "native")]
 use file_system::NativeStorage;
 use file_system::{
-    FileEntry, FileSystem, InMemoryStorage, MemoryTransport, MemoryTransportMutator, PeerCodec,
+    ContentHash, FileEntry, FileSystem, FileSystemError, InMemoryStorage, MemoryTransport,
+    MemoryTransportMutator, PeerCodec,
 };
 use futures_core::Stream;
 
@@ -30,6 +34,18 @@ impl PeerCodec for TestPeer {
 type TestFileSystem = FileSystem<InMemoryStorage, TestPeer, MemoryTransport<TestPeer>>;
 #[cfg(feature = "native")]
 type NativeTestFileSystem = FileSystem<NativeStorage, TestPeer, MemoryTransport<TestPeer>>;
+
+#[cfg(feature = "native")]
+static NEXT_TEMP_DIR: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "native")]
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    env::temp_dir().join(format!(
+        "file-system-{name}-{}-{}",
+        std::process::id(),
+        NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed)
+    ))
+}
 
 async fn file_system_pair(
     corrupt_left_responses: bool,
@@ -139,6 +155,166 @@ async fn streams_passthrough_content_in_verified_order() {
 }
 
 #[tokio::test]
+async fn materializes_and_evicts_remote_content() {
+    let (left, right, _, _) = file_system_pair(false).await;
+
+    left.write("notes/today.txt", b"hello").await.unwrap();
+    entry(&right, "notes/today.txt").await;
+    right.materialize("notes/today.txt").await.unwrap();
+    assert!(right.entry("notes/today.txt").await.unwrap().local);
+    assert_eq!(right.read("notes/today.txt").await.unwrap(), b"hello");
+
+    right.evict("notes/today.txt").await.unwrap();
+    assert!(!right.entry("notes/today.txt").await.unwrap().local);
+    assert_eq!(
+        right
+            .start_read("notes/today.txt")
+            .await
+            .unwrap()
+            .await
+            .unwrap(),
+        b"hello"
+    );
+}
+
+#[tokio::test]
+async fn refuses_to_evict_the_final_provider() {
+    let (left, _right, _, _) = file_system_pair(false).await;
+
+    left.write("notes/today.txt", b"hello").await.unwrap();
+    assert!(matches!(
+        left.evict("notes/today.txt").await,
+        Err(file_system::FileSystemError::NoProvider)
+    ));
+    assert!(left.entry("notes/today.txt").await.unwrap().local);
+}
+
+#[tokio::test]
+async fn passthrough_write_without_a_connected_peer_publishes_no_metadata() {
+    let (left, right, _, right_transport) = file_system_pair(false).await;
+    right_transport.set_online(false).await;
+
+    assert!(matches!(
+        left.write_passthrough_to_peer_or_any("notes/today.txt", b"hello")
+            .await,
+        Err(FileSystemError::NoProvider)
+    ));
+    assert!(left.entry("notes/today.txt").await.is_err());
+    assert!(right.entry("notes/today.txt").await.is_err());
+}
+
+#[tokio::test]
+async fn rejects_passthrough_upload_when_receiver_denies_the_path() {
+    let (left, right, _, _) = file_system_pair(false).await;
+    left.set_passthrough_admission(|_| false).await;
+
+    assert!(
+        right
+            .write_passthrough(TestPeer(1), "notes/today.txt", b"hello")
+            .await
+            .is_err()
+    );
+    assert!(left.entry("notes/today.txt").await.is_err());
+    assert!(right.entry("notes/today.txt").await.is_err());
+}
+
+#[tokio::test]
+async fn uploads_passthrough_content_before_publishing_metadata() {
+    let (left, right, _, _) = file_system_pair(false).await;
+
+    let upload_entry = right
+        .write_passthrough(TestPeer(1), "notes/today.txt", b"hello")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        upload_entry.providers.into_iter().collect::<Vec<_>>(),
+        [TestPeer(1)]
+    );
+    assert!(!upload_entry.local);
+    assert!(entry(&left, "notes/today.txt").await.local);
+    assert_eq!(left.read("notes/today.txt").await.unwrap(), b"hello");
+    assert!(right.read("notes/today.txt").await.is_err());
+}
+
+#[tokio::test]
+async fn rejects_corrupt_passthrough_upload_without_publishing_metadata() {
+    let right_mutator: MemoryTransportMutator = Arc::new(|data: &mut Vec<u8>| {
+        if data.get(1) == Some(&3) {
+            *data.last_mut().expect("blob upload is not empty") ^= 1;
+        }
+    });
+    let (left_transport, right_transport) =
+        MemoryTransport::pair_with_mutators(TestPeer(1), TestPeer(2), None, Some(right_mutator));
+    let left: TestFileSystem = FileSystem::new(InMemoryStorage::new(), TestPeer(1), left_transport)
+        .await
+        .unwrap();
+    let right: TestFileSystem =
+        FileSystem::new(InMemoryStorage::new(), TestPeer(2), right_transport)
+            .await
+            .unwrap();
+
+    assert!(
+        right
+            .write_passthrough(TestPeer(1), "notes/today.txt", b"hello")
+            .await
+            .is_err()
+    );
+    assert!(right.entry("notes/today.txt").await.is_err());
+    assert!(left.entry("notes/today.txt").await.is_err());
+}
+
+#[tokio::test]
+async fn rejects_size_mismatched_passthrough_upload_without_publishing_metadata() {
+    let right_mutator: MemoryTransportMutator = Arc::new(|data: &mut Vec<u8>| {
+        if data.get(1) == Some(&3) {
+            data[49] ^= 1;
+        }
+    });
+    let (left_transport, right_transport) =
+        MemoryTransport::pair_with_mutators(TestPeer(1), TestPeer(2), None, Some(right_mutator));
+    let left: TestFileSystem = FileSystem::new(InMemoryStorage::new(), TestPeer(1), left_transport)
+        .await
+        .unwrap();
+    let right: TestFileSystem =
+        FileSystem::new(InMemoryStorage::new(), TestPeer(2), right_transport)
+            .await
+            .unwrap();
+
+    assert!(
+        right
+            .write_passthrough(TestPeer(1), "notes/today.txt", b"hello")
+            .await
+            .is_err()
+    );
+    assert!(right.entry("notes/today.txt").await.is_err());
+    assert!(left.entry("notes/today.txt").await.is_err());
+}
+
+#[tokio::test]
+async fn duplicate_passthrough_upload_commit_is_idempotent() {
+    let (left, right, _, right_transport) = file_system_pair(false).await;
+    right_transport.duplicate_next_outbound();
+
+    right
+        .write_passthrough(TestPeer(1), "notes/today.txt", b"hello")
+        .await
+        .unwrap();
+
+    assert!(entry(&left, "notes/today.txt").await.local);
+    assert_eq!(left.read("notes/today.txt").await.unwrap(), b"hello");
+    assert_eq!(
+        left.entry("notes/today.txt")
+            .await
+            .unwrap()
+            .providers
+            .into_iter()
+            .collect::<Vec<_>>(),
+        [TestPeer(1)]
+    );
+}
+
+#[tokio::test]
 async fn rejects_a_corrupt_passthrough_chunk() {
     let (left, right, _, _) = file_system_pair(true).await;
 
@@ -216,6 +392,58 @@ async fn syncs_tombstones_after_reconnect() {
     }
     assert!(right.entry("notes/today.txt").await.is_err());
     assert!(right.list("notes").await.unwrap().is_empty());
+}
+
+#[cfg(feature = "native")]
+#[tokio::test]
+async fn deleting_removes_unreferenced_blobs_and_preserves_shared_blobs() {
+    let root = temp_dir("delete-gc");
+    let _ = fs::remove_dir_all(&root);
+    let (transport, _remote) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
+    let file_system: NativeTestFileSystem =
+        FileSystem::new(NativeStorage::new(&root).unwrap(), TestPeer(1), transport)
+            .await
+            .unwrap();
+    let unique = ContentHash::of(b"unique");
+    let shared = ContentHash::of(b"shared");
+
+    file_system.write("unique.txt", b"unique").await.unwrap();
+    file_system.write("first.txt", b"shared").await.unwrap();
+    file_system.write("second.txt", b"shared").await.unwrap();
+    file_system.delete("unique.txt").await.unwrap();
+    file_system.delete("first.txt").await.unwrap();
+
+    assert!(!root.join(format!(".blobs/{unique}")).exists());
+    assert!(root.join(format!(".blobs/{shared}")).exists());
+    assert_eq!(file_system.read("second.txt").await.unwrap(), b"shared");
+    drop(file_system);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(feature = "native")]
+#[tokio::test]
+async fn overwriting_removes_unreferenced_blobs_and_preserves_shared_blobs() {
+    let root = temp_dir("overwrite-gc");
+    let _ = fs::remove_dir_all(&root);
+    let (transport, _remote) = MemoryTransport::pair(TestPeer(1), TestPeer(2));
+    let file_system: NativeTestFileSystem =
+        FileSystem::new(NativeStorage::new(&root).unwrap(), TestPeer(1), transport)
+            .await
+            .unwrap();
+    let old = ContentHash::of(b"old");
+    let shared = ContentHash::of(b"shared");
+
+    file_system.write("replaced.txt", b"old").await.unwrap();
+    file_system.write("first.txt", b"shared").await.unwrap();
+    file_system.write("second.txt", b"shared").await.unwrap();
+    file_system.write("replaced.txt", b"new").await.unwrap();
+    file_system.write("first.txt", b"newer").await.unwrap();
+
+    assert!(!root.join(format!(".blobs/{old}")).exists());
+    assert!(root.join(format!(".blobs/{shared}")).exists());
+    assert_eq!(file_system.read("second.txt").await.unwrap(), b"shared");
+    drop(file_system);
+    let _ = fs::remove_dir_all(root);
 }
 
 #[cfg(feature = "native")]

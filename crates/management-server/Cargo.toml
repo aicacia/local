@@ -50,6 +50,7 @@ idp-model = { path = "../idp-model", default-features = false, features = [
   "axum",
   "migrate",
 ] }
+idp-server = { path = "../idp-server", default-features = false, features = [] }
 bootstrap-service = { path = "../bootstrap-service", default-features = false, features = ["std"] }
 idp-service = { path = "../idp-service", default-features = false, features = ["libsql", "std"] }
 management-service = { path = "../management-service", default-features = false, features = ["libsql", "std"] }

@@ -1,27 +1,29 @@
+use std::io;
+
 use idp_service::repo::RawKeyringRepo;
 use iroh::{Endpoint, SecretKey, endpoint::presets};
 use iroh_chain::TUNNEL_ALPN;
 
-const DEVICE_IROH_KEY: &str = "idp-device-iroh-key";
+use crate::{DeviceIdentity, LocalSetupState};
 
-pub use idp_server::DeviceIdentity;
+const KEYRING_SERVICE: &str = "local.device-identity";
 
-pub async fn open(keyring_service: &str) -> Result<DeviceIdentity, String> {
-    let keyring = RawKeyringRepo::new(keyring_service);
+pub async fn open(state: &LocalSetupState) -> io::Result<DeviceIdentity> {
+    let keyring = RawKeyringRepo::new(KEYRING_SERVICE);
     let secret_key = match keyring
-        .load("", "", DEVICE_IROH_KEY)
-        .map_err(|error| error.to_string())?
+        .load("", "", &state.device_identity_id)
+        .map_err(io::Error::other)?
     {
         Some(bytes) => SecretKey::from_bytes(
             &bytes
                 .try_into()
-                .map_err(|_| "invalid Iroh device key length")?,
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid Iroh key"))?,
         ),
         None => {
             let secret_key = SecretKey::generate();
             keyring
-                .store("", "", DEVICE_IROH_KEY, &secret_key.to_bytes())
-                .map_err(|error| error.to_string())?;
+                .store("", "", &state.device_identity_id, &secret_key.to_bytes())
+                .map_err(io::Error::other)?;
             secret_key
         }
     };
@@ -30,8 +32,14 @@ pub async fn open(keyring_service: &str) -> Result<DeviceIdentity, String> {
         .alpns(vec![TUNNEL_ALPN.to_vec()])
         .bind()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(io::Error::other)?;
     Ok(DeviceIdentity::new(endpoint, secret_key))
+}
+
+pub fn delete(state: &LocalSetupState) -> io::Result<()> {
+    RawKeyringRepo::new(KEYRING_SERVICE)
+        .delete("", "", &state.device_identity_id)
+        .map_err(io::Error::other)
 }
 
 #[cfg(test)]

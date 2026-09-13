@@ -188,6 +188,10 @@ where
     type PeerId = EndpointId;
     type Incoming = ScopedIrohIncoming;
 
+    fn peers(&self) -> Vec<Self::PeerId> {
+        Self::peers(self)
+    }
+
     async fn send(&self, peer: Self::PeerId, data: Vec<u8>) -> Result<(), Self::Error> {
         if data.len() > MAX_FRAME_SIZE {
             return Err(Error::new(

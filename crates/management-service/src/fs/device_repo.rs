@@ -293,6 +293,24 @@ where
         self.write(&record).await?;
         Ok(true)
     }
+
+    async fn revoke_self(&self, public_key: &str) -> ManagementResult<bool> {
+        let records = self.records().await?;
+        let mut found = false;
+        for mut record in records {
+            if record.device.public_key != public_key {
+                continue;
+            }
+            found = true;
+            if record.device.state != DeviceState::Revoked {
+                record.device.state = DeviceState::Revoked;
+                record.device.revoked_at = Some(Utc::now());
+                record.device.updated_at = Utc::now();
+                self.write(&record).await?;
+            }
+        }
+        Ok(found)
+    }
 }
 
 fn path(id: i64) -> String {

@@ -146,8 +146,8 @@ impl MasterKey {
     }
 }
 
-impl Into<DerivedKey> for MasterKey {
-    fn into(self) -> DerivedKey {
-        DerivedKey::new(self.key, DerivationPath::default())
+impl From<MasterKey> for DerivedKey {
+    fn from(value: MasterKey) -> Self {
+        Self::new(value.key, DerivationPath::default())
     }
 }

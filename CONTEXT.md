@@ -119,9 +119,13 @@ Storage Residency is a device-local choice for a Storage Namespace: full or pass
 
 ## Global Identity Namespace
 
-The Global Identity Namespace is the stable filesystem namespace for synchronized IdP and management records. It is distinct from application-scoped storage and must be available before normal user/application authorization, so it cannot be opened through a `StorageScope` derived from the records it contains.
+The Global Identity Namespace is the authoritative stable filesystem namespace for synchronized IdP and management records. It is distinct from application-scoped storage and must be available before normal user/application authorization, so it cannot be opened through a `StorageScope` derived from the records it contains. A local database may materialize an activated revision as a cache but is never an authority.
 
-Installation Setup synchronizes this namespace first. Trusted-device authorization protects subsequent synchronization.
+Installation Setup synchronizes and activates this namespace first. Trusted-device authorization protects subsequent synchronization.
+
+## Global Identity Revision
+
+A Global Identity Revision is a complete, hash-validated set of canonical identity and management records staged before activation. A receiver activates a revision only after every manifest entry validates. Private key material is device-local and is not a Global Identity Revision record.
 
 ## File System
 

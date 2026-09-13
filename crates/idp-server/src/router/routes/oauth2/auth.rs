@@ -7,7 +7,10 @@ use idp_model::contract::{
     AuthorizationCodeResponse, AuthorizationRequest, ErrorCode, ErrorResponse,
 };
 
-use crate::router::{RouterState, middleware::StandardAuthorization};
+use crate::router::{
+    RouterState,
+    middleware::{StandardAuthorization, require_current_global_identity},
+};
 
 #[utoipa::path(
     post,
@@ -51,6 +54,7 @@ async fn redirect_to_authorize_ui(
     request: AuthorizationRequest,
     raw_query: Option<String>,
 ) -> Result<Redirect, ErrorResponse> {
+    require_current_global_identity(&state).await?;
     let mut redirect_url = state.ui_base_uri.clone();
     let query_string = if let Some(raw_query) = raw_query {
         raw_query

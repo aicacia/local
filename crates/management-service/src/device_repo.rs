@@ -59,4 +59,6 @@ pub trait DeviceRepo {
         device_id: i64,
         protected_public_key: &str,
     ) -> impl Future<Output = ManagementResult<bool>>;
+
+    fn revoke_self(&self, public_key: &str) -> impl Future<Output = ManagementResult<bool>>;
 }

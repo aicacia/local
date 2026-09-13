@@ -49,6 +49,11 @@ impl VaultId {
         hasher.update(&application_id.to_be_bytes());
         Self(*hasher.finalize().as_bytes())
     }
+
+    #[must_use]
+    pub fn global_identity() -> Self {
+        Self(*blake3::hash(b"idp-global-identity-v1").as_bytes())
+    }
 }
 
 pub trait TunnelAuthorizer: Send + Sync + 'static {
@@ -536,16 +541,19 @@ mod tests {
     }
 
     #[test]
-    fn derives_a_stable_scope_bound_vault_id() {
-        let first = VaultId::from_application("user", 1);
-        assert_eq!(first, VaultId::from_application("user", 1));
-        assert_ne!(first, VaultId::from_application("other-user", 1));
-        assert_ne!(first, VaultId::from_application("user", 2));
+    fn derives_stable_domain_separated_vault_ids() {
+        let application = VaultId::from_application("user", 1);
+        let global_identity = VaultId::global_identity();
+        assert_eq!(application, VaultId::from_application("user", 1));
+        assert_ne!(application, VaultId::from_application("other-user", 1));
+        assert_ne!(application, VaultId::from_application("user", 2));
         assert_ne!(
             VaultId::from_application("a", 12),
             VaultId::from_application("ab", 2)
         );
-        assert_eq!(first.hash().len(), 64);
+        assert_eq!(global_identity, VaultId::global_identity());
+        assert_ne!(application, global_identity);
+        assert_eq!(application.hash().len(), 64);
     }
 
     #[tokio::test]

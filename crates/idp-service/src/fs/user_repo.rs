@@ -173,23 +173,14 @@ where
         }
     }
 
-    async fn create_user_with_email_and_password(
-        &self,
-        name: &str,
-        email: &str,
-        password: &str,
-    ) -> RepoResult<User> {
+    async fn create_user_with_password(&self, name: &str, password: &str) -> RepoResult<User> {
         if password.trim().is_empty() {
             return Err(RepoError::InvalidInput(
                 "password is required for user key material".into(),
             ));
         }
-        if self.find_user_by_username_or_email(name).await?.is_some()
-            || self.find_user_by_username_or_email(email).await?.is_some()
-        {
-            return Err(RepoError::InvalidInput(
-                "user name or email already exists".into(),
-            ));
+        if self.find_user_by_username_or_email(name).await?.is_some() {
+            return Err(RepoError::InvalidInput("user name already exists".into()));
         }
         let now = Utc::now();
         let user = User {
@@ -210,8 +201,6 @@ where
             updated_at: now,
         };
         self.store.write(&user_path(user.id), &user).await?;
-        self.upsert_primary_user_email(user.id, email, false)
-            .await?;
         self.replace_user_password(user.id, password).await?;
         self.key_service
             .ensure_entity_master_key(EntityType::User, user.id, password)?;

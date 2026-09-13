@@ -13,7 +13,7 @@ use super::PairingConfig;
 pub struct AppConfig {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
-    pub device_key: String,
+    pub data_dir: String,
     pub oauth2: OAuth2Config,
     pub bootstrap: BootstrapConfig,
     pub password: PasswordConfig,
@@ -31,7 +31,7 @@ impl Default for AppConfig {
         Self {
             server: ServerConfig::default(),
             database: DatabaseConfig::default(),
-            device_key: "device.key".to_string(),
+            data_dir: "data".to_string(),
             oauth2: OAuth2Config::default(),
             bootstrap: BootstrapConfig::default(),
             password: PasswordConfig::default(),

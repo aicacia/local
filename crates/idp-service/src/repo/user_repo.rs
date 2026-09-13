@@ -26,10 +26,9 @@ pub trait UserRepo {
         user_id: i64,
     ) -> impl Future<Output = RepoResult<Option<UserPassword>>>;
 
-    fn create_user_with_email_and_password(
+    fn create_user_with_password(
         &self,
         name: &str,
-        email: &str,
         password: &str,
     ) -> impl Future<Output = RepoResult<User>>;
 

@@ -7,7 +7,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use idp_model::contract::{ErrorResponse, OAuth2ClientAuth, TokenRequest};
 use model::contract::TokenResponse;
 
-use crate::router::RouterState;
+use crate::router::{RouterState, middleware::require_current_global_identity};
 
 #[utoipa::path(post, path = "/oauth2/token", request_body(content = TokenRequest, content_type = "application/x-www-form-urlencoded"), responses((status = 200, description = "Token response", body = TokenResponse)))]
 pub(crate) async fn token(
@@ -15,6 +15,7 @@ pub(crate) async fn token(
     State(state): State<RouterState>,
     Form(request): Form<TokenRequest>,
 ) -> Result<Json<TokenResponse>, ErrorResponse> {
+    require_current_global_identity(&state).await?;
     let client_auth = parse_basic_client_auth(&headers)?;
     let response = state.oauth2_service.token(request, client_auth).await?;
     Ok(Json(response))

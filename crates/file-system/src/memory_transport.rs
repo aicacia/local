@@ -58,6 +58,7 @@ struct MemoryTransportState<P> {
     incoming: Mutex<Option<MemoryIncoming<P>>>,
     outbound: Mutex<Vec<(P, Vec<u8>)>>,
     mutator: Option<MemoryTransportMutator>,
+    duplicate_next_outbound: AtomicBool,
 }
 
 pub struct MemoryTransport<P> {
@@ -113,6 +114,7 @@ where
                 incoming: Mutex::new(Some(MemoryIncoming(left_receiver))),
                 outbound: Mutex::new(Vec::new()),
                 mutator: left_mutator,
+                duplicate_next_outbound: AtomicBool::new(false),
             }),
         };
         let right = Self {
@@ -123,6 +125,7 @@ where
                 incoming: Mutex::new(Some(MemoryIncoming(right_receiver))),
                 outbound: Mutex::new(Vec::new()),
                 mutator: right_mutator,
+                duplicate_next_outbound: AtomicBool::new(false),
             }),
         };
         (left, right)
@@ -144,6 +147,12 @@ where
         self.state.endpoint.online.load(Ordering::Acquire)
     }
 
+    pub fn duplicate_next_outbound(&self) {
+        self.state
+            .duplicate_next_outbound
+            .store(true, Ordering::Release);
+    }
+
     async fn deliver(&self, peer: P, mut data: Vec<u8>) {
         if !self.is_online() {
             self.state.outbound.lock().await.push((peer, data));
@@ -159,7 +168,14 @@ where
             .find_map(|(candidate, endpoint)| (*candidate == peer).then_some(endpoint))
             .expect("unknown memory transport peer");
 
-        endpoint.receive((self.peer.clone(), data)).await;
+        endpoint.receive((self.peer.clone(), data.clone())).await;
+        if self
+            .state
+            .duplicate_next_outbound
+            .swap(false, Ordering::AcqRel)
+        {
+            endpoint.receive((self.peer.clone(), data)).await;
+        }
     }
 }
 
@@ -181,6 +197,15 @@ where
             self.deliver(peer.clone(), data.clone()).await;
         }
         Ok(())
+    }
+
+    fn peers(&self) -> Vec<Self::PeerId> {
+        self.state
+            .peers
+            .iter()
+            .filter(|(_, endpoint)| endpoint.online.load(Ordering::Acquire))
+            .map(|(peer, _)| peer.clone())
+            .collect()
     }
 
     async fn subscribe(&self) -> Result<Self::Incoming, Self::Error> {

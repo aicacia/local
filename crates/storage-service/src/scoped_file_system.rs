@@ -5,7 +5,7 @@ use std::{
     io,
     path::PathBuf,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
     task::{Context, Poll},
 };
 
@@ -13,6 +13,8 @@ use file_system::{FileSystem, NativeStorage, PeerCodec, Transport};
 use futures_core::Stream;
 use storage_model::StorageNamespace;
 use tokio::sync::{Mutex, mpsc};
+
+use crate::residency::{Residency, ResidencyPolicy, validate_user_sub};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct StorageNamespaceId {
@@ -49,6 +51,7 @@ where
     local_peer: C::PeerId,
     transport_factory: F,
     file_systems: Mutex<BTreeMap<StorageNamespaceId, Arc<ScopedFileSystem<C, T>>>>,
+    residency_policy: Arc<StdMutex<ResidencyPolicy>>,
     _scope: core::marker::PhantomData<fn(S)>,
 }
 
@@ -65,17 +68,99 @@ where
 {
     pub fn new(root: PathBuf, local_peer: C::PeerId, transport_factory: F) -> io::Result<Self> {
         std::fs::create_dir_all(&root)?;
+        let residency_policy = ResidencyPolicy::load(&root)?;
         Ok(Self {
             root,
             local_peer,
             transport_factory,
             file_systems: Mutex::new(BTreeMap::new()),
+            residency_policy: Arc::new(StdMutex::new(residency_policy)),
             _scope: core::marker::PhantomData,
         })
     }
 
+    pub fn residency(&self, scope: &S, path: &str) -> Result<Residency, String> {
+        let id = storage_namespace_id(scope)?;
+        self.residency_policy
+            .lock()
+            .expect("residency policy lock poisoned")
+            .residency(&id.user_sub, id.application_id, path)
+    }
+
+    pub async fn set_residency(
+        &self,
+        scope: &S,
+        path: &str,
+        residency: Residency,
+    ) -> Result<(), String> {
+        let id = storage_namespace_id(scope)?;
+        let next_policy = {
+            let policy = self
+                .residency_policy
+                .lock()
+                .expect("residency policy lock poisoned");
+            let mut next = policy.clone();
+            next.set_residency(&id.user_sub, id.application_id, path, residency)?;
+            next
+        };
+        let file_system = self.file_systems.lock().await.get(&id).cloned();
+        if let Some(file_system) = file_system {
+            for file_path in file_system
+                .paths()
+                .await
+                .map_err(|error| error.to_string())?
+            {
+                if !matches_residency_path(path, &file_path) {
+                    continue;
+                }
+                let current = self.residency(scope, &file_path)?;
+                let next = next_policy.residency(&id.user_sub, id.application_id, &file_path)?;
+                match (current, next) {
+                    (Residency::Passthrough, Residency::Full) => file_system
+                        .materialize(&file_path)
+                        .await
+                        .map_err(|error| error.to_string())?,
+                    (Residency::Full, Residency::Passthrough) => file_system
+                        .evict(&file_path)
+                        .await
+                        .map_err(|error| error.to_string())?,
+                    _ => {}
+                }
+            }
+        }
+        next_policy
+            .save(&self.root)
+            .map_err(|error| error.to_string())?;
+        *self
+            .residency_policy
+            .lock()
+            .expect("residency policy lock poisoned") = next_policy;
+        Ok(())
+    }
+
+    pub fn set_application_excluded(
+        &self,
+        application_id: i64,
+        excluded: bool,
+    ) -> Result<(), String> {
+        let mut policy = self
+            .residency_policy
+            .lock()
+            .expect("residency policy lock poisoned");
+        policy.set_application_excluded(application_id, excluded)?;
+        policy.save(&self.root).map_err(|error| error.to_string())
+    }
+
     pub async fn open(&self, scope: &S) -> Result<Arc<ScopedFileSystem<C, T>>, String> {
         let id = storage_namespace_id(scope)?;
+        if self
+            .residency_policy
+            .lock()
+            .expect("residency policy lock poisoned")
+            .is_application_excluded(id.application_id)
+        {
+            return Err("application storage is excluded on this device".to_owned());
+        }
         let mut file_systems = self.file_systems.lock().await;
         if let Some(file_system) = file_systems.get(&id) {
             let file_system = Arc::clone(file_system);
@@ -101,6 +186,20 @@ where
             .await
             .map_err(|error| error.to_string())?,
         );
+        let policy = Arc::clone(&self.residency_policy);
+        let user_sub = id.user_sub.clone();
+        let application_id = id.application_id;
+        file_system
+            .set_passthrough_admission(move |path| {
+                matches!(
+                    policy
+                        .lock()
+                        .expect("residency policy lock poisoned")
+                        .residency(&user_sub, application_id, path),
+                    Ok(Residency::Full)
+                )
+            })
+            .await;
         file_systems.insert(id, Arc::clone(&file_system));
         drop(file_systems);
         self.transport_factory
@@ -110,19 +209,15 @@ where
     }
 }
 
+fn matches_residency_path(rule: &str, path: &str) -> bool {
+    rule.is_empty() || path == rule || path.starts_with(&format!("{rule}/"))
+}
+
 fn storage_namespace_id(scope: &impl StorageNamespace) -> Result<StorageNamespaceId, String> {
     let user_sub = scope.user_sub();
-    let valid = |value: &str| {
-        !value.is_empty()
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    };
-    if !valid(user_sub) {
-        return Err("invalid user subject".to_string());
-    }
+    validate_user_sub(user_sub)?;
     if scope.application_id() <= 0 {
-        return Err("invalid application id".to_string());
+        return Err("invalid application id".to_owned());
     }
 
     Ok(StorageNamespaceId {
@@ -206,6 +301,10 @@ impl Transport for LocalTransport {
         Ok(())
     }
 
+    fn peers(&self) -> Vec<Self::PeerId> {
+        Vec::new()
+    }
+
     async fn subscribe(&self) -> Result<Self::Incoming, Self::Error> {
         Ok(self
             .incoming
@@ -218,9 +317,19 @@ impl Transport for LocalTransport {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
+    use std::{
+        env, fs,
+        future::Future,
+        pin::Pin,
+        sync::{Arc, Mutex},
+    };
 
-    use super::{LocalPeer, LocalScopedFileSystemRuntime, LocalTransportFactory, StorageNamespace};
+    use file_system::MemoryTransport;
+
+    use super::{
+        LocalPeer, LocalPeerCodec, LocalScopedFileSystemRuntime, LocalTransportFactory, Residency,
+        ScopedFileSystem, ScopedFileSystemRuntime, ScopedTransportFactory, StorageNamespace,
+    };
 
     #[derive(Clone)]
     struct Namespace;
@@ -235,9 +344,100 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct MemoryTransportFactory(Arc<Mutex<Vec<MemoryTransport<LocalPeer>>>>);
+
+    impl ScopedTransportFactory<LocalPeerCodec, MemoryTransport<LocalPeer>, Namespace>
+        for MemoryTransportFactory
+    {
+        fn create(&self, _: &Namespace) -> Result<MemoryTransport<LocalPeer>, String> {
+            self.0
+                .lock()
+                .expect("memory transport lock poisoned")
+                .pop()
+                .ok_or_else(|| "memory transport is missing".to_owned())
+        }
+
+        fn synchronize(
+            &self,
+            _: Namespace,
+            _: Arc<ScopedFileSystem<LocalPeerCodec, MemoryTransport<LocalPeer>>>,
+        ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn admits_passthrough_uploads_after_residency_becomes_full() {
+        let root = env::temp_dir().join(format!(
+            "scoped-file-system-admission-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let (left_transport, right_transport) = MemoryTransport::pair(LocalPeer, LocalPeer);
+        let left = ScopedFileSystemRuntime::new(
+            root.join("left"),
+            LocalPeer,
+            MemoryTransportFactory(Arc::new(Mutex::new(vec![left_transport]))),
+        )
+        .unwrap();
+        let right = ScopedFileSystemRuntime::new(
+            root.join("right"),
+            LocalPeer,
+            MemoryTransportFactory(Arc::new(Mutex::new(vec![right_transport]))),
+        )
+        .unwrap();
+        let namespace = Namespace;
+        let receiver = left.open(&namespace).await.unwrap();
+        let sender = right.open(&namespace).await.unwrap();
+        assert!(
+            sender
+                .write_passthrough_to_peer_or_any("notes/today.txt", b"hello")
+                .await
+                .is_err()
+        );
+        assert!(receiver.entry("notes/today.txt").await.is_err());
+
+        left.set_residency(&namespace, "notes", Residency::Full)
+            .await
+            .unwrap();
+        sender
+            .write_passthrough_to_peer_or_any("notes/today.txt", b"hello")
+            .await
+            .unwrap();
+        for _ in 0..100 {
+            if receiver.entry("notes/today.txt").await.is_ok() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(receiver.entry("notes/today.txt").await.unwrap().local);
+        assert_eq!(receiver.read("notes/today.txt").await.unwrap(), b"hello");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn excludes_applications_before_creating_a_vault() {
+        let root = env::temp_dir().join(format!(
+            "scoped-file-system-excluded-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let runtime =
+            LocalScopedFileSystemRuntime::new(root.clone(), LocalPeer, LocalTransportFactory)
+                .unwrap();
+        runtime.set_application_excluded(1, true).unwrap();
+        assert!(runtime.open(&Namespace).await.is_err());
+        assert!(!root.join("vaults/user/1").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[tokio::test]
     async fn persists_scoped_native_storage() {
-        let root = env::temp_dir().join(format!("scoped-file-system-{}", std::process::id()));
+        let root = env::temp_dir().join(format!(
+            "scoped-file-system-persisted-{}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&root);
         let namespace = Namespace;
         let runtime =

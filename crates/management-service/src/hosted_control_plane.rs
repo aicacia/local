@@ -4,8 +4,8 @@ use idp_service::oauth2::{decode_jwt, verify_jwt, verify_tunnel_authorization};
 
 use crate::StorageScope;
 use idp_model::contract::{
-    Jwks, StorageSession, TrustedDevice, TunnelAuthorization, TunnelAuthorizationClaims,
-    TunnelAuthorizationRequest,
+    DeviceSelfRevocationRequest, Jwks, StorageSession, TrustedDevice, TunnelAuthorization,
+    TunnelAuthorizationClaims, TunnelAuthorizationRequest,
 };
 use iroh::EndpointId;
 use model::contract::{StandardClaims, TokenType, TokenUse};
@@ -51,6 +51,10 @@ impl HostedControlPlane {
 
     pub async fn trusted_devices(&self, token: &str) -> Result<Vec<TrustedDevice>, String> {
         self.get("devices/trusted", token).await
+    }
+
+    pub async fn revoke_self(&self, request: DeviceSelfRevocationRequest) -> Result<(), String> {
+        self.post_empty("devices/revoke-self", &request).await
     }
 
     pub async fn tunnel_authorization(
@@ -165,6 +169,21 @@ impl HostedControlPlane {
             .json()
             .await
             .map_err(|error| error.to_string())
+    }
+
+    async fn post_empty<B>(&self, path: &str, body: &B) -> Result<(), String>
+    where
+        B: serde::Serialize + ?Sized,
+    {
+        self.client
+            .post(self.url(path)?)
+            .json(body)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?
+            .error_for_status()
+            .map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     fn url(&self, path: &str) -> Result<Url, String> {

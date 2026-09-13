@@ -13,6 +13,9 @@ use file_system::{PeerCodec, Storage, Transport};
 use storage_model::{StorageErrorCode, StorageResponse, StorageSocketRequest};
 use storage_service::StorageService;
 
+type StorageSessionFuture<'a> =
+    Pin<Box<dyn Future<Output = Option<Arc<dyn StorageSocketSession>>> + Send + 'a>>;
+
 pub trait StorageSocketSession: Send + Sync {
     fn execute(
         &self,
@@ -21,10 +24,7 @@ pub trait StorageSocketSession: Send + Sync {
 }
 
 pub trait StorageSessionResolver: Send + Sync + 'static {
-    fn take(
-        &self,
-        token: &str,
-    ) -> Pin<Box<dyn Future<Output = Option<Arc<dyn StorageSocketSession>>> + Send + '_>>;
+    fn take(&self, token: &str) -> StorageSessionFuture<'_>;
 }
 
 impl<S, C, T> StorageSocketSession for StorageService<S, C, T>

@@ -6,7 +6,7 @@ use idp_model::contract::{
     DeviceAuthorization, DeviceAuthorizationRequest, ErrorCode, ErrorResponse,
 };
 
-use crate::router::RouterState;
+use crate::router::{RouterState, middleware::require_current_global_identity};
 
 #[utoipa::path(
     post,
@@ -18,6 +18,7 @@ pub(crate) async fn device_auth(
     State(state): State<RouterState>,
     Form(request): Form<DeviceAuthorizationRequest>,
 ) -> Result<Json<DeviceAuthorization>, ErrorResponse> {
+    require_current_global_identity(&state).await?;
     let response = state.oauth2_service.device_authorization(request)?;
     Ok(Json(response))
 }

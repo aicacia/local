@@ -24,6 +24,15 @@ impl DynamicEndpointIdStore {
             .await
             .insert(scope, ids.into_iter().collect());
     }
+
+    pub async fn insert_scope(&self, scope: String, id: EndpointId) {
+        self.scopes
+            .write()
+            .await
+            .entry(scope)
+            .or_default()
+            .insert(id);
+    }
 }
 
 impl AllowedEndpointId for DynamicEndpointIdStore {

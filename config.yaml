@@ -1,5 +1,4 @@
 idp_ui_public_uri: "https://lidp.localhost:1337"
-device_key: "device.key"
+data_dir: "data"
 bootstrap:
-  is_master: true
   web: true
