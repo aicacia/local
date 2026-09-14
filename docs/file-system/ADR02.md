@@ -32,7 +32,7 @@ Library layers:
 ├─────────────────────────────┤
 │   Metadata: flat key-value store │  path = key; per-key LWW-register
 ├─────────────────────────────┤
-│   Storage Layer (native filesystem) │  content-addressed blobs
+│   Storage Layer (native filesystem) │  file_id (UUID v7) addressed
 ├─────────────────────────────┤
 │   Transport Trait (minimal)   │  send / broadcast / subscribe, no topics
 ├─────────────────────────────┤
@@ -77,7 +77,7 @@ iroh is the default implementation. Swapping to a different transport later mean
 - One conflict-resolution layer, not two:
   - **Key existence / pointer / rename / delete** conflicts are resolved entirely by the deterministic per-key LWW-register described above.
   - **File content (blob) conflicts** — two peers editing the same file's content while offline — are resolved according to the file's **type**, not a generic config setting. `merge_strategy` is a property of the file type:
-    - Most file types default to **LWW** (last write wins on the blob as a whole).
+    - Most file types default to **LWW** (last write wins on the content as a whole — one winning version of the file).
     - Some file types use custom merge logic via a **plugin**. Where a CRDT is used for content, it must be **diff-based (operation-based) with independent roots** — no shared document root across keys or across the keyspace, and peers exchange ops/diffs rather than full document state. Example: a file that is itself an Automerge (or similar) document is merged with that CRDT's own merge, not LWW, so concurrent edits are not silently dropped.
     - Plugins are **compiled into the codebase and version-controlled**, not installed independently per device — every replica on a given build has an identical plugin set, which removes cross-device plugin-mismatch divergence (cross-_build_-version skew remains a separate, open concern).
     - Dispatch is a simple enum keyed on file extension/mime type — no trait objects or dynamic registry needed:
@@ -95,38 +95,44 @@ iroh is the default implementation. Swapping to a different transport later mean
 - The engine is also responsible for fetching blob content on demand (see passthrough, below), separate from metadata/key sync.
 - The system is **local-first and reactive**: nodes act on changes as they arrive and never block waiting on a request/response round-trip to the network.
 
-### 5. Blob storage
+### 5. Content storage — single model, file_id addressed
 
-- Files are content-addressed (hashed) and chunked, enabling streaming reads and integrity checks.
-- Full files are stored as native filesystem blobs under `.blobs/<hash>`.
-- Key-register entries never contain blob bytes inline for full files — only metadata pointing at them.
+One addressing scheme for all files, mutable or not:
+
+- Every file already has a stable **UUID v7** `file_id` (see §3). Content is stored under that id (e.g. `.data/<file_id>`), never under a content hash as the primary key.
+- Writes (overwrite or append) update the object for that `file_id` in place. Highly changing files (logs, etc.) do not allocate a new identity or a new content-hash path on every write.
+- An optional content digest may be recorded in the key-register for integrity checks and change detection; it is metadata, not the storage locator. Dedup across different `file_id`s is out of scope.
+- Chunking remains available for large files and streaming, but chunks are subordinate to the file_id object (not a global CA blob store keyed only by hash).
+- Key-register entries point at content by `file_id` (plus size, optional digest, providers). Bytes are never inlined for full files.
+- GC: when a key is tombstoned and aged past the GC window, the `.data/<file_id>` object is removed. Overwrites do not create orphan objects that need hash-based GC.
+- Sync still decides _which version wins_ via per-key LWW or a content plugin; the storage layer materializes the winning bytes under the same `file_id`.
 
 ### 6. Device-local storage residency
 
 Storage residency is device-local policy; it is not synchronized metadata.
 
-- A device may exclude an entire Application. Exclusion applies to every Storage Namespace for that application and prevents local metadata and blob storage from being created.
+- A device may exclude an entire Application. Exclusion applies to every Storage Namespace for that application and prevents local metadata and content storage from being created.
 - An included application defaults to **Passthrough**.
 - A device may set **Full** or **Passthrough** for a namespace, folder, or file. The longest matching path rule wins.
 - The Global Identity Namespace is always Full and cannot be excluded.
-- Full residency stores metadata and blobs locally. Passthrough stores metadata but no blob bytes, and is not cached locally by the library (though, when a binary mounts via FUSE, the OS page cache may still cache recently-read pages — see §9).
+- Full residency stores metadata and content locally. Passthrough stores metadata but no content bytes, and is not cached locally by the library (though, when a binary mounts via FUSE, the OS page cache may still cache recently-read pages — see §9).
 - **Passthrough files are always read-only** on the local device. Writes are only possible under Full residency.
-- Changing from Passthrough to Full fetches and verifies all selected blobs before marking the device as a provider. Changing from Full to Passthrough removes local references and garbage-collects only blobs unreferenced by other locally-full entries.
+- Changing from Passthrough to Full fetches and verifies all selected content before marking the device as a provider. Changing from Full to Passthrough removes local references and garbage-collects only content unreferenced by other locally-full entries.
 
 ### 7. Passthrough reads
 
-- Passthrough is **read-only**. Attempts to write, create, truncate, or otherwise mutate a passthrough file fail locally (e.g. `EROFS` / equivalent API error); no metadata is published and no blob is uploaded.
-- Every passthrough read goes to an online Full peer and streams the blob by hash.
+- Passthrough is **read-only**. Attempts to write, create, truncate, or otherwise mutate a passthrough file fail locally (e.g. `EROFS` / equivalent API error); no metadata is published and no content is uploaded.
+- Every passthrough read goes to an online Full peer and streams content by `file_id` (and optional version/digest from the key-register).
 - **Passthrough is unsupported** (reads fail with a clear error) when any of the following hold:
   - No peers are configured
   - No eligible Full peers are currently reachable
   - The network is explicitly set to offline
-- A peer must advertise support for durable blob storage (i.e. Full residency for that path) before it can be selected as a provider for passthrough reads.
+- A peer must advertise support for durable content storage (i.e. Full residency for that path) before it can be selected as a provider for passthrough reads.
 
 ### 8. Streaming
 
-- Files are chunked for content addressing anyway, so streaming reads = reading chunks in order.
-- Local reads hit the native blob store. Passthrough reads always use an online Full peer. Both use the same read API.
+- Content is addressed by `file_id`. Large files may be chunked under that id; streaming reads = reading those chunks (or the single object) in order.
+- Local reads hit the native `.data/<file_id>` store. Passthrough reads always use an online Full peer. Both use the same read API.
 
 ### 9. OS integration (Linux mount — binaries only)
 
@@ -147,7 +153,8 @@ Storage residency is device-local policy; it is not synchronized metadata.
 - Keyspace merge stays simple (per-key LWW); CRDTs are optional and scoped to content plugins only, and only as diff-based independent-root documents — no shared-root state CRDT over the filesystem.
 - Content merge plugins (including diff-based CRDTs) remain small enough to reason about and test exhaustively (deterministic golden tests per plugin).
 - Compiled-in plugins remove cross-device plugin-mismatch risk entirely for same-build fleets.
-- Residency lets constrained devices avoid blob storage without weakening key/metadata synchronization.
+- Residency lets constrained devices avoid local content storage without weakening key/metadata synchronization.
+- Single file_id-addressed storage avoids content-hash churn for logs and other highly mutable files; one path for all file types.
 - Passthrough-as-read-only removes an entire class of remote-write failure modes and simplifies the provider/ack protocol.
 
 **Trade-offs / risks**
@@ -159,3 +166,5 @@ Storage residency is device-local policy; it is not synchronized metadata.
 - Passthrough is unsupported when offline, when no peers are configured, or when no Full peers are reachable — those devices cannot read passthrough content at all.
 - When binaries mount via FUSE, accepting default kernel page caching means passthrough reads can be stale between fetches.
 - Writes require Full residency on the local device; constrained devices that stay in Passthrough cannot create or modify files at all.
+- Optional content digests in metadata must stay consistent with on-disk bytes; a mismatched digest is a local integrity failure, not a merge input.
+- If append/tail-diff exchange is added later for hot files, it must still obey independent-root and determinism rules — easy to get wrong if treated like an ad-hoc log shipper.
