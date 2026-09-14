@@ -10,6 +10,10 @@ mod error;
 #[cfg(feature = "sync")]
 mod file_system;
 mod hash;
+#[cfg(feature = "sync")]
+mod local;
+#[cfg(feature = "sync")]
+mod local_state;
 #[cfg(feature = "in-memory")]
 mod memory_storage;
 #[cfg(feature = "in-memory")]
@@ -21,6 +25,8 @@ mod peer;
 mod storage;
 mod stream;
 #[cfg(feature = "sync")]
+mod sync_session;
+#[cfg(feature = "sync")]
 mod sync_store;
 mod transport;
 
@@ -30,6 +36,12 @@ pub use file_system::{
     FileSystem, FileSystemError, FileSystemInitError, ReadError, ReadFuture, ReadStream, SyncError,
 };
 pub use hash::ContentHash;
+#[cfg(feature = "sync")]
+pub use local::{LocalFileSystem, LocalIncoming, LocalPeer, LocalPeerCodec, LocalTransport};
+#[cfg(feature = "sync")]
+pub use local_state::{
+    ContentRecoveryReport, LocalFileSystemState, MetadataRecoveryReport, OutboundRecoveryReport,
+};
 #[cfg(feature = "in-memory")]
 pub use memory_storage::InMemoryStorage;
 #[cfg(feature = "in-memory")]

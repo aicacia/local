@@ -6,7 +6,7 @@ use alloc::{
 };
 use core::{
     fmt,
-    future::{Future, poll_fn},
+    future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -46,10 +46,10 @@ type BlobUpload = (u64, String, ContentHash, u64, Vec<u8>);
 type BlobUploadAck = (u64, ContentHash, bool);
 type UploadReceiver<S> = oneshot::Receiver<Result<(), FileSystemError<<S as Storage>::Error>>>;
 
-struct PendingUpload<StorageError, PeerId> {
+pub(crate) struct PendingUpload<StorageError, PeerId> {
     peer: PeerId,
     hash: ContentHash,
-    sender: oneshot::Sender<Result<(), FileSystemError<StorageError>>>,
+    pub(crate) sender: oneshot::Sender<Result<(), FileSystemError<StorageError>>>,
 }
 
 struct PendingRead<StorageError, PeerId> {
@@ -74,7 +74,7 @@ struct PendingStream<StorageError, PeerId> {
 }
 
 #[derive(Debug)]
-enum SyncRequest<P> {
+pub(crate) enum SyncRequest<P> {
     Broadcast(Vec<u8>),
     Send { peer: P, data: Vec<u8> },
     Upload { peer: P, data: Vec<u8>, id: u64 },
@@ -199,10 +199,10 @@ pub struct FileSystem<S: Storage, C: PeerCodec, T: Transport<PeerId = C::PeerId>
     state: Arc<Mutex<FileSystemState<S, C>>>,
     uploads: Arc<Mutex<()>>,
     transport: Arc<T>,
-    task: tokio::task::JoinHandle<()>,
+    session: crate::sync_session::SyncSession,
 }
 
-struct FileSystemState<S: Storage, C: PeerCodec> {
+pub(crate) struct FileSystemState<S: Storage, C: PeerCodec> {
     content_store: ContentStore<S>,
     local_peer: C::PeerId,
     documents: BTreeMap<String, AutoCommit>,
@@ -210,7 +210,7 @@ struct FileSystemState<S: Storage, C: PeerCodec> {
     broadcast_states: BTreeMap<String, State>,
     peer_states: BTreeMap<(C::PeerId, String), State>,
     sync_sender: mpsc::Sender<SyncRequest<C::PeerId>>,
-    pending_uploads: BTreeMap<u64, PendingUpload<S::Error, C::PeerId>>,
+    pub(crate) pending_uploads: BTreeMap<u64, PendingUpload<S::Error, C::PeerId>>,
     completed_uploads: BTreeMap<(C::PeerId, u64), (String, ContentHash, u64)>,
     pending_reads: PendingReads<S, C>,
     pending_streams: PendingStreams<S, C>,
@@ -527,6 +527,76 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(())
     }
 
+    pub async fn rename(
+        &mut self,
+        from: &str,
+        to: &str,
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        let (from_folder, from_name) =
+            split_path(from).map_err(|_| FileSystemError::InvalidPath)?;
+        let (to_folder, to_name) = split_path(to).map_err(|_| FileSystemError::InvalidPath)?;
+        let entry = self.entry(from)?;
+        if self.entry(to).is_ok() {
+            return Err(FileSystemError::InvalidMetadata);
+        }
+        self.content_store
+            .rename(from, to, entry.local)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        let renamed = FileEntry::new(
+            to_name.to_string(),
+            entry.hash,
+            entry.size,
+            entry.providers.clone(),
+            entry.local,
+        );
+        let messages = {
+            let from_document = self
+                .documents
+                .get_mut(from_folder)
+                .ok_or(FileSystemError::NotFound)?;
+            store_tombstone(from_document, from_name).map_err(FileSystemError::Metadata)?;
+            let to_document = self.documents.entry(to_folder.to_string()).or_default();
+            store_entry::<C>(to_document, &renamed).map_err(FileSystemError::Metadata)?;
+            let mut messages = Vec::new();
+            for folder in [
+                Some(from_folder),
+                (to_folder != from_folder).then_some(to_folder),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let document = self
+                    .documents
+                    .get_mut(folder)
+                    .ok_or(FileSystemError::NotFound)?;
+                let state = self.broadcast_states.entry(folder.to_string()).or_default();
+                if let Some(message) = document.sync().generate_sync_message(state) {
+                    messages.push((
+                        folder.to_string(),
+                        encode_envelope(folder, message.encode()),
+                    ));
+                }
+            }
+            messages
+        };
+        self.persist_dirty(from_folder)
+            .await
+            .map_err(FileSystemError::Storage)?;
+        if to_folder != from_folder {
+            self.persist_dirty(to_folder)
+                .await
+                .map_err(FileSystemError::Storage)?;
+        }
+        self.garbage_collect()
+            .await
+            .map_err(sync_file_system_error)?;
+        for (_, data) in messages {
+            let _ = self.emit(SyncRequest::Broadcast(data));
+        }
+        Ok(renamed)
+    }
+
     pub fn entry(&self, path: &str) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
         let (folder, name) = split_path(path).map_err(|_| FileSystemError::InvalidPath)?;
         let document = self
@@ -680,7 +750,7 @@ impl<S: Storage, C: PeerCodec> FileSystemState<S, C> {
         Ok(ReadStream { receiver })
     }
 
-    pub async fn receive(
+    pub(crate) async fn receive(
         &mut self,
         peer: C::PeerId,
         data: Vec<u8>,
@@ -1011,7 +1081,7 @@ where
                 .await
                 .map_err(FileSystemInitError::Transport)?,
         );
-        let (outbound, mut requests) = mpsc::channel(REQUEST_CAPACITY);
+        let (outbound, requests) = mpsc::channel(REQUEST_CAPACITY);
         let state = Arc::new(Mutex::new(FileSystemState::new(
             content_store,
             local_peer,
@@ -1043,46 +1113,17 @@ where
                 }
             }
         }
-        let task_state = Arc::clone(&state);
-        let task_transport = Arc::clone(&transport);
-        let task = tokio::spawn(async move {
-            let mut incoming = incoming;
-            loop {
-                tokio::select! {
-                    request = requests.recv() => match request {
-                        Some(SyncRequest::Broadcast(data)) => {
-                            let _ = task_transport.broadcast(data).await;
-                        }
-                        Some(SyncRequest::Send { peer, data }) => {
-                            let _ = task_transport.send(peer, data).await;
-                        }
-                        Some(SyncRequest::Upload { peer, data, id }) => {
-                            if task_transport.send(peer, data).await.is_err()
-                                && let Some(pending) = task_state.lock().await.pending_uploads.remove(&id)
-                            {
-                                let _ = pending.sender.send(Err(FileSystemError::InvalidMetadata));
-                            }
-                        }
-                        None => return,
-                    },
-                    message = poll_fn(|context| incoming.as_mut().poll_next(context)) => match message {
-                        Some((peer, data)) => {
-                            let _ = task_state
-                                .lock()
-                                .await
-                                .receive(peer, data)
-                                .await;
-                        }
-                        None => return,
-                    },
-                }
-            }
-        });
+        let session = crate::sync_session::SyncSession::start(
+            Arc::clone(&state),
+            Arc::clone(&transport),
+            incoming,
+            requests,
+        );
         Ok(Self {
             state,
             uploads: Arc::new(Mutex::new(())),
             transport,
-            task,
+            session,
         })
     }
 
@@ -1191,6 +1232,14 @@ where
         self.state.lock().await.delete(path).await
     }
 
+    pub async fn rename(
+        &self,
+        from: &str,
+        to: &str,
+    ) -> Result<FileEntry<C::PeerId>, FileSystemError<S::Error>> {
+        self.state.lock().await.rename(from, to).await
+    }
+
     pub async fn entry(
         &self,
         path: &str,
@@ -1231,7 +1280,7 @@ where
 
 impl<S: Storage, C: PeerCodec, T: Transport<PeerId = C::PeerId>> Drop for FileSystem<S, C, T> {
     fn drop(&mut self) {
-        self.task.abort();
+        self.session.abort();
     }
 }
 
@@ -1674,6 +1723,17 @@ fn split_path(path: &str) -> Result<(&str, &str), ()> {
     }
     let (folder, name) = path.rsplit_once('/').unwrap_or(("", path));
     validate_folder(folder)?;
+    if folder == ".blobs"
+        || folder.starts_with(".blobs/")
+        || folder == ".paths"
+        || folder.starts_with(".paths/")
+        || folder == ".passthrough"
+        || folder.starts_with(".passthrough/")
+        || folder == ".sync"
+        || folder.starts_with(".sync/")
+    {
+        return Err(());
+    }
     if !is_name(name) {
         return Err(());
     }

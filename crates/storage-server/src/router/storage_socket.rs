@@ -9,9 +9,7 @@ use axum::{
     response::Response,
     routing::get,
 };
-use file_system::{PeerCodec, Storage, Transport};
-use storage_model::{StorageErrorCode, StorageResponse, StorageSocketRequest};
-use storage_service::StorageService;
+use storage_model::{StorageErrorCode, StorageResponse, StorageSession, StorageSocketRequest};
 
 type StorageSessionFuture<'a> =
     Pin<Box<dyn Future<Output = Option<Arc<dyn StorageSocketSession>>> + Send + 'a>>;
@@ -27,27 +25,12 @@ pub trait StorageSessionResolver: Send + Sync + 'static {
     fn take(&self, token: &str) -> StorageSessionFuture<'_>;
 }
 
-impl<S, C, T> StorageSocketSession for StorageService<S, C, T>
-where
-    S: Storage + Send + Sync + 'static,
-    S::Error: Send + Sync + 'static,
-    C: PeerCodec + Send + Sync + 'static,
-    C::Error: Send + Sync + 'static,
-    C::PeerId: Send + Sync + 'static,
-    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
-    T::Incoming: Send + 'static,
-{
+impl<S: StorageSession> StorageSocketSession for S {
     fn execute(
         &self,
         request: storage_model::StorageRequest,
     ) -> Pin<Box<dyn Future<Output = StorageResponse> + Send + '_>> {
-        Box::pin(async move {
-            self.execute(request)
-                .await
-                .unwrap_or(StorageResponse::Error {
-                    code: StorageErrorCode::OperationFailed,
-                })
-        })
+        self.execute_session(request)
     }
 }
 

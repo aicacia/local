@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeSet, string::String, vec::Vec};
+use alloc::{collections::BTreeSet, format, string::String, vec::Vec};
 
 use crate::{ContentHash, Storage};
 
@@ -65,6 +65,29 @@ impl<S: Storage> ContentStore<S> {
         self.write(path, &existing).await
     }
 
+    pub(crate) async fn delete(&mut self, path: &str) -> Result<(), S::Error> {
+        let _ = self.storage.remove(&path_path(path)).await;
+        let _ = self.storage.remove(&passthrough_path(path)).await;
+        Ok(())
+    }
+
+    pub(crate) async fn rename(
+        &mut self,
+        from: &str,
+        to: &str,
+        local: bool,
+    ) -> Result<(), S::Error> {
+        if local {
+            let content = self.storage.read(&path_path(from)).await?;
+            self.storage.write(&path_path(to), &content).await?;
+            self.storage.remove(&path_path(from)).await?;
+        } else {
+            self.storage.write(&passthrough_path(to), &[]).await?;
+            self.storage.remove(&passthrough_path(from)).await?;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn read(&self, path: &str) -> Result<Vec<u8>, S::Error> {
         let hash = self.storage.read(&path_path(path)).await?;
         let hash: [u8; blake3::OUT_LEN] = hash.try_into().expect("invalid stored content hash");
@@ -72,6 +95,10 @@ impl<S: Storage> ContentStore<S> {
         let content = self.storage.read(&blob_path(hash)).await?;
         debug_assert_eq!(ContentHash::of(&content), hash);
         Ok(content)
+    }
+
+    pub(crate) async fn has_blob(&self, hash: &ContentHash) -> bool {
+        self.storage.read(&blob_path(*hash)).await.is_ok()
     }
 
     pub(crate) async fn register_passthrough(&mut self, path: &str) -> Result<(), S::Error> {

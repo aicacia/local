@@ -74,6 +74,22 @@ the same application share a filesystem for the same user.
 
 ## Filesystem synchronization
 
+The filesystem library can also be used without any storage service or network
+transport. Native applications can open a local filesystem directly and add a
+transport-aware integration when replication is needed:
+
+```rust,ignore
+use file_system::{LocalFileSystem, NativeStorage};
+
+let storage = NativeStorage::new("./data")?;
+let file_system = LocalFileSystem::open_local(storage).await?;
+file_system.write("notes/today.txt", b"hello").await?;
+```
+
+The local API owns file content and metadata. Replication is an integration
+concern; Iroh, namespace identity, residency policy, and authorization remain
+outside the library-first filesystem API.
+
 Each storage namespace has one local filesystem per node. The runtime derives
 its local directory; applications cannot provide paths.
 

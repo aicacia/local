@@ -18,6 +18,17 @@ impl ContentHash {
     pub const fn from_bytes(bytes: [u8; blake3::OUT_LEN]) -> Self {
         Self(bytes)
     }
+
+    pub fn from_hex(hex_str: &str) -> Result<Self, ()> {
+        if hex_str.len() != blake3::OUT_LEN * 2 {
+            return Err(());
+        }
+        let mut bytes = [0u8; blake3::OUT_LEN];
+        for i in 0..blake3::OUT_LEN {
+            bytes[i] = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16).map_err(|_| ())?;
+        }
+        Ok(Self(bytes))
+    }
 }
 
 impl fmt::Debug for ContentHash {

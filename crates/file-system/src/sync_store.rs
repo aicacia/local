@@ -12,9 +12,19 @@ const DOCUMENTS_DIRECTORY: &str = ".sync/documents";
 const DIRTY_DIRECTORY: &str = ".sync/dirty";
 const ROOT_FOLDER_KEY: &str = "@root";
 
+#[derive(Debug)]
 pub(crate) enum SyncStoreError<E> {
     Storage(E),
     Metadata(automerge::AutomergeError),
+}
+
+impl<E: core::fmt::Display> core::fmt::Display for SyncStoreError<E> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Storage(error) => write!(f, "Storage error: {error}"),
+            Self::Metadata(error) => write!(f, "Metadata error: {error}"),
+        }
+    }
 }
 
 pub(crate) struct SyncState {
@@ -76,11 +86,30 @@ impl<'a, S: Storage> SyncStore<'a, S> {
     ) -> Result<(), S::Error> {
         self.storage
             .write(&document_path(folder), &document.save())
-            .await
+            .await?;
+        let _ = self.clear_dirty(folder).await;
+        Ok(())
     }
 
     pub(crate) async fn mark_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
         self.storage.write(&dirty_path(folder), &[]).await
+    }
+
+    pub(crate) async fn clear_dirty(&mut self, folder: &str) -> Result<(), S::Error> {
+        let _ = self.storage.remove(&dirty_path(folder)).await;
+        Ok(())
+    }
+
+    pub(crate) async fn list_dirty(&self) -> Result<BTreeSet<String>, S::Error> {
+        let dirty_prefix = format!("{DIRTY_DIRECTORY}/");
+        let dirty = self
+            .storage
+            .list(DIRTY_DIRECTORY)
+            .await?
+            .into_iter()
+            .filter_map(|path| path.strip_prefix(&dirty_prefix).and_then(decode_folder_key))
+            .collect();
+        Ok(dirty)
     }
 }
 

@@ -1,9 +1,12 @@
-use std::{fmt, sync::Arc};
+use std::future::Future;
+use std::{fmt, pin::Pin, sync::Arc};
 
 use file_system::{
     FileEntry, FileSystem, FileSystemError, PeerCodec, ReadError, Storage, Transport,
 };
-use storage_model::{StorageEntry, StorageNamespace, StorageRequest, StorageResponse};
+use storage_model::{
+    StorageEntry, StorageNamespace, StorageRequest, StorageResponse, StorageSession,
+};
 
 use crate::{Residency, ScopedFileSystem, ScopedFileSystemRuntime, ScopedTransportFactory};
 
@@ -82,6 +85,30 @@ where
                 .map(|entries| StorageResponse::Listed { entries })
                 .map_err(StorageServiceError::FileSystem),
         }
+    }
+}
+
+impl<S, C, T> StorageSession for StorageService<S, C, T>
+where
+    S: Storage + Send + Sync + 'static,
+    S::Error: Send + Sync + 'static,
+    C: PeerCodec + Send + Sync + 'static,
+    C::Error: Send + Sync + 'static,
+    C::PeerId: Send + Sync + 'static,
+    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T::Incoming: Send + 'static,
+{
+    fn execute_session(
+        &self,
+        request: StorageRequest,
+    ) -> Pin<Box<dyn Future<Output = StorageResponse> + Send + '_>> {
+        Box::pin(async move {
+            self.execute(request)
+                .await
+                .unwrap_or(StorageResponse::Error {
+                    code: storage_model::StorageErrorCode::OperationFailed,
+                })
+        })
     }
 }
 
@@ -241,6 +268,31 @@ where
             }
             Err(error) => Err(StorageServiceError::Read(error)),
         }
+    }
+}
+
+impl<C, T, F, S> StorageSession for ScopedStorageService<C, T, F, S>
+where
+    C: PeerCodec + Send + Sync + 'static,
+    C::Error: Send + Sync + 'static,
+    C::PeerId: Clone + Send + Sync + 'static,
+    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T::Error: fmt::Display + Send + Sync + 'static,
+    T::Incoming: Send + 'static,
+    F: ScopedTransportFactory<C, T, S>,
+    S: StorageNamespace + Clone + Send + Sync + 'static,
+{
+    fn execute_session(
+        &self,
+        request: StorageRequest,
+    ) -> Pin<Box<dyn Future<Output = StorageResponse> + Send + '_>> {
+        Box::pin(async move {
+            self.execute(request)
+                .await
+                .unwrap_or(StorageResponse::Error {
+                    code: storage_model::StorageErrorCode::OperationFailed,
+                })
+        })
     }
 }
 

@@ -8,9 +8,11 @@ use std::{
 };
 
 #[cfg(feature = "native")]
+use file_system::ContentHash;
+#[cfg(feature = "native")]
 use file_system::NativeStorage;
 use file_system::{
-    ContentHash, FileEntry, FileSystem, FileSystemError, InMemoryStorage, MemoryTransport,
+    FileEntry, FileSystem, FileSystemError, InMemoryStorage, LocalFileSystem, MemoryTransport,
     MemoryTransportMutator, PeerCodec,
 };
 use futures_core::Stream;
@@ -137,6 +139,77 @@ async fn appends_content_and_syncs_the_updated_file() {
         b"hello world"
     );
     assert!(!right.entry("notes/today.txt").await.unwrap().local);
+}
+
+#[tokio::test]
+async fn renames_a_file_and_syncs_the_new_path() {
+    let (left, right, _, _) = file_system_pair(false).await;
+
+    left.write("notes/today.txt", b"hello").await.unwrap();
+    entry(&right, "notes/today.txt").await;
+
+    left.rename("notes/today.txt", "archive/yesterday.txt")
+        .await
+        .unwrap();
+
+    assert_eq!(left.read("archive/yesterday.txt").await.unwrap(), b"hello");
+    assert!(matches!(
+        left.entry("notes/today.txt").await,
+        Err(FileSystemError::NotFound)
+    ));
+    entry(&right, "archive/yesterday.txt").await;
+    assert!(matches!(
+        right.entry("notes/today.txt").await,
+        Err(FileSystemError::NotFound)
+    ));
+    assert_eq!(
+        right
+            .start_read("archive/yesterday.txt")
+            .await
+            .unwrap()
+            .await,
+        Ok(b"hello".to_vec())
+    );
+}
+
+#[tokio::test]
+async fn rejects_paths_reserved_for_internal_storage() {
+    let (file_system, _, _, _) = file_system_pair(false).await;
+
+    for path in [
+        ".blobs/file",
+        ".paths/file",
+        ".passthrough/file",
+        ".sync/file",
+    ] {
+        assert!(matches!(
+            file_system.write(path, b"content").await,
+            Err(FileSystemError::InvalidPath)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn opens_and_operates_without_a_transport() {
+    let file_system: LocalFileSystem<InMemoryStorage> =
+        LocalFileSystem::open_local(InMemoryStorage::new())
+            .await
+            .unwrap();
+
+    file_system
+        .write("notes/today.txt", b"hello")
+        .await
+        .unwrap();
+    assert_eq!(file_system.read("notes/today.txt").await.unwrap(), b"hello");
+    file_system
+        .rename("notes/today.txt", "notes/archive.txt")
+        .await
+        .unwrap();
+    file_system.delete("notes/archive.txt").await.unwrap();
+    assert!(matches!(
+        file_system.entry("notes/archive.txt").await,
+        Err(FileSystemError::NotFound)
+    ));
 }
 
 #[tokio::test]

@@ -266,6 +266,7 @@ where
         .insert(peer_id, tunnel.clone())
         .is_some()
     {
+        tunnel.close().await;
         return;
     }
     let _ = inner.peer_events.send(peer_id);

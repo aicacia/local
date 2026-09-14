@@ -424,12 +424,18 @@ mod tests {
         let cache = GlobalIdentityCache::new(Arc::clone(&database));
         let first = application(1, "first");
         cache
-            .apply(&manifest("one", &[first.clone()]), &[first])
+            .apply(
+                &manifest("one", std::slice::from_ref(&first)),
+                std::slice::from_ref(&first),
+            )
             .await
             .unwrap();
         let second = application(2, "second");
         cache
-            .apply(&manifest("two", &[second.clone()]), &[second])
+            .apply(
+                &manifest("two", std::slice::from_ref(&second)),
+                std::slice::from_ref(&second),
+            )
             .await
             .unwrap();
 
@@ -470,7 +476,10 @@ mod tests {
 
         assert!(
             cache
-                .apply(&manifest("invalid", &[row.clone()]), &[row])
+                .apply(
+                    &manifest("invalid", std::slice::from_ref(&row)),
+                    std::slice::from_ref(&row),
+                )
                 .await
                 .is_err()
         );
@@ -484,7 +493,10 @@ mod tests {
         let cache = GlobalIdentityCache::new(Arc::clone(&database));
         let row = application(1, "first");
         cache
-            .apply(&manifest("one", &[row.clone()]), &[row])
+            .apply(
+                &manifest("one", std::slice::from_ref(&row)),
+                std::slice::from_ref(&row),
+            )
             .await
             .unwrap();
         let invalid = application(2, "first");
