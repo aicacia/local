@@ -20,8 +20,8 @@ impl Default for BootstrapConfig {
         Self {
             web: false,
             desktop: false,
-            idp_url: "https://lidp.localhost:1337".to_string(),
-            management_url: "https://idp-management.localhost:1337".to_string(),
+            idp_url: "https://lidp.localhost:1355".to_string(),
+            management_url: "https://idp-management.localhost:1355".to_string(),
         }
     }
 }

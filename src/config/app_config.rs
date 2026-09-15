@@ -37,8 +37,8 @@ impl Default for AppConfig {
             pairing: PairingConfig::default(),
             key_namespace: "lidp".to_string(),
             control_plane_uri: None,
-            idp_ui_public_uri: "https://unified.localhost:1337".to_string(),
-            api_public_base_uri: "https://unified.localhost:1337".to_string(),
+            idp_ui_public_uri: "https://unified.localhost:1355".to_string(),
+            api_public_base_uri: "https://unified.localhost:1355".to_string(),
             log_level: "DEBUG".to_string(),
             env: Environment::default(),
         }

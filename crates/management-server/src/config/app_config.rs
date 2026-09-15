@@ -31,8 +31,8 @@ impl Default for AppConfig {
             password: PasswordConfig::default(),
             key_namespace: "idp-management".to_string(),
             log_level: "DEBUG".to_string(),
-            ui_public_uri: "https://idp-management.localhost:1337".to_string(),
-            api_public_uri: "https://management-api.localhost:1337".to_string(),
+            ui_public_uri: "https://idp-management.localhost:1355".to_string(),
+            api_public_uri: "https://management-api.localhost:1355".to_string(),
             env: Environment::default(),
         }
     }

@@ -16,7 +16,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
-            api_public_uri: "https://storage-api.localhost:1337".to_string(),
+            api_public_uri: "https://storage-api.localhost:1355".to_string(),
             log_level: "DEBUG".to_string(),
             env: Environment::default(),
         }

@@ -5,7 +5,7 @@
   "identifier": "com.aicacia.local",
   "build": {
     "frontendDist": "../build",
-    "devUrl": "https://idp-desktop.localhost:1337",
+    "devUrl": "https://idp-desktop.localhost:1355",
     "beforeDevCommand": "pnpm desktop:dev",
     "beforeBuildCommand": "pnpm build"
   },

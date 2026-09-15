@@ -13,7 +13,7 @@
  */
 
 export const BASE_PATH =
-  "https://unified.localhost:1337/idp-management".replace(/\/+$/, "");
+  "https://unified.localhost:1355/idp-management".replace(/\/+$/, "");
 
 export interface ConfigurationParameters {
   basePath?: string; // override base path
