@@ -1,4 +1,4 @@
-# ADR-001: Web Access Server for the FUSE Distributed File System
+# ADR-001: Web Access Server for the Distributed File System Crate
 
 ## Status
 
@@ -6,15 +6,18 @@ Proposed
 
 ## Context
 
-The FUSE-based distributed file system crate supports namespace/folder/file
--granular permissions and a local-first, reactive access model. We need a
-server that exposes this file system over the web, authenticating and
-authorizing requests using identities from the IdP (ADR-001), and initially
-supporting WebSocket as the connection type.
+The distributed file system crate (see ADR-002) exposes an FS-like API
+(open, read, write, stream, list) with namespace/folder/file-granular
+permissions and a local-first, reactive access model. We need a server
+that provides a fast connection endpoint for authenticating and
+authorizing clients, then streaming operations onto that crate.
 
-Two constraints shape this design: WebSocket connections in browsers can't
-carry custom headers on the handshake, and folder permissions can change
-over the life of a long-lived connection.
+Identities come from the IdP. The initial connection type is WebSocket.
+
+Two constraints shape this design:
+
+1. Browser WebSocket clients cannot set custom headers on the handshake.
+2. Folder permissions can change over the life of a long-lived connection.
 
 ## Decision
 
@@ -40,7 +43,7 @@ not change its signature requirements.
 **Token lifetime: short-lived, with refresh.**
 Tokens are issued with a short expiry and refreshed rather than being
 long-lived. This is the primary mechanism for keeping access aligned with
-current permissions, given point below.
+current permissions.
 
 **No additional permission re-check on the handshake itself.**
 The WebSocket handshake does not perform a second, independent
@@ -48,6 +51,12 @@ authorization check beyond validating the token's signature, scope, and
 expiry. The short-lived-plus-refresh token model is treated as sufficient
 enforcement: a revoked or changed permission takes effect at the next
 token refresh rather than being enforced mid-connection.
+
+**Server role: thin authenticated streaming endpoint.**
+Once the token is validated the server streams (or proxies) the client's
+operations onto the crate's public API. It does not implement FUSE, does
+not own storage, and does not re-interpret permissions beyond the claims
+already present in the token.
 
 ## Consequences
 
@@ -81,3 +90,6 @@ token refresh rather than being enforced mid-connection.
   consistency, but rejected for the handshake step specifically in favor
   of the simpler short-lived-token model; revisit if revocation latency
   proves too coarse in practice.
+- **Embedding FUSE semantics in the server**: rejected. FUSE is a
+  binary-level concern that sits above the crate's API (ADR-002). The
+  server only needs to validate tokens and stream onto that API.
