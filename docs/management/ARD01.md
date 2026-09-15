@@ -1,9 +1,11 @@
-# ADR-002: IdP Management Service and App
+# ADR-001: IdP Management Service and App
 
 ## Status
+
 Proposed
 
 ## Context
+
 The OIDC/OAuth2 IdP (ADR-001) needs an administrative surface for managing
 relying parties, users, and their keys. Because the IdP is the sole owner
 of public keys and per-client derived-key mappings, and because folder-level
@@ -16,6 +18,7 @@ layer owns versus what it explicitly does not own.
 **Scope: all management functions for the IdP itself.**
 This service/app is the administrative interface for everything the IdP
 owns directly:
+
 - Relying party (client) registration and configuration
 - User account management
 - Device/subkey lifecycle: adding, viewing, and revoking a user's
@@ -52,6 +55,7 @@ rather than one entangled with a single consumer's authorization model.
   app.
 
 ## Alternatives Considered
+
 - **Fold ACL management into this app**: rejected to avoid coupling a
   general-purpose IdP admin tool to one specific consumer's permission
   model.

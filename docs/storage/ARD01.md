@@ -1,9 +1,11 @@
-# ADR-003: Web Access Server for the FUSE Distributed File System
+# ADR-001: Web Access Server for the FUSE Distributed File System
 
 ## Status
+
 Proposed
 
 ## Context
+
 The FUSE-based distributed file system crate supports namespace/folder/file
 -granular permissions and a local-first, reactive access model. We need a
 server that exposes this file system over the web, authenticating and
@@ -18,6 +20,7 @@ over the life of a long-lived connection.
 
 **Token scope claims: folder path, access level, connection type.**
 Access tokens issued for this server carry:
+
 - `folder`: the specific path/folder the token is scoped to
 - `access`: read-only or read-write
 - `conn`: connection type (currently only `websocket`)
@@ -69,6 +72,7 @@ token refresh rather than being enforced mid-connection.
   `conn` values, without changing the `folder`/`access` claims.
 
 ## Alternatives Considered
+
 - **Authorization header for WebSocket auth**: rejected because browser
   WebSocket clients cannot set custom headers on the handshake; this
   would only work for non-browser clients and was ruled out in favor of
