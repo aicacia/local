@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Dev mode: no users, no backwards compatibility—refactor freely.
+Dev mode: no users, no backwards compatibility, refactor freely.
 
 ## Patterns & Conventions
 

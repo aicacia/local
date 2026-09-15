@@ -1,6 +1,6 @@
 # @aicacia/native-fetch
 
-Bridge HTTP-style requests between a web app and a native application using custom URL schemes (for example `lidp://`, `lidp://`).
+Bridge HTTP-style requests between a web app and a native application using custom URL schemes (for example `app://`, `app://`).
 
 The browser cannot call custom protocol URLs with `fetch()`. This package defines a small callback protocol: the web page encodes the desired request in a deep link, the native app performs the work, then opens an HTTP(S) callback URL that returns the response to the waiting page.
 
@@ -12,7 +12,7 @@ sequenceDiagram
     participant Native as Native app
     participant Callback as /native-callback page
 
-    Web->>Web: nativeFetch("lidp://app/config")
+    Web->>Web: nativeFetch("app://app/config")
     Web->>Native: Open deep link with ?native={request}
     Native->>Native: Parse request, run handler
     Native->>Callback: Open callbackUrl?native={response}
@@ -33,14 +33,14 @@ The web client calls `nativeFetch(url, init?)`. The library:
 Example deep link opened by the browser:
 
 ```text
-lidp://app/config?native=%7B%22url%22%3A%22storage%3A%2F%2Fapp%2Fconfig%22%2C...%7D
+app://app/config?native=%7B%22url%22%3A%22storage%3A%2F%2Fapp%2Fconfig%22%2C...%7D
 ```
 
 Decoded `native` query value:
 
 ```json
 {
-  "url": "lidp://app/config",
+  "url": "app://app/config",
   "headers": { "accept": "application/json" },
   "method": "GET",
   "body": null,
@@ -77,10 +77,10 @@ The original `nativeFetch()` call validates `response.state === request.state`, 
 
 ### Constants
 
-| Name | Value | Purpose |
-|------|-------|---------|
-| `NATIVE_FETCH_CHANNEL_NAME` | `"native-fetch"` | `BroadcastChannel` name |
-| `NATIVE_FETCH_RESPONSE_EVENT` | `"native-fetch-response"` | Message `type` field |
+| Name                          | Value                     | Purpose                 |
+| ----------------------------- | ------------------------- | ----------------------- |
+| `NATIVE_FETCH_CHANNEL_NAME`   | `"native-fetch"`          | `BroadcastChannel` name |
+| `NATIVE_FETCH_RESPONSE_EVENT` | `"native-fetch-response"` | Message `type` field    |
 
 Both sides can override the channel name via `channelName` in `NativeFetchInit` / `HandleNativeFetchCallbackOptions`.
 
@@ -88,24 +88,24 @@ Both sides can override the channel name via `channelName` in `NativeFetchInit` 
 
 ### Native request
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `url` | `string` | Absolute URL of the resource (usually the deep link without `native`) |
-| `headers` | `Record<string, string>` | Request headers |
-| `method` | `string` | HTTP method (default `GET`) |
-| `body` | `string \| null` | Request body as UTF-8 text, or `null` |
-| `state` | `string` | Opaque correlation token; must be echoed in the response |
-| `callbackUrl` | `string` | Absolute HTTPS (or HTTP dev) URL for the callback page |
+| Field         | Type                     | Description                                                           |
+| ------------- | ------------------------ | --------------------------------------------------------------------- |
+| `url`         | `string`                 | Absolute URL of the resource (usually the deep link without `native`) |
+| `headers`     | `Record<string, string>` | Request headers                                                       |
+| `method`      | `string`                 | HTTP method (default `GET`)                                           |
+| `body`        | `string \| null`         | Request body as UTF-8 text, or `null`                                 |
+| `state`       | `string`                 | Opaque correlation token; must be echoed in the response              |
+| `callbackUrl` | `string`                 | Absolute HTTPS (or HTTP dev) URL for the callback page                |
 
 ### Native response
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `headers` | `Record<string, string>` | Response headers |
-| `status` | `number` | HTTP status code |
-| `statusText` | `string` | Status text |
-| `body` | `string \| null` | Response body as UTF-8 text, or `null` |
-| `state` | `string` | Must match the request `state` |
+| Field        | Type                     | Description                            |
+| ------------ | ------------------------ | -------------------------------------- |
+| `headers`    | `Record<string, string>` | Response headers                       |
+| `status`     | `number`                 | HTTP status code                       |
+| `statusText` | `string`                 | Status text                            |
+| `body`       | `string \| null`         | Response body as UTF-8 text, or `null` |
+| `state`      | `string`                 | Must match the request `state`         |
 
 ## Implementing a native handler (Rust / Tauri example)
 
@@ -188,11 +188,11 @@ pnpm add @aicacia/native-fetch
 ```typescript
 import { nativeFetch } from "@aicacia/native-fetch";
 
-const response = await nativeFetch("lidp://app/config", {
-    method: "GET",
-    headers: { accept: "application/json" },
-    timeout: 30_000,
-    callbackUrl: `${window.location.origin}/native-callback`,
+const response = await nativeFetch("app://app/config", {
+  method: "GET",
+  headers: { accept: "application/json" },
+  timeout: 30_000,
+  callbackUrl: `${window.location.origin}/native-callback`,
 });
 
 const config = await response.json();
@@ -224,12 +224,15 @@ When the native app opens your web UI with a `native` request (for example clien
 import { handleNativeCallbackRequestUrl } from "@aicacia/native-fetch";
 
 // Tauri deep-link handler, or similar
-const callbackUrl = await handleNativeCallbackRequestUrl(deepLinkUrl, async (request) => {
+const callbackUrl = await handleNativeCallbackRequestUrl(
+  deepLinkUrl,
+  async (request) => {
     const data = await loadConfig();
     return new Response(JSON.stringify(data), {
-        headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json" },
     });
-});
+  },
+);
 
 await openInBrowser(callbackUrl);
 ```
@@ -238,13 +241,13 @@ Or with a parsed request object:
 
 ```typescript
 import {
-    handleNativeCallbackRequest,
-    type NativeRequestJSON,
+  handleNativeCallbackRequest,
+  type NativeRequestJSON,
 } from "@aicacia/native-fetch";
 
 const callbackUrl = await handleNativeCallbackRequest(
-    nativeRequest,
-    (request) => new Response(JSON.stringify({ ok: true })),
+  nativeRequest,
+  (request) => new Response(JSON.stringify({ ok: true })),
 );
 ```
 
@@ -254,9 +257,9 @@ const callbackUrl = await handleNativeCallbackRequest(
 import { isNativeProtocol } from "@aicacia/native-fetch";
 
 if (isNativeProtocol(new URL(endpoint))) {
-    await nativeFetch(endpoint, init);
+  await nativeFetch(endpoint, init);
 } else {
-    await fetch(endpoint, init);
+  await fetch(endpoint, init);
 }
 ```
 
@@ -273,15 +276,15 @@ These helpers work in Node and are suitable for unit tests or native-side toolin
 
 ## API summary
 
-| Export | Environment | Role |
-|--------|-------------|------|
-| `nativeFetch` | Browser | Start request, wait for response |
-| `handleNativeFetchCallback` | Browser | Callback page → `BroadcastChannel` |
-| `handleNativeCallbackRequest` | Any | Build callback URL from request JSON |
-| `handleNativeCallbackRequestUrl` | Any | Parse deep link, then build callback URL |
-| `isNativeProtocol` | Any | True for non-http(s) schemes |
-| `openUrl` | Browser | Navigate or popup; native schemes use `location.href` |
-| `generateState` | Any | Random correlation token |
+| Export                           | Environment | Role                                                  |
+| -------------------------------- | ----------- | ----------------------------------------------------- |
+| `nativeFetch`                    | Browser     | Start request, wait for response                      |
+| `handleNativeFetchCallback`      | Browser     | Callback page → `BroadcastChannel`                    |
+| `handleNativeCallbackRequest`    | Any         | Build callback URL from request JSON                  |
+| `handleNativeCallbackRequestUrl` | Any         | Parse deep link, then build callback URL              |
+| `isNativeProtocol`               | Any         | True for non-http(s) schemes                          |
+| `openUrl`                        | Browser     | Navigate or popup; native schemes use `location.href` |
+| `generateState`                  | Any         | Random correlation token                              |
 
 ## License
 
