@@ -6,9 +6,11 @@ extern crate alloc;
 #[cfg(feature = "sync")]
 mod content_store;
 
+mod backend;
 mod error;
 #[cfg(feature = "sync")]
 mod file_system;
+mod fuse;
 mod hash;
 #[cfg(feature = "sync")]
 mod local;

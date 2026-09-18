@@ -116,6 +116,7 @@ members = [
   "crates/bootstrap-service",
   "crates/key",
   "crates/model",
+  "crates/deckv",
   "crates/iroh-chain",
   "crates/iroh-chain-file-system",
   "crates/iroh-client-wasm",

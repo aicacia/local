@@ -26,9 +26,12 @@ sync = ["std", "dep:automerge", "dep:percent-encoding", "dep:tokio"]
 automerge = { version = "0.11", default-features = false, features = [], optional = true }
 percent-encoding = { version = "2.3", default-features = false, features = [], optional = true }
 
-# Storage
+# Utilities
 blake3 = { version = "1.8", default-features = false, features = [] }
-
+bitflags = { version = "2.13", default-features = false, features = [] }
+libc = { version = "0.2", default-features = false, features = [] }
+uuid = { version = "1.26", default-features = false, features = [] }
+thiserror = { version = "2.0", default-features = false, features = [] }
 
 # Async
 futures-core = { version = "0.3", default-features = false, features = [] }
