@@ -11,22 +11,24 @@ use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use chrono::{DateTime, Utc};
 use key::{DerivationPath, DerivedKey, KeyResult};
 
+use super::Id;
 use crate::contract::{
     EntityType, JwkPrivate, JwkPrivateParameters, JwkPublic, JwkPublicParameters, JwsAlgorithm,
     KeyUse,
 };
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Key {
-    pub id: u32,
+    pub id: Id,
 
-    pub parent_id: Option<u32>,
+    pub parent_id: Option<Id>,
 
     #[serde(with = "super::sql_enum::entity_type")]
     pub entity_type: EntityType,
-    pub entity_id: i64,
+    pub entity_id: Id,
 
     #[serde(deserialize_with = "super::none_to_default")]
     pub derivation_path: String,
+    pub derivation_index: u32,
     pub name: String,
     pub hardened: bool,
 
@@ -47,7 +49,7 @@ impl Key {
 
         let jwt = JwkPrivate {
             r#use: KeyUse::Signature,
-            kid: self.id,
+            kid: self.id.to_string(),
             alg: JwsAlgorithm::EdDSA,
             params: JwkPrivateParameters::Ec {
                 crv: "secp256k1".to_string(),
@@ -65,7 +67,7 @@ impl Key {
 
         let jwt = JwkPublic {
             r#use: KeyUse::Signature,
-            kid: self.id,
+            kid: self.id.to_string(),
             alg: JwsAlgorithm::EdDSA,
             params: JwkPublicParameters::Ec {
                 crv: "secp256k1".to_string(),
@@ -82,9 +84,10 @@ impl Key {
         Ok(derivation_path)
     }
 
+    #[must_use]
     pub fn build_derivation_path(
         parent_derivation_path: Option<&str>,
-        key_id: u32,
+        derivation_index: u32,
         hardened: bool,
     ) -> String {
         let mut path = String::new();
@@ -96,12 +99,34 @@ impl Key {
         }
 
         if hardened {
-            // FIXME: we should make the key if fits in the hardened range, but for now we just append a `'` to indicate it's hardened
-            path.push_str(&format!("/{}'", key_id));
+            path.push_str(&format!("/{derivation_index}'"));
         } else {
-            path.push_str(&format!("/{}", key_id));
+            path.push_str(&format!("/{derivation_index}"));
         }
 
         path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::str::FromStr;
+
+    use key::DerivationPath;
+
+    use super::Key;
+
+    #[test]
+    fn builds_valid_bip32_paths_from_sibling_indices() {
+        let root = Key::build_derivation_path(None, 0, true);
+        let child = Key::build_derivation_path(Some(&root), 1, false);
+
+        assert_eq!(root, "m/0'");
+        assert_eq!(child, "m/0'/1");
+        assert_ne!(
+            Key::build_derivation_path(None, 0, false),
+            Key::build_derivation_path(None, 1, false)
+        );
+        DerivationPath::from_str(&child).unwrap();
     }
 }

@@ -4,10 +4,7 @@ use axum::{
 };
 use idp_model::contract::{ClientRegistration, ErrorResponse};
 
-use crate::router::{
-    RouterState,
-    middleware::{StandardAuthorization, require_current_global_identity},
-};
+use crate::router::{RouterState, middleware::StandardAuthorization};
 
 #[utoipa::path(
     post,
@@ -28,7 +25,6 @@ pub(crate) async fn register(
     StandardAuthorization { .. }: StandardAuthorization,
     Json(body): Json<ClientRegistration>,
 ) -> Result<Json<ClientRegistration>, ErrorResponse> {
-    require_current_global_identity(&state).await?;
     log::info!("Registering client: {:?}", body);
     let response = state.oauth2_service.register_client(body).await?;
     log::info!("Registered client: {:?}", response);
@@ -47,7 +43,6 @@ pub(crate) async fn get_register(
     State(state): State<RouterState>,
     Path(client_id): Path<String>,
 ) -> Result<Json<ClientRegistration>, ErrorResponse> {
-    require_current_global_identity(&state).await?;
     let mut response = state.oauth2_service.get_client(&client_id).await?;
     // Do not return the client secret in the response
     response.client_secret = None;
@@ -70,7 +65,6 @@ pub(crate) async fn delete_register(
     Path(client_id): Path<String>,
     StandardAuthorization { .. }: StandardAuthorization,
 ) -> Result<(), ErrorResponse> {
-    require_current_global_identity(&state).await?;
     state.oauth2_service.delete_client(&client_id).await
 }
 
@@ -97,7 +91,6 @@ pub(crate) async fn put_register(
     StandardAuthorization { .. }: StandardAuthorization,
     Json(body): Json<ClientRegistration>,
 ) -> Result<Json<ClientRegistration>, ErrorResponse> {
-    require_current_global_identity(&state).await?;
     let response = state.oauth2_service.update_client(&client_id, body).await?;
     Ok(Json(response))
 }

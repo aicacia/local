@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct StorageNamespaceId {
     user_sub: String,
-    application_id: i64,
+    application_id: idp_model::model::Id,
 }
 
 pub type ScopedFileSystem<PeerId> = FileSystem<PeerId>;
@@ -100,7 +100,7 @@ mod tests {
             "user"
         }
 
-        fn application_id(&self) -> i64 {
+        fn application_id(&self) -> idp_model::model::Id {
             1
         }
     }

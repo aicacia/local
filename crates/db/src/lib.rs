@@ -1,17 +1,12 @@
-#[cfg(feature = "cli")]
-pub mod cli;
-mod database;
-mod database_config;
-mod helpers;
-#[cfg(feature = "migrate")]
-pub mod migrate;
+#[cfg(feature = "native")]
+mod native;
 
-#[cfg(feature = "cli")]
-pub use cli::run;
-pub use database::{close_database, open_database};
-pub use database_config::DatabaseConfig;
-pub use helpers::run_transaction;
 #[cfg(feature = "replica")]
-pub use sync_db::{
-    AutomergeRowCodec, Engine, EngineResult, InMemoryKernel, Kernel, RowCodec, SqlTranslator,
+pub use converge::{
+    AutomergeRowCodec, Engine, EngineError, EngineResult, FromRow, FromRowError, FromValue,
+    InMemoryKernel, Kernel, Query, QueryColumn, QueryDelete, QueryExpr, QueryExprValue, QueryFrom,
+    QueryInsert, QueryResult, QuerySelect, QueryUpdate, QueryUpdateAssignment, Row, RowCodec,
+    SqlTranslator, Statement, Uuid, Value, ValueType, decode, value,
 };
+#[cfg(feature = "native")]
+pub use native::{NativeEngine, open_native_engine};

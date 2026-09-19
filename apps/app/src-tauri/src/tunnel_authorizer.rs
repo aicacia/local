@@ -4,39 +4,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use idp_service::{
-    libsql::{
-        LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
-        LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
-    },
-    oauth2::OAuth2Service,
-};
 use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
-use management_service::{
-    libsql::LibSqlDeviceRepo,
-    tunnel_authorization::{LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer},
-};
 
 use crate::hosted_control_plane::HostedControlPlane;
-use idp_server::{GlobalBootstrapGrants, GlobalBootstrapTunnelAuthorizer};
-
-type LocalOAuth2Service = OAuth2Service<
-    LibSqlApplicationRepo,
-    LibSqlClientRepo,
-    LibSqlOAuth2AuthorizationCodeRepo,
-    LibSqlUserRepo,
-    LibSqlOAuth2UserConsentRepo,
-    LibSqlKeyRepo,
->;
-pub type LocalTunnel = LocalTunnelAuthorizer<LocalOAuth2Service, LibSqlDeviceRepo>;
-pub type LocalTunnelProvider =
-    LocalTunnelAuthorizationProvider<LocalOAuth2Service, LibSqlDeviceRepo>;
 
 pub struct LidpTunnelAuthorizer {
-    local: Arc<LocalTunnel>,
     control_plane: Option<Arc<HostedControlPlane>>,
-    global_grants: Arc<GlobalBootstrapGrants>,
-    global_identity_read_gate: Arc<idp_server::GlobalIdentityReadGateSlot>,
     used: Mutex<BTreeMap<String, i64>>,
 }
 
@@ -44,24 +17,13 @@ pub type DeviceTunnelManager = Server<DynamicEndpointIdStore, LidpTunnelAuthoriz
 
 impl LidpTunnelAuthorizer {
     pub fn new(
-        state: Arc<idp_server::RouterState>,
+        _: Arc<idp_server::RouterState>,
         control_plane: Option<Arc<HostedControlPlane>>,
-        global_grants: Arc<GlobalBootstrapGrants>,
     ) -> Self {
         Self {
-            local: Arc::new(LocalTunnelAuthorizer::new(
-                Arc::clone(&state.oauth2_service),
-                Arc::clone(&state.devices),
-            )),
             control_plane,
-            global_grants,
-            global_identity_read_gate: Arc::clone(&state.global_identity_read_gate),
             used: Mutex::new(BTreeMap::new()),
         }
-    }
-
-    pub fn local(&self) -> Arc<LocalTunnel> {
-        Arc::clone(&self.local)
     }
 }
 
@@ -73,19 +35,8 @@ impl TunnelAuthorizer for LidpTunnelAuthorizer {
         accepting_id: iroh::EndpointId,
         authorization: &[u8],
     ) -> bool {
-        if vault_id == VaultId::global_identity() {
-            return GlobalBootstrapTunnelAuthorizer::new(Arc::clone(&self.global_grants))
-                .authorize(vault_id, initiating_id, accepting_id, authorization)
-                .await;
-        }
-        if !self.global_identity_read_gate.verify().await {
-            return false;
-        }
         let Some(control_plane) = &self.control_plane else {
-            return self
-                .local
-                .authorize(vault_id, initiating_id, accepting_id, authorization)
-                .await;
+            return false;
         };
         let Ok(token) = std::str::from_utf8(authorization) else {
             return false;

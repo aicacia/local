@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS keys (
     entity_type INTEGER,
     entity_id UUID,
     derivation_path TEXT,
+    derivation_index INTEGER NOT NULL,
     hardened INTEGER,
     name TEXT,
     revoked_at INTEGER,
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS keys (
     updated_at INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS keys_derivation_path ON keys (derivation_path);
+CREATE UNIQUE INDEX IF NOT EXISTS keys_parent_derivation_index ON keys (parent_id, derivation_index);
 
 CREATE TABLE IF NOT EXISTS applications (
     id UUID PRIMARY KEY,
@@ -110,6 +112,9 @@ CREATE TABLE IF NOT EXISTS devices (
     name TEXT,
     public_key TEXT,
     address TEXT,
+    enrollment_code_hash BLOB,
+    enrollment_expires_at INTEGER,
+    pairing_accepting_public_key TEXT,
     state INTEGER,
     approved_at INTEGER,
     revoked_at INTEGER,
@@ -209,3 +214,12 @@ CREATE TABLE IF NOT EXISTS oauth2_refresh_tokens (
     updated_at INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS oauth2_refresh_tokens_token_hash ON oauth2_refresh_tokens (token_hash);
+
+CREATE TABLE IF NOT EXISTS idp_conflict_resolutions (
+    id UUID PRIMARY KEY,
+    administrator_id UUID,
+    table_name TEXT,
+    row_id UUID,
+    columns TEXT,
+    created_at INTEGER
+);

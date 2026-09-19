@@ -14,7 +14,7 @@ const APPLICATIONS_WRITE_PERMISSION: &str = "applications.write";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct ApplicationResponse {
-    pub id: i64,
+    pub id: idp_model::model::Id,
     pub name: String,
     pub uri: String,
     pub description: Option<String>,
@@ -123,7 +123,7 @@ pub(crate) async fn create_application(
     get,
     path = "/applications/{application_id}",
     params(
-        ("application_id" = i64, Path, description = "Application ID (URI)")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID (URI)")
     ),
     responses((status = 200, description = "Get application", body = ApplicationResponse)),
     security(
@@ -132,7 +132,7 @@ pub(crate) async fn create_application(
 )]
 pub(crate) async fn get_application(
     State(state): State<RouterState>,
-    Path(application_id): Path<i64>,
+    Path(application_id): Path<idp_model::model::Id>,
     authorization: ManagementAuthorization,
 ) -> Result<Json<ApplicationResponse>, ErrorResponse> {
     require_application_permission(
@@ -158,7 +158,7 @@ pub(crate) async fn get_application(
     put,
     path = "/applications/{application_id}",
     params(
-        ("application_id" = i64, Path, description = "Application ID (URI)")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID (URI)")
     ),
     request_body = UpdateApplicationRequest,
     responses((status = 200, description = "Update application", body = ApplicationResponse)),
@@ -168,7 +168,7 @@ pub(crate) async fn get_application(
 )]
 pub(crate) async fn update_application(
     State(state): State<RouterState>,
-    Path(application_id): Path<i64>,
+    Path(application_id): Path<idp_model::model::Id>,
     authorization: ManagementAuthorization,
     Json(body): Json<UpdateApplicationRequest>,
 ) -> Result<Json<ApplicationResponse>, ErrorResponse> {
@@ -211,7 +211,7 @@ pub(crate) async fn update_application(
     delete,
     path = "/applications/{application_id}",
     params(
-        ("application_id" = i64, Path, description = "Application ID (URI)")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID (URI)")
     ),
     responses((status = 204, description = "Delete application")),
     security(
@@ -220,7 +220,7 @@ pub(crate) async fn update_application(
 )]
 pub(crate) async fn delete_application(
     State(state): State<RouterState>,
-    Path(application_id): Path<i64>,
+    Path(application_id): Path<idp_model::model::Id>,
     authorization: ManagementAuthorization,
 ) -> Result<(), ErrorResponse> {
     require_application_permission(

@@ -124,6 +124,7 @@ impl GlobalIdentityTable {
                 "entity_type",
                 "entity_id",
                 "derivation_path",
+                "derivation_index",
                 "hardened",
                 "name",
                 "revoked_at",

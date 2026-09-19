@@ -62,7 +62,7 @@ where
         Ok(records)
     }
 
-    async fn record(&self, id: i64) -> ManagementResult<Option<DeviceRecord>> {
+    async fn record(&self, id: idp_model::model::Id) -> ManagementResult<Option<DeviceRecord>> {
         match self.store.read(&path(id)).await {
             Ok(record) => Ok(Some(record)),
             Err(ManagementError::InvalidInput(message)) if message.contains("not found") => {
@@ -76,7 +76,7 @@ where
         self.store.write(&path(record.device.id), record).await
     }
 
-    async fn next_id(&self) -> ManagementResult<i64> {
+    async fn next_id(&self) -> ManagementResult<idp_model::model::Id> {
         // ponytail: scan records; replace with a replicated ID allocator only if device creation is hot.
         let ids = self
             .records()
@@ -85,10 +85,10 @@ where
             .map(|record| record.device.id)
             .collect::<std::collections::BTreeSet<_>>();
         loop {
-            let mut bytes = [0_u8; 8];
+            let mut bytes = [0_u8; 16];
             getrandom::fill(&mut bytes).map_err(ManagementError::other)?;
-            let id = i64::from_be_bytes(bytes) & i64::MAX;
-            if id != 0 && !ids.contains(&id) {
+            let id = idp_model::model::Id::from_bytes(bytes);
+            if !ids.contains(&id) {
                 return Ok(id);
             }
         }
@@ -165,7 +165,10 @@ where
         Ok(record.device)
     }
 
-    async fn pending_pairing(&self, device_id: i64) -> ManagementResult<Option<(Device, String)>> {
+    async fn pending_pairing(
+        &self,
+        device_id: idp_model::model::Id,
+    ) -> ManagementResult<Option<(Device, String)>> {
         Ok(self.record(device_id).await?.and_then(|record| {
             (record.device.state == DeviceState::Pending)
                 .then_some(record.pairing_accepting_public_key)
@@ -174,7 +177,10 @@ where
         }))
     }
 
-    async fn approve_pairing(&self, device_id: i64) -> ManagementResult<Option<Device>> {
+    async fn approve_pairing(
+        &self,
+        device_id: idp_model::model::Id,
+    ) -> ManagementResult<Option<Device>> {
         let Some(mut record) = self.record(device_id).await? else {
             return Ok(None);
         };
@@ -233,7 +239,7 @@ where
 
     async fn approve(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         enrollment_code_hash: &[u8],
     ) -> ManagementResult<Option<Device>> {
         let Some(mut record) = self.record(device_id).await? else {
@@ -256,7 +262,11 @@ where
         Ok(Some(record.device))
     }
 
-    async fn rename(&self, device_id: i64, name: String) -> ManagementResult<Option<Device>> {
+    async fn rename(
+        &self,
+        device_id: idp_model::model::Id,
+        name: String,
+    ) -> ManagementResult<Option<Device>> {
         let Some(mut record) = self.record(device_id).await? else {
             return Ok(None);
         };
@@ -269,7 +279,11 @@ where
         Ok(Some(record.device))
     }
 
-    async fn revoke(&self, device_id: i64, protected_public_key: &str) -> ManagementResult<bool> {
+    async fn revoke(
+        &self,
+        device_id: idp_model::model::Id,
+        protected_public_key: &str,
+    ) -> ManagementResult<bool> {
         let Some(mut record) = self.record(device_id).await? else {
             return Ok(false);
         };
@@ -313,7 +327,7 @@ where
     }
 }
 
-fn path(id: i64) -> String {
+fn path(id: idp_model::model::Id) -> String {
     format!("{DEVICES_FOLDER}/{id}.json")
 }
 

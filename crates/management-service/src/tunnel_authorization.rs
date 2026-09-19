@@ -6,24 +6,32 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use idp_model::contract::{EntityType, TunnelAuthorizationClaims, TunnelAuthorizationRequest};
+use idp_model::contract::TunnelAuthorizationRequest;
+#[cfg(not(feature = "replica"))]
+use idp_model::contract::{EntityType, TunnelAuthorizationClaims};
 use iroh::EndpointId;
 use iroh_chain::{TunnelAuthorizer, VaultId};
 use iroh_chain_file_system::TunnelAuthorizationProvider;
 
+#[cfg(not(feature = "replica"))]
+use idp_service::oauth2::{decode_jwt, verify_tunnel_authorization};
+#[cfg(not(feature = "replica"))]
 use idp_service::{
-    oauth2::{OAuth2Service, decode_jwt, verify_tunnel_authorization},
+    oauth2::OAuth2Service,
     repo::{
         ApplicationRepo, ClientRepo, KeyRepo, OAuth2AuthorizationCodeRepo, OAuth2UserConsentRepo,
         UserRepo,
     },
 };
 
-use crate::{DeviceRepo, HostedControlPlane, StorageScope};
+#[cfg(not(feature = "replica"))]
+use crate::DeviceRepo;
+use crate::{HostedControlPlane, StorageScope};
 
 pub struct LocalTunnelAuthorizer<O, D> {
     oauth2_service: Arc<O>,
     devices: Arc<D>,
+    #[cfg(not(feature = "replica"))]
     used: Mutex<BTreeMap<String, i64>>,
 }
 
@@ -33,6 +41,7 @@ impl<O, D> LocalTunnelAuthorizer<O, D> {
         Self {
             oauth2_service,
             devices,
+            #[cfg(not(feature = "replica"))]
             used: Mutex::new(BTreeMap::new()),
         }
     }
@@ -90,6 +99,7 @@ impl TunnelAuthorizer for HostedTunnelAuthorizer {
     }
 }
 
+#[cfg(not(feature = "replica"))]
 impl<A, C, AC, U, G, K, D> TunnelAuthorizer
     for LocalTunnelAuthorizer<OAuth2Service<A, C, AC, U, G, K>, D>
 where
@@ -114,7 +124,10 @@ where
         let Ok((header, claims)) = decode_jwt::<TunnelAuthorizationClaims>(token) else {
             return false;
         };
-        let Ok(Some(principal)) = self.oauth2_service.find_principal(header.kid).await else {
+        let Ok(key_id) = header.kid.parse() else {
+            return false;
+        };
+        let Ok(Some(principal)) = self.oauth2_service.find_principal(key_id).await else {
             return false;
         };
         if principal.get_entity_type() != EntityType::User
@@ -122,7 +135,7 @@ where
         {
             return false;
         }
-        let Ok(jwk) = self.oauth2_service.find_public_jwk(header.kid).await else {
+        let Ok(jwk) = self.oauth2_service.find_public_jwk(key_id).await else {
             return false;
         };
         let Ok(now) = now() else {
@@ -214,6 +227,7 @@ impl TunnelAuthorizationProvider for HostedTunnelAuthorizationProvider {
     }
 }
 
+#[cfg(not(feature = "replica"))]
 impl<A, C, AC, U, G, K, D> TunnelAuthorizationProvider
     for LocalTunnelAuthorizationProvider<OAuth2Service<A, C, AC, U, G, K>, D>
 where

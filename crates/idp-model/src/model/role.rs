@@ -8,11 +8,13 @@ use alloc::{
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Role {
-    pub id: i64,
+    pub id: Id,
 
-    pub application_id: i64,
+    pub application_id: Id,
 
     pub name: String,
 

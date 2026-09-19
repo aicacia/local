@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use idp_model::{contract::CodeChallengeMethod, model::OAuth2AuthorizationCode};
+use idp_model::{
+    contract::CodeChallengeMethod,
+    model::{Id, OAuth2AuthorizationCode},
+};
 
 use crate::repo::RepoResult;
 
@@ -7,7 +10,7 @@ pub trait OAuth2AuthorizationCodeRepo {
     fn create_authorization_code(
         &self,
         client_id: String,
-        key_id: u32,
+        key_id: Id,
         redirect_uri: String,
         scopes: Vec<String>,
         resource: Option<String>,
@@ -24,7 +27,7 @@ pub trait OAuth2AuthorizationCodeRepo {
 
     fn consume_authorization_code(
         &self,
-        id: i64,
+        id: Id,
         consumed_at: DateTime<Utc>,
     ) -> impl Future<Output = RepoResult<()>>;
 }

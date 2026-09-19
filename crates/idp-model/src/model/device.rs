@@ -3,11 +3,12 @@ use alloc::string::String;
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
 use crate::contract::{DeviceInfo, DeviceState};
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Device {
-    pub id: i64,
+    pub id: Id,
     pub name: String,
     pub public_key: String,
     pub address: String,

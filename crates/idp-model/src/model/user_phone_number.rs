@@ -8,11 +8,13 @@ use alloc::{
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UserPhoneNumber {
-    pub id: i64,
+    pub id: Id,
 
-    pub user_id: i64,
+    pub user_id: Id,
 
     /// E.164 format.
     pub phone_number: String,

@@ -14,8 +14,8 @@ const TOKEN_TTL: Duration = Duration::from_secs(60);
 #[derive(Clone, Eq, PartialEq)]
 pub struct StorageScope {
     pub user_sub: String,
-    pub application_id: i64,
-    pub principal_key_id: u32,
+    pub application_id: idp_model::model::Id,
+    pub principal_key_id: idp_model::model::Id,
     pub trusted_devices: Vec<TrustedDevice>,
     pub access_token: String,
 }
@@ -25,7 +25,7 @@ impl StorageNamespace for StorageScope {
         &self.user_sub
     }
 
-    fn application_id(&self) -> i64 {
+    fn application_id(&self) -> idp_model::model::Id {
         self.application_id
     }
 }
@@ -107,20 +107,20 @@ mod tests {
         let issued = sessions
             .issue(StorageScope {
                 user_sub: "user".into(),
-                application_id: 1,
-                principal_key_id: 1,
+                application_id: idp_model::model::Id::nil(),
+                principal_key_id: idp_model::model::Id::nil(),
                 trusted_devices: Vec::new(),
                 access_token: "token".into(),
             })
             .unwrap();
-        assert_eq!(issued.application_id, 1);
+        assert_eq!(issued.application_id, idp_model::model::Id::nil());
 
         assert_eq!(
             sessions.take(&issued.token),
             Some(StorageScope {
                 user_sub: "user".into(),
-                application_id: 1,
-                principal_key_id: 1,
+                application_id: idp_model::model::Id::nil(),
+                principal_key_id: idp_model::model::Id::nil(),
                 trusted_devices: Vec::new(),
                 access_token: "token".into(),
             })
@@ -132,8 +132,8 @@ mod tests {
     fn redacts_access_tokens_from_debug_output() {
         let scope = StorageScope {
             user_sub: "user".into(),
-            application_id: 1,
-            principal_key_id: 1,
+            application_id: idp_model::model::Id::nil(),
+            principal_key_id: idp_model::model::Id::nil(),
             trusted_devices: Vec::new(),
             access_token: "secret".into(),
         };

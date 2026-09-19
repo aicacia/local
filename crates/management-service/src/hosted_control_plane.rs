@@ -43,7 +43,7 @@ impl HostedControlPlane {
         Ok(StorageScope {
             user_sub: claims.sub,
             application_id: session.application_id,
-            principal_key_id: 0,
+            principal_key_id: idp_model::model::Id::nil(),
             trusted_devices,
             access_token: token.to_owned(),
         })

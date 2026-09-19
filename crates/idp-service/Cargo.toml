@@ -14,9 +14,9 @@ name = "idp_service"
 
 [features]
 default = ["std"]
-fs = ["std"]
+
 headless = []
-libsql = ["std"]
+replica = ["std", "db/replica", "idp-model/replica"]
 std = [
   "key/std",
   "idp-model/std",
@@ -32,19 +32,13 @@ std = [
 [dependencies]
 # Internal
 db = { package = "idp-db", path = "../db", default-features = false, features = [] }
-file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+
 key = { path = "../key", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = [] }
 idp-model = { path = "../idp-model", default-features = false, features = [
   "std",
 ] }
 
-
-# Database
-libsql = { version = "0.9", default-features = false, features = [
-  "core",
-  "serde",
-] }
 
 # Cryptography
 k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
@@ -101,13 +95,8 @@ android-native-keyring-store = { version = "1.0", default-features = false, feat
 ] }
 
 [dev-dependencies]
-file-system = { path = "../file-system", default-features = false, features = [
-  "in-memory",
-] }
-idp-model = { path = "../idp-model", default-features = false, features = [
-  "migrate",
-  "std",
-] }
+
+idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
 tokio = { version = "1.4", default-features = false, features = [
   "macros",
   "rt",

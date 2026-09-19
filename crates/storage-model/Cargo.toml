@@ -14,13 +14,10 @@ name = "storage_model"
 [features]
 default = ["std"]
 std = ["serde/std", "serde_json/std", "chrono/std", "idp-model/std"]
-migrate = ["dep:db", "dep:include_dir"]
 
 [dependencies]
 # Internal
 idp-model = { path = "../idp-model", default-features = false, features = [] }
-db = { package = "idp-db", path = "../db", default-features = false, features = ["migrate"], optional = true }
-libsql = { version = "0.9", default-features = false, features = [] }
 
 # Serialization
 serde = { version = "1.0", default-features = false, features = ["derive"] }
@@ -28,4 +25,3 @@ serde_json = { version = "1.0", default-features = false, features = [] }
 
 # Utilities
 chrono = { version = "0.4", default-features = false, features = ["serde", "alloc"] }
-include_dir = { version = "0.7", default-features = false, features = [], optional = true }

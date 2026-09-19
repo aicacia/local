@@ -8,11 +8,13 @@ use alloc::{
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UserPassword {
-    pub id: i64,
+    pub id: Id,
 
-    pub user_id: i64,
+    pub user_id: Id,
 
     pub active: bool,
     pub password_hash: String,

@@ -72,7 +72,7 @@ fn storage_access(claims: &StandardClaims) -> Option<(String, bool)> {
 
 struct StorageNamespace {
     user_sub: String,
-    application_id: i64,
+    application_id: idp_model::model::Id,
 }
 
 impl storage_model::StorageNamespace for StorageNamespace {
@@ -80,7 +80,7 @@ impl storage_model::StorageNamespace for StorageNamespace {
         &self.user_sub
     }
 
-    fn application_id(&self) -> i64 {
+    fn application_id(&self) -> idp_model::model::Id {
         self.application_id
     }
 }

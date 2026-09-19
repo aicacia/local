@@ -1,11 +1,10 @@
 use axum::{Json, extract::State};
 use idp_model::contract::{AuthorizationServerMetadata, ErrorResponse, Jwks};
 
-use crate::router::{RouterState, middleware::require_current_global_identity};
+use crate::router::RouterState;
 
 #[utoipa::path(get, path = "/.well-known/jwks.json", responses((status = 200, description = "JWKS", body = Jwks)))]
 pub(crate) async fn jwks(State(state): State<RouterState>) -> Result<Json<Jwks>, ErrorResponse> {
-    require_current_global_identity(&state).await?;
     let jwks = state.oauth2_service.list_jwks().await?;
     Ok(Json(jwks))
 }
@@ -14,6 +13,5 @@ pub(crate) async fn jwks(State(state): State<RouterState>) -> Result<Json<Jwks>,
 pub(crate) async fn openid_configuration(
     State(state): State<RouterState>,
 ) -> Result<Json<AuthorizationServerMetadata>, ErrorResponse> {
-    require_current_global_identity(&state).await?;
     Ok(Json(state.oauth2_service.metadata()))
 }

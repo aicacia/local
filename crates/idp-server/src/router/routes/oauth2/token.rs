@@ -15,7 +15,7 @@ use iroh::EndpointId;
 use model::contract::{AuthorizationDetail, StorageAuthorizationAction, TokenResponse};
 use storage_service::{Access, ScopedFileSystemRuntime};
 
-use crate::router::{RouterState, middleware::require_current_global_identity};
+use crate::router::RouterState;
 
 #[utoipa::path(post, path = "/oauth2/token", request_body(content = TokenRequest, content_type = "application/x-www-form-urlencoded"), responses((status = 200, description = "Token response", body = TokenResponse)))]
 pub(crate) async fn token(
@@ -23,7 +23,6 @@ pub(crate) async fn token(
     State(state): State<RouterState>,
     Form(request): Form<TokenRequest>,
 ) -> Result<Json<TokenResponse>, ErrorResponse> {
-    require_current_global_identity(&state).await?;
     let client_auth = parse_basic_client_auth(&headers)?;
     let authorizer = state
         .storage_file_systems
@@ -82,7 +81,7 @@ impl TokenIssuerAuthorizer for StorageTokenAuthorizer {
 
 struct StorageNamespace<'a> {
     user_sub: &'a str,
-    application_id: i64,
+    application_id: idp_model::model::Id,
 }
 
 impl storage_model::StorageNamespace for StorageNamespace<'_> {
@@ -90,7 +89,7 @@ impl storage_model::StorageNamespace for StorageNamespace<'_> {
         self.user_sub
     }
 
-    fn application_id(&self) -> i64 {
+    fn application_id(&self) -> idp_model::model::Id {
         self.application_id
     }
 }

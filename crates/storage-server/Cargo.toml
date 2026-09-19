@@ -43,8 +43,6 @@ model = { path = "../model", default-features = false, features = ["std", "utoip
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
 storage-service = { path = "../storage-service", default-features = false, features = [] }
 
-# Database`
-libsql = { version = "0.9", default-features = false, features = [] }
 
 # Serialization
 base64 = { version = "0.22", default-features = false, features = ["std"] }

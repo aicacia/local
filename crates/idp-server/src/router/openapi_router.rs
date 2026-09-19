@@ -33,11 +33,6 @@ use super::routes::oauth2::register::{
 use super::routes::oauth2::revoke::{__path_revoke, revoke};
 use super::routes::oauth2::sessions::{__path_sessions_logout, sessions_logout};
 use super::routes::oauth2::token::{__path_token, token};
-use super::routes::setup::{
-    __path_complete_device_setup, __path_device_residency, __path_set_device_residency,
-    __path_setup_join, __path_setup_new, __path_setup_status, complete_device_setup,
-    device_residency, set_device_residency, setup_join, setup_new, setup_status,
-};
 
 use super::routes::tunnel_authorizations::{
     __path_create_tunnel_authorization, create_tunnel_authorization,
@@ -86,12 +81,6 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(revoke))
             .routes(routes!(sessions_logout))
             .routes(routes!(create_tunnel_authorization))
-            .routes(routes!(setup_status))
-            .routes(routes!(setup_join))
-            .routes(routes!(setup_new))
-            .routes(routes!(complete_device_setup))
-            .routes(routes!(device_residency))
-            .routes(routes!(set_device_residency))
             .routes(routes!(version))
             .routes(routes!(jwks))
             .routes(routes!(openid_configuration))

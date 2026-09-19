@@ -19,7 +19,7 @@ pub(crate) struct ManagementKey {
     pub id: u32,
     pub parent_id: Option<u32>,
     pub entity_type: EntityType,
-    pub entity_id: i64,
+    pub entity_id: idp_model::model::Id,
     pub derivation_path: String,
     pub name: String,
     pub hardened: bool,

@@ -5,8 +5,9 @@ extern crate alloc;
 
 #[cfg(feature = "fs")]
 pub mod fs;
-#[cfg(feature = "libsql")]
-pub mod libsql;
+
+#[cfg(feature = "replica")]
+pub mod replica;
 
 #[cfg(feature = "std")]
 mod device_enrollment;

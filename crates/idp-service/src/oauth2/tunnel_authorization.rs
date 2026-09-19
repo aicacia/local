@@ -1,5 +1,8 @@
-use idp_model::contract::{
-    ErrorCode, ErrorResponse, ErrorResponseResult, JwkPublic, TunnelAuthorizationClaims,
+use idp_model::{
+    contract::{
+        ErrorCode, ErrorResponse, ErrorResponseResult, JwkPublic, TunnelAuthorizationClaims,
+    },
+    model::Id,
 };
 
 use super::verify_jwt;
@@ -9,7 +12,7 @@ pub fn verify_tunnel_authorization(
     token: &str,
     issuer: &str,
     user_sub: &str,
-    application_id: i64,
+    application_id: Id,
     vault_id_hash: &str,
     local_public_key: &str,
     remote_public_key: &str,
@@ -35,8 +38,11 @@ pub fn verify_tunnel_authorization(
 #[cfg(test)]
 mod tests {
     use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
-    use idp_model::contract::{
-        JwkPrivate, JwkPrivateParameters, JwsAlgorithm, KeyUse, TunnelAuthorizationClaims,
+    use idp_model::{
+        contract::{
+            JwkPrivate, JwkPrivateParameters, JwsAlgorithm, KeyUse, TunnelAuthorizationClaims,
+        },
+        model::Id,
     };
     use k256::ecdsa::SigningKey;
 
@@ -47,7 +53,7 @@ mod tests {
         let point = signing_key.verifying_key().to_encoded_point(false);
         JwkPrivate {
             r#use: KeyUse::Signature,
-            kid: 1,
+            kid: "key".into(),
             alg: JwsAlgorithm::EdDSA,
             params: JwkPrivateParameters::Ec {
                 crv: "secp256k1".into(),
@@ -62,7 +68,7 @@ mod tests {
         TunnelAuthorizationClaims {
             iss: "https://lidp.example".into(),
             sub: "1".into(),
-            application_id: 1,
+            application_id: Id::nil(),
             vault_id_hash: "vault".into(),
             local_public_key: "local".into(),
             remote_public_key: "remote".into(),
@@ -82,7 +88,7 @@ mod tests {
                 &token,
                 "https://lidp.example",
                 "1",
-                1,
+                Id::nil(),
                 "vault",
                 "local",
                 "remote",
@@ -96,7 +102,7 @@ mod tests {
                 &token,
                 "https://lidp.example",
                 "1",
-                1,
+                Id::nil(),
                 "vault",
                 "local",
                 "other",

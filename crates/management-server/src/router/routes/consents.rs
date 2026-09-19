@@ -14,8 +14,8 @@ const CONSENTS_WRITE_PERMISSION: &str = "consents.write";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct UserConsentResponse {
-    pub id: i64,
-    pub user_id: i64,
+    pub id: idp_model::model::Id,
+    pub user_id: idp_model::model::Id,
     pub client_id: String,
     pub redirect_uri: String,
     pub scope: String,
@@ -51,7 +51,7 @@ pub(crate) struct ListUserConsentsQuery {
     get,
     path = "/users/{user_id}/consents",
     params(
-        ("user_id" = i64, Path, description = "User ID"),
+        ("user_id" = idp_model::model::Id, Path, description = "User ID"),
         ListUserConsentsQuery
     ),
     responses((status = 200, description = "List user consents", body = [UserConsentResponse])),
@@ -61,7 +61,7 @@ pub(crate) struct ListUserConsentsQuery {
 )]
 pub(crate) async fn list_user_consents(
     State(state): State<RouterState>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<idp_model::model::Id>,
     Query(query): Query<ListUserConsentsQuery>,
     authorization: ManagementAuthorization,
 ) -> Result<Json<Vec<UserConsentResponse>>, ErrorResponse> {
@@ -84,8 +84,8 @@ pub(crate) async fn list_user_consents(
     delete,
     path = "/users/{user_id}/consents/{consent_id}",
     params(
-        ("user_id" = i64, Path, description = "User ID"),
-        ("consent_id" = i64, Path, description = "Consent ID")
+        ("user_id" = idp_model::model::Id, Path, description = "User ID"),
+        ("consent_id" = idp_model::model::Id, Path, description = "Consent ID")
     ),
     responses((status = 204, description = "Revoke user consent")),
     security(
@@ -94,7 +94,7 @@ pub(crate) async fn list_user_consents(
 )]
 pub(crate) async fn revoke_user_consent(
     State(state): State<RouterState>,
-    Path((user_id, consent_id)): Path<(i64, i64)>,
+    Path((user_id, consent_id)): Path<(idp_model::model::Id, idp_model::model::Id)>,
     authorization: ManagementAuthorization,
 ) -> Result<(), ErrorResponse> {
     let _consent = state

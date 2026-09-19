@@ -3,6 +3,8 @@ use alloc::{format, string::String};
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::Id;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +38,7 @@ pub struct PairingAcceptance {
 
 #[must_use]
 pub fn device_pairing_approval_payload(
-    device_id: i64,
+    device_id: Id,
     name: &str,
     public_key: &str,
     address: &str,

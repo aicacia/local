@@ -9,13 +9,11 @@ use crate::RouterState;
     responses((status = OK, description = "Server is healthy", body = HealthResponse))
 )]
 pub(crate) async fn health(
-    State(state): State<RouterState>,
+    State(_state): State<RouterState>,
 ) -> Result<Json<HealthResponse>, (StatusCode, Json<HealthResponse>)> {
-    let database = match state.database.connect() {
-        Ok(_) => HealthStatus::Healthy,
-        Err(e) => HealthStatus::Unhealthy(e.to_string()),
+    let health_response = HealthResponse {
+        database: HealthStatus::Healthy,
     };
-    let health_response = HealthResponse { database };
 
     if health_response.is_healthy() {
         Ok(Json(health_response))

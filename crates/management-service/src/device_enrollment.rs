@@ -80,7 +80,7 @@ where
 
     pub async fn approve_pairing(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         request: DevicePairingApprovalRequest,
     ) -> ErrorResponseResult<DeviceInfo> {
         let (device, accepting_public_key) = self
@@ -107,7 +107,10 @@ where
             .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))
     }
 
-    pub async fn pairing_approval_payload(&self, device_id: i64) -> ErrorResponseResult<String> {
+    pub async fn pairing_approval_payload(
+        &self,
+        device_id: idp_model::model::Id,
+    ) -> ErrorResponseResult<String> {
         let (device, _) = self
             .repo
             .pending_pairing(device_id)
@@ -132,7 +135,7 @@ where
 
     pub async fn rename(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         request: UpdateDeviceRequest,
     ) -> ErrorResponseResult<DeviceInfo> {
         validate_name(&request.name)?;
@@ -146,7 +149,7 @@ where
 
     pub async fn revoke(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         protected_public_key: &str,
     ) -> ErrorResponseResult<()> {
         self.repo

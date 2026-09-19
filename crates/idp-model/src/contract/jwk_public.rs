@@ -23,7 +23,7 @@ pub struct JwkPublic {
     pub r#use: KeyUse,
 
     /// Key ID
-    pub kid: u32,
+    pub kid: String,
 
     /// Algorithm intended for use
     pub alg: JwsAlgorithm,

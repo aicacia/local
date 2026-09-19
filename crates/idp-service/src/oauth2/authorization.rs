@@ -128,15 +128,18 @@ fn validate_response_mode(request: &AuthorizationRequest) -> ErrorResponseResult
 
 #[cfg(test)]
 mod tests {
-    use idp_model::contract::{ClientProfile, GrantType, TokenEndpointAuthMethod};
+    use idp_model::{
+        contract::{ClientProfile, GrantType, TokenEndpointAuthMethod},
+        model::Id,
+    };
     use model::contract::{StorageAuthorizationAction, StorageAuthorizationDetail};
 
     use super::*;
 
     fn sample_client() -> Client {
         Client {
-            id: 1,
-            application_id: 1,
+            id: Id::nil(),
+            application_id: Id::nil(),
             client_id: "client-1".to_string(),
             client_secret: "secret".to_string(),
             client_id_issued_at: None,

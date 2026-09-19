@@ -25,7 +25,6 @@ uuid = { version = "1.16", default-features = false, features = ["std"] }
 futures-core = { version = "0.3", default-features = false, features = [] }
 log = "0.4"
 axum = { version = "0.8", default-features = false, features = ["ws"] }
-libsql = { version = "0.9", default-features = false, features = [] }
 rcgen = { version = "0.14", default-features = false, features = [
   "pem",
   "ring",
@@ -53,23 +52,23 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
 tower-http = { version = "0.7", default-features = false, features = ["cors"] }
 
 db = { package = "idp-db", path = "../../../crates/db", default-features = false, features = [
-  "migrate",
+  "native",
 ] }
 management-server = { path = "../../../crates/management-server", default-features = false, features = [
 ] }
 idp-model = { path = "../../../crates/idp-model", default-features = false, features = [
+  "replica",
   "std",
-  "migrate",
 ] }
 idp-server = { path = "../../../crates/idp-server", default-features = false, features = [
 ] }
 bootstrap-service = { path = "../../../crates/bootstrap-service", default-features = false, features = ["std"] }
 idp-service = { path = "../../../crates/idp-service", default-features = false, features = [
-  "libsql",
+  "replica",
   "std",
 ] }
 management-service = { path = "../../../crates/management-service", default-features = false, features = [
-  "libsql",
+  "replica",
   "std",
 ] }
 model = { path = "../../../crates/model", default-features = false, features = ["std"] }

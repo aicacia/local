@@ -117,21 +117,11 @@ A Storage Namespace is the stable logical partition identified by `(user subject
 
 Storage Residency is a device-local choice for a Storage Namespace: full or passthrough. Full residency stores metadata and blobs; passthrough synchronizes metadata and obtains blobs from peers when read and writes blobs directly to an available full-residency peer. Passthrough is the initial default. It may be set for a namespace, folder, or file; the most-specific rule applies. A device may exclude an entire Application, meaning it stores no metadata or blobs for any of that application's Storage Namespaces. Changes apply by fetching or deleting local data to match the selected residency.
 
-## Global Identity Namespace
-
-The Global Identity Namespace is the authoritative stable filesystem namespace for synchronized IdP and management records. It is distinct from application-scoped storage and must be available before normal user/application authorization, so it cannot be opened through a `StorageScope` derived from the records it contains. A local database may materialize an activated revision as a cache but is never an authority.
-
-Installation Setup synchronizes and activates this namespace first. Trusted-device authorization protects subsequent synchronization.
-
-## Global Identity Revision
-
-A Global Identity Revision is a complete, hash-validated set of canonical identity and management records staged before activation. A receiver activates a revision only after every manifest entry validates. Private key material is device-local and is not a Global Identity Revision record.
-
 ## File System
 
 The File System is the local-first replicated storage engine. It stores file content by hash and maintains Automerge metadata per folder. It synchronizes metadata and obtains missing content from peers through an authorized transport.
 
-Filesystem repositories serialize domain records into this engine. They use random positive IDs because offline nodes cannot safely allocate sequential database IDs.
+The filesystem stores application-scoped content; IdP and management records are not filesystem data.
 
 ## File Entry
 
@@ -165,4 +155,4 @@ A Vault ID identifies the filesystem being synchronized. Its hash is included in
 
 ## Repository Backend
 
-A Repository Backend persists a service trait using either `fs` or `libsql` features of its owning service crate. `fs` is the local-first implementation built on `file-system`; `libsql` is the current database implementation. Runtime code imports these feature exports directly from `idp-service` or `management-service`; compatibility backend crates do not exist.
+A Repository Backend persists a service trait through the native replicated `db` engine. CLI and desktop runtimes compose the native DB repositories directly.

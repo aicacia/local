@@ -16,7 +16,7 @@ use model::contract::{
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
-use idp_model::model::{Client, Key};
+use idp_model::model::{Client, Id, Key};
 use idp_model::{
     contract::{
         ApproveForUserRequest, AuthorizationCodeResponse, AuthorizationRequest,
@@ -153,7 +153,7 @@ where
         Ok(client.into())
     }
 
-    pub async fn application_id_for_client(&self, client_id: &str) -> ErrorResponseResult<i64> {
+    pub async fn application_id_for_client(&self, client_id: &str) -> ErrorResponseResult<Id> {
         self.client_repo
             .find_client_by_client_id(client_id)
             .await
@@ -607,10 +607,14 @@ where
                     return Err(ErrorResponse::new(ErrorCode::InvalidGrant)
                         .with_description("refresh token is expired"));
                 }
+                let key_id = Id::parse_str(&jwt_header.kid).map_err(|_| {
+                    ErrorResponse::new(ErrorCode::InvalidGrant)
+                        .with_description("invalid refresh token signing key")
+                })?;
                 let key = self
                     .key_service
                     .key_repo()
-                    .find_by_id(jwt_header.kid)
+                    .find_by_id(key_id)
                     .await?
                     .ok_or_else(|| {
                         ErrorResponse::new(ErrorCode::InvalidGrant)
@@ -673,7 +677,11 @@ where
                 }
 
                 let (jwt_header, _) = decode_jwt::<StandardClaims>(&request.subject_token)?;
-                let jwk = self.find_public_jwk(jwt_header.kid).await?;
+                let key_id = Id::parse_str(&jwt_header.kid).map_err(|_| {
+                    ErrorResponse::new(ErrorCode::InvalidGrant)
+                        .with_description("invalid subject token signing key")
+                })?;
+                let jwk = self.find_public_jwk(key_id).await?;
                 let (_, subject_token) =
                     verify_jwt::<StandardClaims>(&jwk, &request.subject_token)?;
                 let now = Utc::now().timestamp();
@@ -691,11 +699,11 @@ where
                 let key = self
                     .key_service
                     .key_repo()
-                    .find_by_id(jwt_header.kid)
+                    .find_by_id(key_id)
                     .await?
                     .ok_or_else(|| {
                         ErrorResponse::new(ErrorCode::InvalidGrant)
-                            .with_description("refresh token signing key not found")
+                            .with_description("subject token signing key not found")
                     })?;
 
                 // TODO: get a derevided key from the key ring store to validate token.
@@ -860,7 +868,7 @@ where
         }
     }
 
-    pub async fn find_public_jwk(&self, key_id: u32) -> ErrorResponseResult<JwkPublic> {
+    pub async fn find_public_jwk(&self, key_id: Id) -> ErrorResponseResult<JwkPublic> {
         let key = self
             .key_service
             .key_repo()
@@ -897,7 +905,7 @@ where
     pub async fn issue_tunnel_authorization(
         &self,
         principal: &dyn Principal,
-        application_id: i64,
+        application_id: Id,
         request: TunnelAuthorizationRequest,
     ) -> ErrorResponseResult<TunnelAuthorization> {
         if principal.get_entity_type() != EntityType::User {
@@ -1045,7 +1053,7 @@ where
         })
     }
 
-    pub async fn find_user_info(&self, user_id: i64) -> ErrorResponseResult<UserInfo> {
+    pub async fn find_user_info(&self, user_id: Id) -> ErrorResponseResult<UserInfo> {
         let user = self
             .user_repo
             .find_user_by_id(user_id)
@@ -1080,7 +1088,7 @@ where
 
     pub async fn update_user_info(
         &self,
-        user_id: i64,
+        user_id: Id,
         request: UpdateUserInfoRequest,
     ) -> ErrorResponseResult<UserInfo> {
         let existing = self
@@ -1162,7 +1170,7 @@ where
 
     pub async fn reset_user_password(
         &self,
-        user_id: i64,
+        user_id: Id,
         password: &str,
     ) -> ErrorResponseResult<()> {
         if self
@@ -1182,7 +1190,7 @@ where
             .map_err(ErrorResponse::from)
     }
 
-    pub async fn delete_user(&self, user_id: i64) -> ErrorResponseResult<()> {
+    pub async fn delete_user(&self, user_id: Id) -> ErrorResponseResult<()> {
         if self
             .user_repo
             .find_user_by_id(user_id)
@@ -1202,7 +1210,7 @@ where
 
     pub async fn list_user_consents(
         &self,
-        user_id: i64,
+        user_id: Id,
         offset: u32,
         limit: u32,
     ) -> ErrorResponseResult<Vec<idp_model::model::OAuth2UserConsent>> {
@@ -1225,8 +1233,8 @@ where
 
     pub async fn revoke_user_consent(
         &self,
-        user_id: i64,
-        consent_id: i64,
+        user_id: Id,
+        consent_id: Id,
     ) -> ErrorResponseResult<()> {
         if self
             .user_repo
@@ -1289,7 +1297,7 @@ where
 
     pub async fn find_principal(
         &self,
-        key_id: u32,
+        key_id: Id,
     ) -> ErrorResponseResult<Option<Box<dyn Principal>>> {
         let key = if let Some(key) = self.key_service.key_repo().find_by_id(key_id).await? {
             key

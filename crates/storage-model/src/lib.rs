@@ -3,8 +3,6 @@
 extern crate alloc;
 
 pub mod contract;
-#[cfg(feature = "migrate")]
-pub mod migrate;
 pub mod model;
 mod namespace;
 mod session;

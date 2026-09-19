@@ -3,9 +3,11 @@ use alloc::{string::String, vec::Vec};
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Application {
-    pub id: i64,
+    pub id: Id,
 
     pub name: String,
     pub uri: String,

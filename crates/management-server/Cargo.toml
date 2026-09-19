@@ -18,10 +18,9 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [features]
-default = ["cli", "completions", "remote", "swagger-ui"]
+default = ["cli", "completions", "swagger-ui"]
 cli = ["dep:tokio", "dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli"]
 completions = ["cli?/completions"]
-remote = ["db/remote"]
 swagger-ui = ["utoipa-swagger-ui"]
 
 [dependencies]
@@ -38,7 +37,7 @@ cli = { path = "../cli", default-features = false, features = [
 
 # Internal
 api = { path = "../api", default-features = false, features = [] }
-db = { package = "idp-db", path = "../db", default-features = false, features = ["migrate"] }
+db = { package = "idp-db", path = "../db", default-features = false, features = ["replica"] }
 model = { path = "../model", default-features = false, features = [
   "std",
   "utoipa",
@@ -48,15 +47,16 @@ idp-model = { path = "../idp-model", default-features = false, features = [
   "std",
   "utoipa",
   "axum",
-  "migrate",
+  "replica",
 ] }
-idp-server = { path = "../idp-server", default-features = false, features = [] }
-bootstrap-service = { path = "../bootstrap-service", default-features = false, features = ["std"] }
-idp-service = { path = "../idp-service", default-features = false, features = ["libsql", "std"] }
-management-service = { path = "../management-service", default-features = false, features = ["libsql", "std"] }
+idp-service = { path = "../idp-service", default-features = false, features = ["replica", "std"] }
+management-service = { path = "../management-service", default-features = false, features = ["replica", "std"] }
 
 # Database
-libsql = { version = "0.9", default-features = false, features = [] }
+sync-db = { package = "converge", path = "../../../db", default-features = false, features = [
+  "automerge",
+  "redb",
+] }
 
 # Serialization
 serde = { version = "1.0", default-features = false, features = [

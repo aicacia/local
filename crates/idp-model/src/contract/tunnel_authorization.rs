@@ -3,6 +3,8 @@ use alloc::string::String;
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::Id;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
@@ -24,7 +26,7 @@ pub struct TunnelAuthorization {
 pub struct TunnelAuthorizationClaims {
     pub iss: String,
     pub sub: String,
-    pub application_id: i64,
+    pub application_id: Id,
     pub vault_id_hash: String,
     pub local_public_key: String,
     pub remote_public_key: String,
@@ -38,7 +40,7 @@ impl TunnelAuthorizationClaims {
         &self,
         issuer: &str,
         user_sub: &str,
-        application_id: i64,
+        application_id: Id,
         vault_id_hash: &str,
         local_public_key: &str,
         remote_public_key: &str,
@@ -59,12 +61,13 @@ impl TunnelAuthorizationClaims {
 #[cfg(test)]
 mod tests {
     use super::TunnelAuthorizationClaims;
+    use crate::model::Id;
 
     fn claims() -> TunnelAuthorizationClaims {
         TunnelAuthorizationClaims {
             iss: "https://lidp.example".into(),
             sub: "1".into(),
-            application_id: 1,
+            application_id: Id::nil(),
             vault_id_hash: "vault".into(),
             local_public_key: "local".into(),
             remote_public_key: "remote".into(),
@@ -79,7 +82,7 @@ mod tests {
         assert!(claims().valid_for(
             "https://lidp.example",
             "1",
-            1,
+            Id::nil(),
             "vault",
             "local",
             "remote",
@@ -88,7 +91,7 @@ mod tests {
         assert!(!claims().valid_for(
             "https://lidp.example",
             "1",
-            1,
+            Id::nil(),
             "other-vault",
             "local",
             "remote",
@@ -97,7 +100,7 @@ mod tests {
         assert!(!claims().valid_for(
             "https://lidp.example",
             "1",
-            1,
+            Id::nil(),
             "vault",
             "local",
             "remote",
@@ -109,7 +112,7 @@ mod tests {
         assert!(!future.valid_for(
             "https://lidp.example",
             "1",
-            1,
+            Id::nil(),
             "vault",
             "local",
             "remote",

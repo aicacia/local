@@ -11,8 +11,5 @@ pub use openapi_router::openapi_router;
 pub use pairing_acceptance::{
     PairingAcceptanceController, PairingAcceptanceControllerSlot, TimedPairingAcceptanceController,
 };
-#[allow(unused_imports)]
-pub use state::{
-    DeviceIdentity, GlobalIdentityReadGateSlot, RouterState, SetupJoinExecutor, SetupNewExecutor,
-};
+pub use state::{DeviceIdentity, RouterState};
 pub use storage::storage_router;

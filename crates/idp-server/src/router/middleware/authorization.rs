@@ -7,6 +7,7 @@ use idp_model::contract::{ErrorCode, ErrorResponse};
 use idp_service::oauth2::{Principal, decode_jwt, verify_jwt};
 use model::contract::{StandardClaims, TokenType, TokenUse};
 use serde::de::DeserializeOwned;
+use uuid::Uuid;
 
 use crate::RouterState;
 
@@ -48,35 +49,24 @@ where
     }
 }
 
-pub async fn require_current_global_identity(
-    router_state: &RouterState,
-) -> Result<(), ErrorResponse> {
-    if router_state.global_identity_is_current().await {
-        Ok(())
-    } else {
-        Err(ErrorResponse::new(ErrorCode::NotAuthorized)
-            .with_description("global identity cache is not current"))
-    }
-}
-
 pub async fn authorize_bearer(
     router_state: &RouterState,
     authorization_string: &str,
 ) -> Result<Authorization<StandardClaims>, ErrorResponse> {
-    require_current_global_identity(router_state).await?;
     let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
+    let key_id = jwt_header
+        .kid
+        .parse::<Uuid>()
+        .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?;
     let principal = router_state
         .oauth2_service
-        .find_principal(jwt_header.kid)
+        .find_principal(key_id)
         .await?
         .ok_or_else(|| {
             ErrorResponse::new(ErrorCode::NotAuthorized)
                 .with_description("principal not found for key id")
         })?;
-    let jwk = router_state
-        .oauth2_service
-        .find_public_jwk(jwt_header.kid)
-        .await?;
+    let jwk = router_state.oauth2_service.find_public_jwk(key_id).await?;
     let (_, claims) = verify_jwt::<StandardClaims>(&jwk, authorization_string)?;
 
     let now = std::time::SystemTime::now()

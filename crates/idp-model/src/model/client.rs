@@ -3,6 +3,7 @@ use alloc::{string::String, vec::Vec};
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
 use crate::contract::{
     ApplicationRegistration, ClientProfile, ClientRegistration, ClientType, GrantType,
     ResponseType, TokenEndpointAuthMethod,
@@ -10,9 +11,9 @@ use crate::contract::{
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Client {
-    pub id: i64,
+    pub id: Id,
 
-    pub application_id: i64,
+    pub application_id: Id,
 
     pub client_id: String,
     pub client_secret: String,

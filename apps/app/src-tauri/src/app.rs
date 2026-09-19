@@ -7,25 +7,24 @@ use std::{
 
 use axum::Router;
 
-use db::{close_database, open_database};
+use db::{NativeEngine, open_native_engine};
 use idp_model::contract::{DeviceSelfRevocationRequest, device_self_revocation_payload};
 use idp_server::{
-    ActiveGlobalIdentityReadGate, AppConfig, DeviceIdentity, GlobalIdentityCache,
-    GlobalIdentityJoinApprover, LocalSetupState, RouterState, TimedPairingAcceptanceController,
+    AppConfig, DeviceIdentity, LocalSetupState, RouterState, TimedPairingAcceptanceController,
     delete_device_identity, open_device_identity, storage_router,
 };
-use idp_service::libsql::{
-    LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
-    LibSqlOAuth2UserConsentRepo, LibSqlUserRepo,
-};
 use idp_service::{
-    generate_random_string,
     oauth2::OAuth2Service,
+    replica::{
+        DbApplicationRepo, DbClientRepo, DbKeyRepo, DbOAuth2AuthorizationCodeRepo,
+        DbOAuth2UserConsentRepo, DbUserRepo,
+    },
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
-use libsql::Database;
-use management_service::libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo};
-use management_service::{DeviceRepo, ManagementService};
+use management_service::{
+    ManagementService,
+    replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo},
+};
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
 use tokio::{net::TcpListener, time::timeout};
 use tower_http::cors::CorsLayer;
@@ -35,7 +34,6 @@ use crate::localhost_server::{
     start_unified_localhost_server,
 };
 use crate::{
-    global_identity::{DesktopGlobalRuntime, DesktopSetupJoinExecutor, DesktopSetupNewExecutor},
     hosted_control_plane::HostedControlPlane,
     local_api,
     scoped_transport::AppFileSystemRuntime,
@@ -50,7 +48,7 @@ pub struct LocalhostServerState {
 
 pub fn init_router(
     app_config: Arc<AppConfig>,
-    database: Arc<Database>,
+    database: Arc<NativeEngine>,
     file_systems: Arc<AppFileSystemRuntime>,
     device_identity: Arc<DeviceIdentity>,
     setup_state: LocalSetupState,
@@ -58,21 +56,17 @@ pub fn init_router(
     control_plane: Option<Arc<HostedControlPlane>>,
 ) -> io::Result<(Router, Arc<RouterState>)> {
     let key_service = Arc::new(KeyService::new(
-        LibSqlKeyRepo::new(database.clone()),
+        DbKeyRepo::new(database.clone()),
         PrivateKeyKeyringRepo::new(&app_config.oauth2.issuer),
         app_config.key_namespace.clone(),
     ));
 
     let oauth2_service = Arc::new(OAuth2Service::new(
-        LibSqlApplicationRepo::new(database.clone()),
-        LibSqlClientRepo::new(database.clone(), key_service.clone()),
-        LibSqlOAuth2AuthorizationCodeRepo::new(database.clone()),
-        LibSqlUserRepo::new(
-            database.clone(),
-            key_service.clone(),
-            app_config.password.clone(),
-        ),
-        LibSqlOAuth2UserConsentRepo::new(database.clone()),
+        DbApplicationRepo::new(database.clone()),
+        DbClientRepo::new(database.clone(), key_service.clone()),
+        DbOAuth2AuthorizationCodeRepo::new(database.clone()),
+        DbUserRepo::new(database.clone(), app_config.password.clone()),
+        DbOAuth2UserConsentRepo::new(database.clone()),
         key_service.clone(),
         app_config.oauth2.clone(),
     ));
@@ -82,7 +76,7 @@ pub fn init_router(
         &app_config.api_public_uri,
         database.clone(),
         oauth2_service.clone(),
-        Arc::new(LibSqlDeviceRepo::new(database.clone())),
+        Arc::new(DbDeviceRepo::new(database.clone())),
         device_identity,
     )
     .with_local_setup(setup_data_dir.as_ref().to_path_buf(), setup_state)
@@ -93,9 +87,9 @@ pub fn init_router(
     });
     let idp_router = idp_server::openapi_router(router_state.as_ref().clone(), "/lidp");
     let management_service = Arc::new(ManagementService::new(
-        LibSqlApplicationRepo::new(database.clone()),
-        LibSqlPermissionRepo::new(database.clone()),
-        LibSqlRoleRepo::new(database.clone()),
+        DbApplicationRepo::new(database.clone()),
+        DbPermissionRepo::new(database.clone()),
+        DbRoleRepo::new(database.clone()),
     ));
     let management_router = management_server::openapi_router(
         management_server::RouterState::new(
@@ -124,16 +118,14 @@ pub fn init_router(
 pub async fn init_database(
     app_handle: AppHandle<Wry>,
     app_config: Arc<AppConfig>,
-) -> io::Result<Arc<Database>> {
-    let database = Arc::new(open_database(&app_config.database).await.map_err(|e| {
-        log::error!("failed to create database pool: {e}");
-        io::Error::other(e)
-    })?);
-
-    idp_model::migrate::up(&database).await.map_err(|e| {
-        log::error!("failed to run database migrations: {e}");
-        io::Error::other(e)
-    })?;
+) -> io::Result<Arc<NativeEngine>> {
+    let database = Arc::new(
+        open_native_engine(PathBuf::from(&app_config.data_dir).join("lidp.redb"))
+            .map_err(io::Error::other)?,
+    );
+    idp_model::replica::up(&database)
+        .await
+        .map_err(io::Error::other)?;
 
     app_handle.manage(database.clone());
 
@@ -157,10 +149,6 @@ pub fn init_app_config(
         default_config.bootstrap.web = false;
         default_config.bootstrap.desktop = true;
         default_config.data_dir = data_dir.as_ref().to_string_lossy().into_owned();
-        default_config.database.url = format!(
-            "file://{}",
-            data_dir.as_ref().join("lidp.db").to_string_lossy()
-        );
         default_config.oauth2.issuer = "https://localhost".to_owned();
         default_config.ui_public_uri = "https://localhost".to_owned();
         default_config.api_public_uri = "https://localhost".to_owned();
@@ -196,10 +184,6 @@ pub async fn reset_device(app_handle: AppHandle<Wry>) -> Result<(), String> {
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
-    let config_dir = app_handle
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?;
     let setup_state = app_handle
         .try_state::<LocalSetupState>()
         .ok_or_else(|| "setup state is missing".to_owned())?
@@ -234,35 +218,16 @@ pub async fn reset_device(app_handle: AppHandle<Wry>) -> Result<(), String> {
         .await
         .map_err(|error| error.to_string())?;
     delete_device_identity(&setup_state).map_err(|error| error.to_string())?;
-    remove_local_reset_data(&data_dir, &config_dir, &app_config.database.url)
-        .map_err(|error| error.to_string())?;
+    remove_local_reset_data(&data_dir).map_err(|error| error.to_string())?;
     app_handle.exit(0);
     Ok(())
 }
 
-fn remove_local_reset_data(
-    data_dir: &Path,
-    config_dir: &Path,
-    database_url: &str,
-) -> io::Result<()> {
+fn remove_local_reset_data(data_dir: &Path) -> io::Result<()> {
     remove_path(&LocalSetupState::path(data_dir))?;
+    remove_path(&data_dir.join("lidp.redb"))?;
     remove_path(&data_dir.join("vaults"))?;
-    remove_path(&data_dir.join("global-identity"))?;
-    remove_path(&data_dir.join("storage-residency.json"))?;
-
-    let default_database = config_dir.join("lidp.db");
-    if database_url == format!("file://{}", default_database.to_string_lossy()) {
-        remove_path(&default_database)?;
-        remove_path(&PathBuf::from(format!(
-            "{}-shm",
-            default_database.to_string_lossy()
-        )))?;
-        remove_path(&PathBuf::from(format!(
-            "{}-wal",
-            default_database.to_string_lossy()
-        )))?;
-    }
-    Ok(())
+    remove_path(&data_dir.join("storage-residency.json"))
 }
 
 fn remove_path(path: &Path) -> io::Result<()> {
@@ -333,12 +298,7 @@ pub async fn init_tunnel_manager(
         .try_state::<Arc<AppConfig>>()
         .ok_or_else(|| tauri::Error::Io(io::Error::other("app config is missing")))?;
     let allowlist = iroh_chain::DynamicEndpointIdStore::default();
-    let global_grants = Arc::new(idp_server::GlobalBootstrapGrants::new());
-    let authorizer = LidpTunnelAuthorizer::new(
-        Arc::clone(&state),
-        control_plane.clone(),
-        Arc::clone(&global_grants),
-    );
+    let authorizer = LidpTunnelAuthorizer::new(Arc::clone(&state), control_plane.clone());
     let manager = Arc::new(DeviceTunnelManager::new(
         identity.endpoint(),
         allowlist.clone(),
@@ -351,110 +311,6 @@ pub async fn init_tunnel_manager(
             Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
         )))
         .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
-    let global_transport = iroh_chain_file_system::ScopedIrohTransport::new(
-        (*manager).clone(),
-        iroh_chain::VaultId::global_identity(),
-        iroh_chain_file_system::StaticTunnelAuthorization::new(Vec::new()),
-    );
-    let global_runtime = Arc::new(
-        DesktopGlobalRuntime::new(
-            PathBuf::from(&app_config.data_dir),
-            identity.endpoint_id(),
-            global_transport,
-        )
-        .await
-        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?,
-    );
-    let global_cache = GlobalIdentityCache::new(Arc::clone(&state.database));
-    state
-        .global_identity_read_gate
-        .bind(Arc::new(ActiveGlobalIdentityReadGate::new(
-            Arc::clone(&global_runtime),
-            global_cache.clone(),
-        )))
-        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
-    let join_approver = Arc::new(GlobalIdentityJoinApprover::new(
-        Arc::clone(&global_runtime),
-        global_cache.clone(),
-        Arc::clone(&global_grants),
-        identity.endpoint_id().to_string(),
-        identity
-            .endpoint_address()
-            .map_err(|error| tauri::Error::Io(io::Error::other(error)))?,
-    ));
-    let mut pairing_offers = manager.subscribe_pairing_offers();
-    let pairing_allowlist = allowlist.clone();
-    let pairing_runtime = Arc::clone(&global_runtime);
-    let pairing_cache = global_cache.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            let Ok(pairing_offer) = pairing_offers.recv().await else {
-                return;
-            };
-            let Ok(offer) = serde_json::from_slice::<idp_model::contract::GlobalIdentityJoinOffer>(
-                &pairing_offer.payload,
-            ) else {
-                continue;
-            };
-            if offer.joining_public_key != pairing_offer.remote_id.to_string() {
-                continue;
-            }
-            let Ok(Some((manifest, _))) = pairing_runtime.active_rows().await else {
-                continue;
-            };
-            let Ok(Some(cache_revision)) = pairing_cache.revision().await else {
-                continue;
-            };
-            if cache_revision != manifest.revision {
-                continue;
-            }
-            pairing_allowlist
-                .insert_scope("global-identity".to_owned(), pairing_offer.remote_id)
-                .await;
-            let expires_at = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |duration| {
-                    i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
-                })
-                .saturating_add(300);
-            let Ok(reply) = join_approver
-                .approve(
-                    &pairing_offer.remote_id.to_string(),
-                    offer,
-                    generate_random_string::<32>(),
-                    expires_at,
-                )
-                .await
-            else {
-                continue;
-            };
-            let Ok(reply) = serde_json::to_vec(&reply) else {
-                continue;
-            };
-            let _ = pairing_offer.reply(&reply).await;
-        }
-    });
-    state
-        .setup_new_executor
-        .bind(Arc::new(DesktopSetupNewExecutor::new(
-            Arc::clone(&global_runtime),
-            global_cache.clone(),
-            PathBuf::from(&app_config.data_dir),
-            app_config.bootstrap.clone(),
-            app_config.password.clone(),
-            app_config.oauth2.issuer.clone(),
-            app_config.key_namespace.clone(),
-        )))
-        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
-    state
-        .setup_join_executor
-        .bind(Arc::new(DesktopSetupJoinExecutor::new(
-            (*manager).clone(),
-            allowlist.clone(),
-            global_cache,
-            PathBuf::from(&app_config.data_dir),
-        )))
-        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
     let listener = Arc::clone(&manager);
     tauri::async_runtime::spawn(async move {
         listener.listen().await;
@@ -462,7 +318,6 @@ pub async fn init_tunnel_manager(
     let allowlist = Arc::new(allowlist);
 
     app_handle.manage(allowlist);
-    app_handle.manage(global_grants);
     app_handle.manage(manager);
     Ok(())
 }
@@ -513,11 +368,6 @@ pub async fn close(app_handle: &AppHandle<Wry>) -> io::Result<()> {
     }
     if let Some(manager) = app_handle.try_state::<Arc<DeviceTunnelManager>>() {
         manager.close().await;
-    }
-    if let Some(database) = app_handle.try_state::<Arc<Database>>() {
-        close_database(database.inner())
-            .await
-            .map_err(io::Error::other)?;
     }
     Ok(())
 }

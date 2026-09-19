@@ -4,14 +4,15 @@ use idp_service::repo::RawKeyringRepo;
 use iroh::{Endpoint, SecretKey, endpoint::presets};
 use iroh_chain::TUNNEL_ALPN;
 
-use crate::{DeviceIdentity, LocalSetupState};
+use crate::DeviceIdentity;
 
 const KEYRING_SERVICE: &str = "local.device-identity";
+const KEYRING_ENTRY: &str = "device";
 
-pub async fn open(state: &LocalSetupState) -> io::Result<DeviceIdentity> {
+pub async fn open() -> io::Result<DeviceIdentity> {
     let keyring = RawKeyringRepo::new(KEYRING_SERVICE);
     let secret_key = match keyring
-        .load("", "", &state.device_identity_id)
+        .load("", "", KEYRING_ENTRY)
         .map_err(io::Error::other)?
     {
         Some(bytes) => SecretKey::from_bytes(
@@ -22,7 +23,7 @@ pub async fn open(state: &LocalSetupState) -> io::Result<DeviceIdentity> {
         None => {
             let secret_key = SecretKey::generate();
             keyring
-                .store("", "", &state.device_identity_id, &secret_key.to_bytes())
+                .store("", "", KEYRING_ENTRY, &secret_key.to_bytes())
                 .map_err(io::Error::other)?;
             secret_key
         }
@@ -36,9 +37,9 @@ pub async fn open(state: &LocalSetupState) -> io::Result<DeviceIdentity> {
     Ok(DeviceIdentity::new(endpoint, secret_key))
 }
 
-pub fn delete(state: &LocalSetupState) -> io::Result<()> {
+pub fn delete() -> io::Result<()> {
     RawKeyringRepo::new(KEYRING_SERVICE)
-        .delete("", "", &state.device_identity_id)
+        .delete("", "", KEYRING_ENTRY)
         .map_err(io::Error::other)
 }
 

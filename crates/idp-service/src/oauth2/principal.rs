@@ -2,11 +2,11 @@ use core::any::Any;
 
 use idp_model::{
     contract::EntityType,
-    model::{Key, User},
+    model::{Id, Key, User},
 };
 
 pub trait Principal: Send + Sync {
-    fn get_entity_id(&self) -> i64;
+    fn get_entity_id(&self) -> Id;
     fn get_entity_type(&self) -> EntityType;
     fn get_entity_as_any(&self) -> &dyn Any;
     fn get_key(&self) -> &Key;
@@ -18,7 +18,7 @@ pub struct UserPrincipal {
 }
 
 impl Principal for UserPrincipal {
-    fn get_entity_id(&self) -> i64 {
+    fn get_entity_id(&self) -> Id {
         self.user.id
     }
 

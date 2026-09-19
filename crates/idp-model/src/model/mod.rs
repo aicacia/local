@@ -26,3 +26,5 @@ pub use user::User;
 pub use user_email::UserEmail;
 pub use user_password::UserPassword;
 pub use user_phone_number::UserPhoneNumber;
+
+pub type Id = uuid::Uuid;

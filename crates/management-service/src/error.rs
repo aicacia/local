@@ -11,8 +11,6 @@ pub enum ManagementError {
     #[error("deserialize error: {0}")]
     DeserializeError(#[from] serde::de::value::Error),
 
-    #[error("libsql error: {0}")]
-    LibSql(#[from] libsql::Error),
     #[error("invalid input: {0}")]
     InvalidInput(String),
     #[error("{0}")]

@@ -52,7 +52,7 @@ where
         Ok(permissions)
     }
 
-    async fn next_id(&self) -> ManagementResult<i64> {
+    async fn next_id(&self) -> ManagementResult<idp_model::model::Id> {
         // ponytail: scan records; replace with a replicated ID allocator only if permission creation is hot.
         let ids = self
             .permissions()
@@ -61,16 +61,19 @@ where
             .map(|permission| permission.id)
             .collect::<std::collections::BTreeSet<_>>();
         loop {
-            let mut bytes = [0_u8; 8];
+            let mut bytes = [0_u8; 16];
             getrandom::fill(&mut bytes).map_err(ManagementError::other)?;
-            let id = i64::from_be_bytes(bytes) & i64::MAX;
-            if id != 0 && !ids.contains(&id) {
+            let id = idp_model::model::Id::from_bytes(bytes);
+            if !ids.contains(&id) {
                 return Ok(id);
             }
         }
     }
 
-    async fn permission(&self, permission_id: i64) -> ManagementResult<Option<Permission>> {
+    async fn permission(
+        &self,
+        permission_id: idp_model::model::Id,
+    ) -> ManagementResult<Option<Permission>> {
         match self.store.read(&permission_path(permission_id)).await {
             Ok(permission) => Ok(Some(permission)),
             Err(ManagementError::InvalidInput(message)) if message.contains("not found") => {
@@ -93,7 +96,7 @@ where
 {
     async fn list_permissions(
         &self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         offset: u32,
         limit: u32,
     ) -> ManagementResult<Vec<Permission>> {
@@ -109,7 +112,7 @@ where
 
     async fn create_permission(
         &self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         name: &str,
         description: Option<&str>,
     ) -> ManagementResult<Permission> {
@@ -130,8 +133,8 @@ where
 
     async fn find_permission_by_id(
         &self,
-        application_id: i64,
-        permission_id: i64,
+        application_id: idp_model::model::Id,
+        permission_id: idp_model::model::Id,
     ) -> ManagementResult<Option<Permission>> {
         Ok(self
             .permission(permission_id)
@@ -141,8 +144,8 @@ where
 
     async fn delete_permission_by_id(
         &self,
-        application_id: i64,
-        permission_id: i64,
+        application_id: idp_model::model::Id,
+        permission_id: idp_model::model::Id,
     ) -> ManagementResult<()> {
         if self
             .find_permission_by_id(application_id, permission_id)
@@ -158,9 +161,9 @@ where
 
     async fn add_permission_to_role(
         &self,
-        application_id: i64,
-        role_id: i64,
-        permission_id: i64,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
+        permission_id: idp_model::model::Id,
     ) -> ManagementResult<()> {
         if self
             .find_permission_by_id(application_id, permission_id)
@@ -178,9 +181,9 @@ where
 
     async fn remove_permission_from_role(
         &self,
-        application_id: i64,
-        role_id: i64,
-        permission_id: i64,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
+        permission_id: idp_model::model::Id,
     ) -> ManagementResult<()> {
         if self
             .find_permission_by_id(application_id, permission_id)
@@ -198,8 +201,8 @@ where
 
     async fn list_role_permissions(
         &self,
-        application_id: i64,
-        role_id: i64,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
     ) -> ManagementResult<Vec<Permission>> {
         let paths = self.store.list(&role_permissions_folder(role_id)).await?;
         let mut permissions = Vec::with_capacity(paths.len());
@@ -223,15 +226,18 @@ where
     }
 }
 
-fn permission_path(id: i64) -> String {
+fn permission_path(id: idp_model::model::Id) -> String {
     format!("{PERMISSIONS_FOLDER}/{id}.json")
 }
 
-fn role_permissions_folder(role_id: i64) -> String {
+fn role_permissions_folder(role_id: idp_model::model::Id) -> String {
     format!("{ROLE_PERMISSIONS_FOLDER}/{role_id}")
 }
 
-fn role_permission_path(role_id: i64, permission_id: i64) -> String {
+fn role_permission_path(
+    role_id: idp_model::model::Id,
+    permission_id: idp_model::model::Id,
+) -> String {
     format!("{}/{permission_id}.json", role_permissions_folder(role_id))
 }
 

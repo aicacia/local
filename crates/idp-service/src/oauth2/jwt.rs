@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub struct JwtHeader {
     pub alg: String,
     pub typ: String,
-    pub kid: u32,
+    pub kid: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jwk: Option<JwkPublic>,
 }
@@ -37,7 +37,7 @@ where
     let header = JwtHeader {
         alg: JWT_HEADER_ALG.to_string(),
         typ: JWT_HEADER_TYP.to_string(),
-        kid: jwk.kid,
+        kid: jwk.kid.clone(),
         jwk: None,
     };
 

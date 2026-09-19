@@ -22,12 +22,12 @@ pub trait DeviceRepo {
 
     fn pending_pairing(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
     ) -> impl Future<Output = ManagementResult<Option<(Device, String)>>>;
 
     fn approve_pairing(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
     ) -> impl Future<Output = ManagementResult<Option<Device>>>;
 
     fn has_any(&self) -> impl Future<Output = ManagementResult<bool>>;
@@ -40,23 +40,23 @@ pub trait DeviceRepo {
         &self,
         local_public_key: &str,
         remote_public_key: &str,
-    ) -> impl Future<Output = ManagementResult<bool>> + Send;
+    ) -> impl Future<Output = ManagementResult<bool>>;
 
     fn approve(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         enrollment_code_hash: &[u8],
     ) -> impl Future<Output = ManagementResult<Option<Device>>>;
 
     fn rename(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         name: String,
     ) -> impl Future<Output = ManagementResult<Option<Device>>>;
 
     fn revoke(
         &self,
-        device_id: i64,
+        device_id: idp_model::model::Id,
         protected_public_key: &str,
     ) -> impl Future<Output = ManagementResult<bool>>;
 

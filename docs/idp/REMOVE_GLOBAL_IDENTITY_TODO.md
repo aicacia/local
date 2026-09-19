@@ -2,8 +2,8 @@
 
 ## Goal
 
-Delete the filesystem snapshot replica after DB-backed repositories,
-synchronization, and enrollment are verified.
+Delete the filesystem global-identity snapshot replica. Native DB repositories,
+synchronization, enrollment, and runtime composition replace it.
 
 ## Dependencies
 
@@ -13,18 +13,22 @@ synchronization, and enrollment are verified.
 
 ## Plan
 
-- [ ] Delete `GlobalIdentityRuntime`.
-- [ ] Delete `GlobalIdentityCache`.
-- [ ] Delete `GlobalIdentityRevisionWriter`.
-- [ ] Delete `GlobalIdentityReadGate` and its slot.
-- [ ] Delete global-identity manifest, record, and join snapshot contracts.
-- [ ] Delete global-identity filesystem vault setup and polling sync loop.
-- [ ] Delete bootstrap tunnel grants used only by that filesystem vault.
-- [ ] Delete stale global-identity runtime code from `storage-service`.
-- [ ] Remove old snapshot files from development setup and tests.
-- [ ] Remove obsolete LibSQL-only bootstrap paths.
+- [x] Delete `GlobalIdentityRuntime`.
+- [x] Delete `GlobalIdentityCache`.
+- [x] Delete `GlobalIdentityRevisionWriter`.
+- [x] Delete `GlobalIdentityReadGate` and its slot.
+- [x] Delete global-identity manifest, record, and join snapshot contracts.
+- [x] Delete global-identity filesystem vault setup and polling sync loop.
+- [x] Delete bootstrap tunnel grants used only by that filesystem vault.
+- [x] Delete stale global-identity runtime code from `storage-service`.
+- [x] Remove old snapshot files from development setup and tests.
+- [x] Remove obsolete LibSQL-only bootstrap paths and migrations.
+- [x] Compose CLI and desktop runtimes from native DB repositories.
 
 ## Verification
+
+Cargo checks are externally blocked. The following static searches and runtime
+behavioral verification remain pending.
 
 ```sh
 grep -RIn 'GlobalIdentityRuntime\|GlobalIdentityCache\|GlobalIdentityRevisionWriter\|GlobalIdentityReadGate' apps crates src

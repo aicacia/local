@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use idp_model::{contract::EntityType, model::Key};
+use idp_model::{
+    contract::EntityType,
+    model::{Id, Key},
+};
 use key::DerivedKey;
 
 use crate::repo::{KeyRepo, PrivateKeyKeyringRepo, PrivateKeyRepo, RepoResult};
@@ -33,9 +36,9 @@ where
 
     pub async fn create_key(
         &self,
-        parent_id: Option<u32>,
+        parent_id: Option<Id>,
         entity_type: EntityType,
-        entity_id: i64,
+        entity_id: Id,
         hardened: bool,
         name: String,
         expires_at: Option<DateTime<Utc>>,
@@ -61,14 +64,14 @@ where
         Ok((key, private_key))
     }
 
-    pub fn scoped_namespace(&self, entity_type: EntityType, entity_id: i64) -> String {
+    pub fn scoped_namespace(&self, entity_type: EntityType, entity_id: Id) -> String {
         format!("{}:{entity_type}:{entity_id}", self.namespace)
     }
 
     pub fn ensure_entity_master_key(
         &self,
         entity_type: EntityType,
-        entity_id: i64,
+        entity_id: Id,
         passphrase: &str,
     ) -> RepoResult<DerivedKey> {
         let scoped_namespace = self.scoped_namespace(entity_type, entity_id);
@@ -79,7 +82,7 @@ where
     pub async fn rotate_active_entity_root_key(
         &self,
         entity_type: EntityType,
-        entity_id: i64,
+        entity_id: Id,
         name: String,
         expires_at: Option<DateTime<Utc>>,
     ) -> RepoResult<(Key, DerivedKey)> {

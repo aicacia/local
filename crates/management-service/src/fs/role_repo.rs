@@ -56,7 +56,7 @@ where
         Ok(roles)
     }
 
-    async fn next_id(&self) -> ManagementResult<i64> {
+    async fn next_id(&self) -> ManagementResult<idp_model::model::Id> {
         // ponytail: scan records; replace with a replicated ID allocator only if role creation is hot.
         let ids = self
             .roles()
@@ -65,16 +65,16 @@ where
             .map(|role| role.id)
             .collect::<BTreeSet<_>>();
         loop {
-            let mut bytes = [0_u8; 8];
+            let mut bytes = [0_u8; 16];
             getrandom::fill(&mut bytes).map_err(ManagementError::other)?;
-            let id = i64::from_be_bytes(bytes) & i64::MAX;
-            if id != 0 && !ids.contains(&id) {
+            let id = idp_model::model::Id::from_bytes(bytes);
+            if !ids.contains(&id) {
                 return Ok(id);
             }
         }
     }
 
-    async fn role(&self, role_id: i64) -> ManagementResult<Option<Role>> {
+    async fn role(&self, role_id: idp_model::model::Id) -> ManagementResult<Option<Role>> {
         match self.store.read(&role_path(role_id)).await {
             Ok(role) => Ok(Some(role)),
             Err(ManagementError::InvalidInput(message)) if message.contains("not found") => {
@@ -86,8 +86,8 @@ where
 
     async fn permissions_for_role(
         &self,
-        application_id: i64,
-        role_id: i64,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
     ) -> ManagementResult<Vec<Permission>> {
         let paths = self.store.list(&role_permissions_folder(role_id)).await?;
         let mut permissions = Vec::with_capacity(paths.len());
@@ -110,7 +110,10 @@ where
         Ok(permissions)
     }
 
-    async fn permission(&self, permission_id: i64) -> ManagementResult<Option<Permission>> {
+    async fn permission(
+        &self,
+        permission_id: idp_model::model::Id,
+    ) -> ManagementResult<Option<Permission>> {
         match self.store.read(&permission_path(permission_id)).await {
             Ok(permission) => Ok(Some(permission)),
             Err(ManagementError::InvalidInput(message)) if message.contains("not found") => {
@@ -144,7 +147,7 @@ where
 {
     async fn list_roles(
         &self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         offset: u32,
         limit: u32,
     ) -> ManagementResult<Vec<Role>> {
@@ -160,7 +163,7 @@ where
 
     async fn create_role(
         &self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         name: &str,
         description: Option<&str>,
     ) -> ManagementResult<Role> {
@@ -179,8 +182,8 @@ where
 
     async fn find_role_by_id(
         &self,
-        application_id: i64,
-        role_id: i64,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
     ) -> ManagementResult<Option<Role>> {
         Ok(self
             .role(role_id)
@@ -188,7 +191,11 @@ where
             .filter(|role| role.application_id == application_id))
     }
 
-    async fn delete_role_by_id(&self, application_id: i64, role_id: i64) -> ManagementResult<()> {
+    async fn delete_role_by_id(
+        &self,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
+    ) -> ManagementResult<()> {
         if self
             .find_role_by_id(application_id, role_id)
             .await?
@@ -201,9 +208,9 @@ where
 
     async fn add_role_to_user(
         &self,
-        application_id: i64,
-        user_id: i64,
-        role_id: i64,
+        application_id: idp_model::model::Id,
+        user_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
     ) -> ManagementResult<()> {
         if self
             .find_role_by_id(application_id, role_id)
@@ -219,9 +226,9 @@ where
 
     async fn remove_role_from_user(
         &self,
-        application_id: i64,
-        user_id: i64,
-        role_id: i64,
+        application_id: idp_model::model::Id,
+        user_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
     ) -> ManagementResult<()> {
         if self
             .find_role_by_id(application_id, role_id)
@@ -235,8 +242,8 @@ where
 
     async fn list_user_roles(
         &self,
-        application_id: i64,
-        user_id: i64,
+        application_id: idp_model::model::Id,
+        user_id: idp_model::model::Id,
     ) -> ManagementResult<Vec<Role>> {
         let paths = self.store.list(&user_roles_folder(user_id)).await?;
         let mut roles = Vec::with_capacity(paths.len());
@@ -256,7 +263,7 @@ where
 
     async fn list_user_roles_across_applications(
         &self,
-        user_id: i64,
+        user_id: idp_model::model::Id,
     ) -> ManagementResult<Vec<Role>> {
         let paths = self.store.list(&user_roles_folder(user_id)).await?;
         let mut roles = Vec::with_capacity(paths.len());
@@ -276,8 +283,8 @@ where
 
     async fn list_user_permissions(
         &self,
-        application_id: i64,
-        user_id: i64,
+        application_id: idp_model::model::Id,
+        user_id: idp_model::model::Id,
     ) -> ManagementResult<Vec<Permission>> {
         let mut permissions = BTreeMap::new();
         for role in self.list_user_roles(application_id, user_id).await? {
@@ -290,7 +297,7 @@ where
 
     async fn has_user_client_permission(
         &self,
-        user_id: i64,
+        user_id: idp_model::model::Id,
         application_uri: &str,
         permission_name: &str,
     ) -> ManagementResult<bool> {
@@ -323,27 +330,27 @@ fn permission_matches(granted: &str, required: &str) -> bool {
             .is_some_and(|prefix| required.starts_with(&format!("{prefix}:")))
 }
 
-fn id_from_path(path: &str) -> Option<i64> {
+fn id_from_path(path: &str) -> Option<idp_model::model::Id> {
     path.rsplit_once('/')?.1.strip_suffix(".json")?.parse().ok()
 }
 
-fn permission_path(id: i64) -> String {
+fn permission_path(id: idp_model::model::Id) -> String {
     format!("{PERMISSIONS_FOLDER}/{id}.json")
 }
 
-fn role_path(id: i64) -> String {
+fn role_path(id: idp_model::model::Id) -> String {
     format!("{ROLES_FOLDER}/{id}.json")
 }
 
-fn role_permissions_folder(role_id: i64) -> String {
+fn role_permissions_folder(role_id: idp_model::model::Id) -> String {
     format!("{ROLE_PERMISSIONS_FOLDER}/{role_id}")
 }
 
-fn user_roles_folder(user_id: i64) -> String {
+fn user_roles_folder(user_id: idp_model::model::Id) -> String {
     format!("{USER_ROLES_FOLDER}/{user_id}")
 }
 
-fn user_role_path(user_id: i64, role_id: i64) -> String {
+fn user_role_path(user_id: idp_model::model::Id, role_id: idp_model::model::Id) -> String {
     format!("{}/{role_id}.json", user_roles_folder(user_id))
 }
 

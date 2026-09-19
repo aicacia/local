@@ -23,8 +23,8 @@ pub(crate) struct ListUsersQuery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct UserApplicationRoleResponse {
-    pub role_id: i64,
-    pub application_id: i64,
+    pub role_id: idp_model::model::Id,
+    pub application_id: idp_model::model::Id,
     pub role_name: String,
     pub role_description: Option<String>,
     pub created_at: i64,
@@ -77,7 +77,7 @@ pub(crate) async fn list_users(
     get,
     path = "/users/{user_id}",
     params(
-        ("user_id" = i64, Path, description = "User ID")
+        ("user_id" = idp_model::model::Id, Path, description = "User ID")
     ),
     responses((status = 200, description = "Get user", body = UserInfo)),
     security(
@@ -86,7 +86,7 @@ pub(crate) async fn list_users(
 )]
 pub(crate) async fn get_user(
     State(state): State<RouterState>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<idp_model::model::Id>,
     authorization: ManagementAuthorization,
 ) -> Result<Json<UserInfo>, ErrorResponse> {
     require_application_permission(
@@ -104,7 +104,7 @@ pub(crate) async fn get_user(
     get,
     path = "/users/{user_id}/roles",
     params(
-        ("user_id" = i64, Path, description = "User ID")
+        ("user_id" = idp_model::model::Id, Path, description = "User ID")
     ),
     responses((status = 200, description = "List user roles across applications", body = [UserApplicationRoleResponse])),
     security(
@@ -113,7 +113,7 @@ pub(crate) async fn get_user(
 )]
 pub(crate) async fn list_user_roles_across_applications(
     State(state): State<RouterState>,
-    Path(user_id): Path<i64>,
+    Path(user_id): Path<idp_model::model::Id>,
     authorization: ManagementAuthorization,
 ) -> Result<Json<Vec<UserApplicationRoleResponse>>, ErrorResponse> {
     require_application_permission(

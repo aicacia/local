@@ -7,8 +7,7 @@ use key::DerivationPath;
 pub enum RepoError {
     #[error("deserialize error: {0}")]
     DeserializeError(#[from] serde::de::value::Error),
-    #[error("libsql error: {0}")]
-    LibSql(#[from] libsql::Error),
+
     #[error("key error: {0}")]
     Key(#[from] key::KeyError),
     #[error("invalid input: {0}")]
@@ -37,15 +36,6 @@ impl From<keyring_core::Error> for RepoError {
 impl From<RepoError> for ErrorResponse {
     fn from(error: RepoError) -> Self {
         ErrorResponse::new(ErrorCode::ServerError).with_description(error.to_string())
-    }
-}
-
-impl RepoError {
-    pub fn into_libsql(self) -> libsql::Error {
-        match self {
-            RepoError::LibSql(err) => err,
-            _ => libsql::Error::Misuse(format!("RepoError: {}", self)),
-        }
     }
 }
 

@@ -3,17 +3,18 @@ use alloc::{string::String, vec::Vec};
 
 use chrono::{DateTime, Utc};
 
+use super::Id;
 use crate::contract::CodeChallengeMethod;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OAuth2AuthorizationCode {
-    pub id: i64,
+    pub id: Id,
 
     pub code: String,
 
     pub client_id: String,
 
-    pub key_id: u32,
+    pub key_id: Id,
 
     pub redirect_uri: String,
 
