@@ -9,5 +9,5 @@ mod router;
 pub use cli::run;
 pub use config::AppConfig;
 pub use router::{
-    RouterState, StorageSessionResolver, StorageSocketSession, openapi_router, storage_router,
+    RouterState, StorageSocketAccess, StorageSocketAuthorizer, openapi_router, storage_router,
 };

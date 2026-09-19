@@ -9,6 +9,8 @@ pub enum StorageRequest {
     Write { path: String, content: Vec<u8> },
     Append { path: String, content: Vec<u8> },
     Delete { path: String },
+    CreateDir { path: String },
+    Rename { from: String, to: String },
     Entry { path: String },
     List { path: String },
 }

@@ -34,7 +34,7 @@ cli = { path = "./crates/cli", default-features = false, features = [] }
 
 # Internal
 api = { path = "./crates/api", default-features = false, features = [] }
-db = { path = "./crates/db", default-features = false, features = [
+db = { package = "idp-db", path = "./crates/db", default-features = false, features = [
   "migrate",
   "remote",
 ] }

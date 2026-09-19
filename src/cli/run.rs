@@ -3,7 +3,6 @@ use std::{
     io::{self, Error},
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
-    pin::Pin,
     sync::Arc,
     time::Duration,
 };
@@ -117,10 +116,16 @@ impl TunnelAuthorizationProvider for CliTunnelAuthorization {
         vault_id: VaultId,
         local_id: EndpointId,
         remote_id: EndpointId,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
-        match self {
-            Self::Hosted(provider) => provider.authorization(vault_id, local_id, remote_id),
-            Self::Local(provider) => provider.authorization(vault_id, local_id, remote_id),
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
+        async move {
+            match self {
+                Self::Hosted(provider) => {
+                    provider.authorization(vault_id, local_id, remote_id).await
+                }
+                Self::Local(provider) => {
+                    provider.authorization(vault_id, local_id, remote_id).await
+                }
+            }
         }
     }
 }

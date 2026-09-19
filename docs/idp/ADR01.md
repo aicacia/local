@@ -1,9 +1,11 @@
 # ADR-001: IdP / OIDC / OAuth2 Service
 
 ## Status
+
 Proposed
 
 ## Context
+
 We need an identity provider that is compliant with OIDC/OAuth2 so that
 standard relying parties (RPs), client libraries, and tooling can integrate
 with it without custom protocol work. At the same time, we want user
@@ -39,6 +41,7 @@ At the point of approving an OAuth2 authorization request, the user selects
 that relying party. The IdP records which derived key was chosen for that
 specific client and reuses the same key/derivation path for that
 client on all future approvals. This gives:
+
 - A stable `sub` per relying party (satisfying standard OIDC client
   assumptions), and
 - Unlinkability across relying parties, since a user may present a
@@ -53,6 +56,7 @@ integrations require no special-casing beyond "how you prove control of
 the key."
 
 **Standard OIDC surface required regardless of the above:**
+
 - `/.well-known/openid-configuration` discovery document
 - JWKS endpoint (IdP's own signing keys, not user keys)
 - `/authorize`, `/token`, `/userinfo`
@@ -79,6 +83,7 @@ the key."
   compromise and needs standard KMS/HSM-grade protection.
 
 ## Alternatives Considered
+
 - **Self-issued OP (SIOP)**: rejected because it requires bespoke
   validation logic on every relying party and doesn't benefit from
   existing OIDC tooling.

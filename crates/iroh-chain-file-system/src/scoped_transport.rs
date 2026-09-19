@@ -2,23 +2,21 @@ use std::{
     collections::BTreeMap,
     future::Future,
     io::{Error, ErrorKind},
-    pin::Pin,
     sync::{Arc, Mutex},
-    task::{Context, Poll},
 };
 
-use file_system::Transport;
+use file_system::{IncomingMessage, SyncMessage, Transport};
 use iroh::{EndpointAddr, EndpointId};
 use iroh_chain::{AllowedEndpointId, Server, Tunnel, TunnelAuthorizer, VaultId};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    sync::{Mutex as AsyncMutex, broadcast, mpsc},
+    sync::broadcast,
 };
 
 const INCOMING_CAPACITY: usize = 64;
 const MAX_FRAME_SIZE: usize = 1024 * 1024;
 
-type Message = (EndpointId, Vec<u8>);
+type Message = IncomingMessage<EndpointId>;
 
 pub trait TunnelAuthorizationProvider: Send + Sync + 'static {
     fn authorization(
@@ -26,7 +24,7 @@ pub trait TunnelAuthorizationProvider: Send + Sync + 'static {
         vault_id: VaultId,
         local_id: EndpointId,
         remote_id: EndpointId,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>>;
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + Send;
 }
 
 #[derive(Clone)]
@@ -44,18 +42,8 @@ impl TunnelAuthorizationProvider for StaticTunnelAuthorization {
         _: VaultId,
         _: EndpointId,
         _: EndpointId,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
-        Box::pin(async { Ok(self.0.clone()) })
-    }
-}
-
-pub struct ScopedIrohIncoming(mpsc::Receiver<Message>);
-
-impl futures_core::Stream for ScopedIrohIncoming {
-    type Item = Message;
-
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.0.poll_recv(context)
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
+        async { Ok(self.0.clone()) }
     }
 }
 
@@ -78,8 +66,7 @@ where
     vault_id: VaultId,
     authorization: P,
     peers: Mutex<BTreeMap<EndpointId, Tunnel>>,
-    incoming: AsyncMutex<Option<ScopedIrohIncoming>>,
-    incoming_tx: mpsc::Sender<Message>,
+    incoming: broadcast::Sender<Message>,
     peer_events: broadcast::Sender<EndpointId>,
 }
 
@@ -90,15 +77,14 @@ where
     P: TunnelAuthorizationProvider,
 {
     pub fn new(manager: Server<A, V>, vault_id: VaultId, authorization: P) -> Self {
-        let (incoming_tx, incoming_rx) = mpsc::channel(INCOMING_CAPACITY);
+        let (incoming, _) = broadcast::channel(INCOMING_CAPACITY);
         let (peer_events, _) = broadcast::channel(INCOMING_CAPACITY);
         let inner = Arc::new(ScopedIrohTransportInner {
             manager: manager.clone(),
             vault_id,
             authorization,
             peers: Mutex::new(BTreeMap::new()),
-            incoming: AsyncMutex::new(Some(ScopedIrohIncoming(incoming_rx))),
-            incoming_tx,
+            incoming,
             peer_events,
         });
         let task_inner = Arc::clone(&inner);
@@ -178,27 +164,23 @@ where
     }
 }
 
-impl<A, V, P> Transport for ScopedIrohTransport<A, V, P>
+impl<A, V, P> Transport<EndpointId> for ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
     P: TunnelAuthorizationProvider,
 {
     type Error = Error;
-    type PeerId = EndpointId;
-    type Incoming = ScopedIrohIncoming;
-
-    fn peers(&self) -> Vec<Self::PeerId> {
+    fn peers(&self) -> Vec<EndpointId> {
         Self::peers(self)
     }
 
-    async fn send(&self, peer: Self::PeerId, data: Vec<u8>) -> Result<(), Self::Error> {
-        if data.len() > MAX_FRAME_SIZE {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "file-system message is too large",
-            ));
-        }
+    async fn send(
+        &self,
+        peer: EndpointId,
+        message: SyncMessage<EndpointId>,
+    ) -> Result<(), Self::Error> {
+        let data = encode(&message)?;
         if !self.inner.manager.is_allowed(peer).await {
             self.disconnect(peer).await;
             return Err(Error::new(
@@ -217,13 +199,8 @@ where
         write_frame(&tunnel, &data).await
     }
 
-    async fn broadcast(&self, data: Vec<u8>) -> Result<(), Self::Error> {
-        if data.len() > MAX_FRAME_SIZE {
-            return Err(Error::new(
-                ErrorKind::InvalidInput,
-                "file-system message is too large",
-            ));
-        }
+    async fn broadcast(&self, message: SyncMessage<EndpointId>) -> Result<(), Self::Error> {
+        let data = encode(&message)?;
         let peers = self
             .inner
             .peers
@@ -242,13 +219,8 @@ where
         Ok(())
     }
 
-    async fn subscribe(&self) -> Result<Self::Incoming, Self::Error> {
-        self.inner
-            .incoming
-            .lock()
-            .await
-            .take()
-            .ok_or_else(|| Error::new(ErrorKind::AlreadyExists, "transport subscribed twice"))
+    fn subscribe(&self) -> broadcast::Receiver<Message> {
+        self.inner.incoming.subscribe()
     }
 }
 
@@ -270,7 +242,7 @@ where
         return;
     }
     let _ = inner.peer_events.send(peer_id);
-    let incoming_tx = inner.incoming_tx.clone();
+    let incoming = inner.incoming.clone();
     let task_inner = Arc::clone(inner);
     tokio::spawn(async move {
         let mut reader = tunnel.reader().await;
@@ -290,9 +262,11 @@ where
             if !task_inner.manager.is_allowed(peer_id).await {
                 break;
             }
-            if incoming_tx.send((peer_id, data)).await.is_err() {
-                break;
-            }
+            let message = match postcard::from_bytes(&data) {
+                Ok(message) => message,
+                Err(_) => break,
+            };
+            let _ = incoming.send((peer_id, message));
         }
         drop(reader);
         task_inner
@@ -305,6 +279,18 @@ where
             .close_tunnel(task_inner.vault_id, peer_id)
             .await;
     });
+}
+
+fn encode(message: &SyncMessage<EndpointId>) -> Result<Vec<u8>, Error> {
+    let data = postcard::to_allocvec(message)
+        .map_err(|error| Error::new(ErrorKind::InvalidData, error))?;
+    if data.len() > MAX_FRAME_SIZE {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "file-system message is too large",
+        ));
+    }
+    Ok(data)
 }
 
 async fn write_frame(tunnel: &Tunnel, data: &[u8]) -> Result<(), Error> {

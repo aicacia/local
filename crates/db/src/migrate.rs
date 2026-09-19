@@ -1,5 +1,10 @@
 use std::collections::BTreeMap;
 
+#[cfg(feature = "replica")]
+mod replica;
+#[cfg(feature = "replica")]
+pub use replica::up as replica_up;
+
 use chrono::{DateTime, Utc};
 use libsql::{Connection, Database};
 

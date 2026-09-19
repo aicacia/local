@@ -15,6 +15,7 @@ name = "idp_model"
 default = ["std", "migrate"]
 std = ["key/std", "model/std", "serde/std", "serde_json/std", "chrono/std", "base64/std"]
 migrate = ["db?/migrate", "dep:db", "dep:include_dir"]
+replica = ["dep:db", "db/replica", "dep:include_dir"]
 utoipa = ["dep:utoipa", "std", "model/utoipa"]
 axum = ["dep:axum", "model/axum"]
 wasm = ["dep:tsify", "dep:serde-wasm-bindgen", "dep:wasm-bindgen"]
@@ -23,7 +24,7 @@ wasm = ["dep:tsify", "dep:serde-wasm-bindgen", "dep:wasm-bindgen"]
 # Internal
 key = { path = "../key", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = [] }
-db = { path = "../db", default-features = false, features = [], optional = true }
+db = { package = "idp-db", path = "../db", default-features = false, features = [], optional = true }
 
 # Web
 utoipa = { version = "5.5", default-features = false, features = [
@@ -60,3 +61,4 @@ wasm-bindgen = { version = "0.2", default-features = false, features = [
 ], optional = true }
 
 [dev-dependencies]
+futures = { version = "0.3", default-features = false, features = ["executor"] }

@@ -3,7 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use file_system::ContentHash;
+use sha2::{Digest, Sha256};
+
 use idp_model::contract::{
     GlobalIdentityManifest, GlobalIdentityRow, GlobalIdentityTable, GlobalIdentityValue,
 };
@@ -262,9 +263,13 @@ fn revision_is_valid(manifest: &GlobalIdentityManifest, rows: &[GlobalIdentityRo
             row.is_valid()
                 && row.path() == record.path
                 && serde_json::to_vec(row)
-                    .map(|content| ContentHash::of(&content).to_string() == record.hash)
+                    .map(|content| content_hash(&content) == record.hash)
                     .unwrap_or(false)
         })
+}
+
+fn content_hash(content: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(content))
 }
 
 fn quoted_columns(columns: &[&str]) -> String {

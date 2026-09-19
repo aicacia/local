@@ -1,37 +1,32 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use file_system::{PeerCodec, Transport};
+use file_system::Transport;
 use idp_model::contract::{
     GlobalIdentityJoinOffer, GlobalIdentityJoinReply, GlobalIdentityRow, GlobalIdentityTable,
     GlobalIdentityValue,
 };
-use storage_service::GlobalIdentityRuntime;
+use iroh::EndpointId;
 
-use crate::{GlobalBootstrapGrants, GlobalIdentityRevisionWriter};
+use crate::{GlobalBootstrapGrants, GlobalIdentityRevisionWriter, GlobalIdentityRuntime};
 
-pub struct GlobalIdentityJoinApprover<C, T>
+pub struct GlobalIdentityJoinApprover<T>
 where
-    C: PeerCodec,
-    T: Transport<PeerId = C::PeerId>,
+    T: Transport<EndpointId>,
 {
-    writer: GlobalIdentityRevisionWriter<C, T>,
+    writer: GlobalIdentityRevisionWriter<T>,
     grants: Arc<GlobalBootstrapGrants>,
     accepting_public_key: String,
     accepting_endpoint_addr: String,
 }
 
-impl<C, T> GlobalIdentityJoinApprover<C, T>
+impl<T> GlobalIdentityJoinApprover<T>
 where
-    C: PeerCodec + Send + Sync + 'static,
-    C::Error: std::fmt::Display + Send + 'static,
-    C::PeerId: Send + 'static,
-    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T: Transport<EndpointId> + Clone + Send + Sync + 'static,
     T::Error: std::fmt::Display,
-    T::Incoming: Send + 'static,
 {
     #[must_use]
     pub fn new(
-        runtime: Arc<GlobalIdentityRuntime<C, T>>,
+        runtime: Arc<GlobalIdentityRuntime<T>>,
         cache: crate::GlobalIdentityCache,
         grants: Arc<GlobalBootstrapGrants>,
         accepting_public_key: String,

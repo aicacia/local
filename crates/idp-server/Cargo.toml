@@ -19,7 +19,7 @@ required-features = ["cli"]
 
 [features]
 default = ["cli", "completions", "remote", "swagger-ui"]
-cli = ["dep:tokio", "dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli"]
+cli = ["dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli"]
 completions = ["cli?/completions"]
 remote = ["db/remote"]
 swagger-ui = ["utoipa-swagger-ui"]
@@ -39,8 +39,8 @@ cli = { path = "../cli", default-features = false, features = [
 # Internal
 key = { path = "../key", default-features = false, features = ["std"] }
 api = { path = "../api", default-features = false, features = [] }
-db = { path = "../db", default-features = false, features = ["migrate"] }
-file-system = { path = "../file-system", default-features = false, features = ["in-memory", "sync"] }
+db = { package = "idp-db", path = "../db", default-features = false, features = ["migrate"] }
+file-system = { path = "../file-system", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = [
   "std",
   "utoipa",
@@ -55,6 +55,7 @@ idp-model = { path = "../idp-model", default-features = false, features = [
 bootstrap-service = { path = "../bootstrap-service", default-features = false, features = ["std"] }
 idp-service = { path = "../idp-service", default-features = false, features = ["libsql", "std"] }
 management-service = { path = "../management-service", default-features = false, features = ["libsql", "std"] }
+storage-model = { path = "../storage-model", default-features = false, features = [] }
 storage-server = { path = "../storage-server", default-features = false, features = [] }
 storage-service = { path = "../storage-service", default-features = false, features = [] }
 iroh-chain = { path = "../iroh-chain", default-features = false, features = [] }
@@ -74,6 +75,7 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_qs = { version = "1.1", default-features = false, features = ["axum"] }
+sha2 = { version = "0.10", default-features = false, features = [] }
 
 # Utilities
 config = { version = "0.15", features = ["yaml"], default-features = false }
@@ -102,7 +104,8 @@ utoipa-swagger-ui = { version = "9.0", default-features = false, features = ["ax
 tokio = { version = "1.52", default-features = false, features = [
   "macros",
   "rt-multi-thread",
-], optional = true }
+  "time",
+] }
 tokio-util = { version = "0.7", default-features = false, features = [
 ], optional = true }
 

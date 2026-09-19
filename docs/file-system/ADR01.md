@@ -1,13 +1,14 @@
-# ADR-0002: Offline-First, Eventually Consistent Distributed File System
+# ADR-0001: Offline-First, Eventually Consistent Distributed File System
 
 ## Status
 
-Accepted — builds on ADR-0001 (deckv)
+Accepted
 
 ## Context
 
 Rust library for local file access that:
 
+- crates/file-system
 - Exposes an FS-like API (open, read, write, stream, list), shaped so binaries can mount it via FUSE
 - Works offline and online
 - Syncs across peers over iroh (or another transport) with eventual consistency, no central coordinator

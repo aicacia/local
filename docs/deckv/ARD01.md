@@ -8,6 +8,7 @@ Accepted
 
 Rust library for an embedded, offline-first key-value store that:
 
+- crates/deckv
 - Works offline and online
 - Syncs across peers with eventual consistency, no central coordinator, no shared root
 - Supports arbitrary key and value types (`K`, `V`)
@@ -56,14 +57,14 @@ struct LwwRecord<V> {
 ```rust
 trait Storage<K, V> {
     // put / get / remove / iter
-    // watermark(node) → Option<Timestamp>
+    // get_latest_for_node_id(node) → Option<Timestamp>
     // iter_delta(node, since) → records from that node newer than since
 }
 ```
 
 - First concrete backend: **redb** (single-file, pure Rust).
 - In-memory backend for tests.
-- Watermark and delta iteration live inside storage so the rest of the system stays simple.
+- Latest timestamp and delta iteration live inside storage so the rest of the system stays simple.
 - No cache inside `Store`; all reads/writes go to storage.
 - Future: optional Merkle tree over the keyspace for large stores.
 
@@ -74,7 +75,7 @@ Thin façade over `Storage`.
 - `put` / `get` / `delete`
 - `apply` / `apply_batch` for remote changes (LWW only)
 - Broadcast channel: every local or remote change is emitted so subscribers (UI, indexes, sync) can react
-- `watermark(peer)` and `export_delta(peer, since)` for anti-entropy
+- `get_latest_for_node_id(peer)` and `export_delta(peer, since)` for anti-entropy
 
 ### 5. Synchronisation
 
@@ -84,7 +85,7 @@ Transport-agnostic async trait:
 trait Sync<K, V> {
     fn peer_id(&self) -> Uuid;
     async fn send(&mut self, msg: SyncMessage<K, V>);
-    fn messages(&mut self) -> MessageStream;  // messages may arrive at any time
+    fn messages(&mut self) -> impl Stream;  // messages may arrive at any time
 }
 ```
 
@@ -97,16 +98,16 @@ Protocol messages:
 - Sync engine subscribes to the Store’s change stream and forwards live local writes.
 - Incoming deltas are applied back into the Store via `apply` (LWW).
 - First contact (`since = None`) yields the full write set of the node.
-- Per-peer watermark is sufficient; a full VersionVector is not required.
+- Per-peer get_latest_for_node_id is sufficient; a full VersionVector is not required.
 
 ### 6. Anti-entropy evolution path
 
-| Phase | Mechanism                     | When                         |
-| ----- | ----------------------------- | ---------------------------- |
-| 1     | Per-peer timestamp watermark  | Now                          |
-| 2     | Hybrid Logical Clock          | Before wide multi-device use |
-| 3     | Merkle tree over key space    | Large stores / high churn    |
-| 4     | Optional content-defined diff | Very large values            |
+| Phase | Mechanism                                 | When                         |
+| ----- | ----------------------------------------- | ---------------------------- |
+| 1     | Per-peer timestamp get_latest_for_node_id | Now                          |
+| 2     | Hybrid Logical Clock                      | Before wide multi-device use |
+| 3     | Merkle tree over key space                | Large stores / high churn    |
+| 4     | Optional content-defined diff             | Very large values            |
 
 ## Consequences
 
@@ -125,7 +126,7 @@ Protocol messages:
 - Concurrent updates on the same key: LWW discards the loser (no multi-value or conflict copies).
 - Tombstones accumulate until a GC story is added.
 - Wall-clock timestamps can mis-order events under clock skew (mitigated by planned HLC).
-- Watermark-based deltas are efficient only for “changes from this peer”; full-store reconciliation will need Merkle trees later.
+- Latest timestamp-based deltas are efficient only for “changes from this peer”; full-store reconciliation will need Merkle trees later.
 - No built-in authentication or encryption — left to the transport.
 - Each replica must persist a stable `node_id`.
 
@@ -147,14 +148,7 @@ Protocol messages:
 1. Core types + `Storage` trait
 2. redb + in-memory backends
 3. `Store` + LWW merge + change broadcast
-4. Async `Sync` trait + watermark protocol
+4. Async `Sync` trait + get_latest_for_node_id protocol
 5. Hybrid Logical Clock
 6. Merkle-tree anti-entropy (optional)
 7. Tombstone GC, compression, auth hooks
-
-## References
-
-- Shapiro et al. — _A comprehensive study of Convergent and Commutative Replicated Data Types_
-- Kulkarni et al. — _Hybrid Logical Clocks_
-- Classic rsync / Merkle-tree set-reconciliation literature
-- Internal design discussions that led to this ADR

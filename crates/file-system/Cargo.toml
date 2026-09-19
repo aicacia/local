@@ -13,26 +13,27 @@ description = "Local-first, eventually consistent file system primitives"
 name = "file_system"
 
 [features]
-default = ["native", "in-memory"]
-
-in-memory = ["sync"]
-native = ["std", "sync"]
-std = ["blake3/std"]
-sync = ["std", "dep:automerge", "dep:percent-encoding", "dep:tokio"]
+default = []
+in-memory = []
+native = []
+sync = []
 
 [dependencies]
-# Metadata
-# Automerge documents persist per-folder file metadata and drive metadata synchronization.
-automerge = { version = "0.11", default-features = false, features = [], optional = true }
-percent-encoding = { version = "2.3", default-features = false, features = [], optional = true }
-
-# Utilities
-blake3 = { version = "1.8", default-features = false, features = [] }
-bitflags = { version = "2.13", default-features = false, features = [] }
-libc = { version = "0.2", default-features = false, features = [] }
-uuid = { version = "1.26", default-features = false, features = [] }
-thiserror = { version = "2.0", default-features = false, features = [] }
+# Internal
+deckv = { path = "../deckv", default-features = false, features = ["redb", "std"] }
 
 # Async
-futures-core = { version = "0.3", default-features = false, features = [] }
-tokio = { version = "1.52", default-features = false, features = ["macros", "rt", "sync"], optional = true }
+tokio = { version = "1.52", default-features = false, features = ["sync"] }
+
+# Serialization
+serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
+
+# Storage
+redb = { version = "4.3", default-features = false, features = ["std"] }
+
+# Utilities
+sha2 = { version = "0.10", default-features = false, features = [] }
+uuid = { version = "1.26", default-features = false, features = ["serde", "std", "v7"] }
+
+[dev-dependencies]
+tokio = { version = "1.52", default-features = false, features = ["macros", "rt"] }

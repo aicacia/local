@@ -1,64 +1,86 @@
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use axum::Router;
-use file_system::{PeerCodec, Transport};
-use management_service::{StorageScope, StorageSessionService};
+use iroh::EndpointId;
+use model::contract::{AuthorizationDetail, StandardClaims, StorageAuthorizationAction};
 use storage_server::{
-    StorageSessionResolver, StorageSocketSession, storage_router as socket_router,
+    StorageSocketAccess, StorageSocketAuthorizer, storage_router as socket_router,
 };
-use storage_service::{ScopedFileSystemRuntime, ScopedStorageService, ScopedTransportFactory};
+use storage_service::{ScopedFileSystemRuntime, ScopedStorageService};
 
-pub fn storage_router<C, T, F>(
-    sessions: Arc<StorageSessionService>,
-    file_systems: Arc<ScopedFileSystemRuntime<C, T, F, StorageScope>>,
-) -> Router
-where
-    C: PeerCodec + Send + Sync + 'static,
-    C::Error: Send + Sync + 'static,
-    C::PeerId: Clone + Send + Sync + 'static,
-    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
-    T::Error: std::fmt::Display + Send + Sync + 'static,
-    T::Incoming: Send + 'static,
-    F: ScopedTransportFactory<C, T, StorageScope>,
-{
-    socket_router(Arc::new(ScopedFileSystemSessionResolver {
-        sessions,
+use crate::RouterState;
+
+pub fn storage_router(
+    state: RouterState,
+    file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>,
+) -> Router {
+    socket_router(Arc::new(ScopedFileSystemSocketAuthorizer {
+        state,
         file_systems,
     }))
 }
 
-struct ScopedFileSystemSessionResolver<C, T, F>
-where
-    C: PeerCodec,
-    T: Transport<PeerId = C::PeerId>,
-    F: ScopedTransportFactory<C, T, StorageScope>,
-{
-    sessions: Arc<StorageSessionService>,
-    file_systems: Arc<ScopedFileSystemRuntime<C, T, F, StorageScope>>,
+struct ScopedFileSystemSocketAuthorizer {
+    state: RouterState,
+    file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>,
 }
 
-impl<C, T, F> StorageSessionResolver for ScopedFileSystemSessionResolver<C, T, F>
-where
-    C: PeerCodec + Send + Sync + 'static,
-    C::Error: Send + Sync + 'static,
-    C::PeerId: Clone + Send + Sync + 'static,
-    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
-    T::Error: std::fmt::Display + Send + Sync + 'static,
-    T::Incoming: Send + 'static,
-    F: ScopedTransportFactory<C, T, StorageScope>,
-{
-    fn take(
-        &self,
-        token: &str,
-    ) -> Pin<Box<dyn Future<Output = Option<Arc<dyn StorageSocketSession>>> + Send + '_>> {
-        let scope = self.sessions.take(token);
-        let file_systems = self.file_systems.clone();
-        Box::pin(async move {
-            let scope = scope?;
-            let file_system = file_systems.open(&scope).await.ok()?;
-            let session: Arc<dyn StorageSocketSession> =
-                Arc::new(ScopedStorageService::new(file_systems, scope, file_system));
-            Some(session)
+impl StorageSocketAuthorizer for ScopedFileSystemSocketAuthorizer {
+    type Session = ScopedStorageService<EndpointId, StorageNamespace>;
+
+    async fn authorize(&self, token: String) -> Result<StorageSocketAccess<Self::Session>, ()> {
+        let authorization = super::middleware::authorize_bearer(&self.state, &token)
+            .await
+            .map_err(|_| ())?;
+        let (folder, write) = storage_access(&authorization.claims).ok_or(())?;
+        let client_id = &authorization.claims.client_id;
+        let application_id = self
+            .state
+            .oauth2_service
+            .application_id_for_client(client_id)
+            .await
+            .map_err(|_| ())?;
+        let scope = StorageNamespace {
+            user_sub: authorization.claims.sub,
+            application_id,
+        };
+        let session = ScopedStorageService::open(&self.file_systems, scope)
+            .await
+            .map_err(|_| ())?;
+        Ok(StorageSocketAccess {
+            folder,
+            write,
+            session,
         })
+    }
+}
+
+fn storage_access(claims: &StandardClaims) -> Option<(String, bool)> {
+    let resource = claims.resource.as_deref()?;
+    if claims.aud != resource {
+        return None;
+    }
+    let [AuthorizationDetail::Storage(detail)] = claims.authorization_details.as_deref()? else {
+        return None;
+    };
+    let write = detail.actions.contains(&StorageAuthorizationAction::Write);
+    detail
+        .actions
+        .contains(&StorageAuthorizationAction::Read)
+        .then(|| (detail.folder.clone(), write))
+}
+
+struct StorageNamespace {
+    user_sub: String,
+    application_id: i64,
+}
+
+impl storage_model::StorageNamespace for StorageNamespace {
+    fn user_sub(&self) -> &str {
+        &self.user_sub
+    }
+
+    fn application_id(&self) -> i64 {
+        self.application_id
     }
 }

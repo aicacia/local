@@ -1,13 +1,13 @@
 use core::{convert::Infallible, hash::Hash};
 
 use async_stream::stream;
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use futures_core::Stream;
 
-use crate::{LwwRecord, Storage};
+use crate::{LwwRecord, Storage, Timestamp};
 
 pub struct InMemoryStorage<Id, K, V> {
+    clock: DashMap<(), Timestamp>,
     records: DashMap<K, LwwRecord<Id, V>>,
 }
 
@@ -17,6 +17,7 @@ where
 {
     fn default() -> Self {
         Self {
+            clock: DashMap::default(),
             records: DashMap::default(),
         }
     }
@@ -53,10 +54,19 @@ where
         Ok(())
     }
 
-    async fn get_latest_for_node_id(
-        &self,
-        node_id: Id,
-    ) -> Result<Option<DateTime<Utc>>, Self::Error> {
+    async fn clock(&self) -> Result<Timestamp, Self::Error> {
+        Ok(self
+            .clock
+            .get(&())
+            .map_or(Timestamp::default(), |clock| *clock))
+    }
+
+    async fn set_clock(&self, timestamp: Timestamp) -> Result<(), Self::Error> {
+        self.clock.insert((), timestamp);
+        Ok(())
+    }
+
+    async fn get_latest_for_node_id(&self, node_id: Id) -> Result<Option<Timestamp>, Self::Error> {
         let latest = self
             .records
             .iter()
@@ -75,7 +85,7 @@ where
     fn stream(
         &self,
         node_id: Id,
-        since: Option<DateTime<Utc>>,
+        since: Option<Timestamp>,
     ) -> impl Stream<Item = Result<(K, LwwRecord<Id, V>), Self::Error>> {
         stream! {
             for entry in self.records.iter() {
@@ -84,6 +94,14 @@ where
                 if record.node_id == node_id && since.map_or(true, |s| record.timestamp > s) {
                     yield Ok((entry.key().clone(), record.clone()));
                 }
+            }
+        }
+    }
+
+    fn entries(&self) -> impl Stream<Item = Result<(K, LwwRecord<Id, V>), Self::Error>> {
+        stream! {
+            for entry in self.records.iter() {
+                yield Ok((entry.key().clone(), entry.value().clone()));
             }
         }
     }

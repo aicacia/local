@@ -13,18 +13,19 @@ description = "Offline first distributed eventually consistent key-value store"
 name = "deckv"
 
 [features]
-default = ["in-memory", "std"]
+default = ["in-memory", "redb", "std"]
 in-memory = ["dashmap"]
-redb = ["dep:redb"]
-std = ["chrono/std", "uuid/std", "serde/std", "futures-util/std", "redb?/std"]
+redb = ["dep:redb", "dep:postcard", "postcard/alloc", "std"]
+std = ["uuid/std", "serde/std", "futures-util/std", "redb?/std", "postcard?/use-std"]
 
 [dependencies]
-serde = { version = "1.0",default-features = false, features = [] }
-chrono = { version = "0.4", default-features = false, features = ["serde"] }
+serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+
 uuid = { version = "1.26", default-features = false, features = ["v7"] }
 hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"] }
 dashmap = { version = "6.2", optional = true, default-features = false, features = ["serde"] }
-tokio = { version = "1", default-features = false, features = [] }
+postcard = { version = "1.1", optional = true, default-features = false, features = [] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt", "sync"] }
 
 # Async
 futures-core = { version = "0.3", default-features = false, features = [] }

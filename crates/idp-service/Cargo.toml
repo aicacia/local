@@ -31,7 +31,7 @@ std = [
 
 [dependencies]
 # Internal
-db = { path = "../db", default-features = false, features = [] }
+db = { package = "idp-db", path = "../db", default-features = false, features = [] }
 file-system = { path = "../file-system", default-features = false, features = ["sync"] }
 key = { path = "../key", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = [] }

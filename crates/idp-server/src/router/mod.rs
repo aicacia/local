@@ -7,13 +7,12 @@ mod state;
 mod storage;
 
 pub use middleware::authorize_bearer;
-pub use openapi_router::{openapi_router, storage_session_openapi_router};
+pub use openapi_router::openapi_router;
 pub use pairing_acceptance::{
     PairingAcceptanceController, PairingAcceptanceControllerSlot, TimedPairingAcceptanceController,
 };
 #[allow(unused_imports)]
 pub use state::{
-    DeviceIdentity, GlobalIdentityReadGateSlot, HostedStorageScopeResolver, RouterState,
-    SetupJoinExecutor, SetupNewExecutor, StorageScopeResolver,
+    DeviceIdentity, GlobalIdentityReadGateSlot, RouterState, SetupJoinExecutor, SetupNewExecutor,
 };
 pub use storage::storage_router;

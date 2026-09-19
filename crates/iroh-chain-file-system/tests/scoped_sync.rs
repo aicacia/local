@@ -1,18 +1,16 @@
 use std::{
+    env,
     fmt::Display,
-    io::{Error, ErrorKind},
-    time::Duration,
+    fs,
+    io::Error,
+    time::{Duration, SystemTime},
 };
 
-use file_system::{FileSystem, InMemoryStorage, Transport};
+use file_system::{FileSystem, Residency};
 use iroh::{Endpoint, RelayMode, endpoint::presets};
 use iroh_chain::{InMemoryEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
-use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, StaticTunnelAuthorization};
+use iroh_chain_file_system::{ScopedIrohTransport, StaticTunnelAuthorization};
 use tokio::{spawn, time::timeout};
-
-type ScopedTransport =
-    ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticTunnelAuthorization>;
-type TestFileSystem = FileSystem<InMemoryStorage, EndpointIdCodec, ScopedTransport>;
 
 #[derive(Clone)]
 struct TestAuthorizer;
@@ -29,418 +27,139 @@ impl TunnelAuthorizer for TestAuthorizer {
     }
 }
 
-#[derive(Clone)]
-struct OrderedAuthorizer {
-    initiating: iroh::EndpointId,
-    accepting: iroh::EndpointId,
+#[tokio::test]
+async fn metadata_converges_over_a_scoped_tunnel() -> Result<(), Error> {
+    let peers = peers().await?;
+    let left_root = root("metadata-left");
+    let right_root = root("metadata-right");
+    let left = FileSystem::open(&left_root, peers.left.endpoint().id()).map_err(other)?;
+    let right = FileSystem::open(&right_root, peers.right.endpoint().id()).map_err(other)?;
+    left.set_residency("", Residency::Full)
+        .await
+        .map_err(other)?;
+    left.write("notes/today.txt", b"hello")
+        .await
+        .map_err(other)?;
+    let mut left_sync = left.metadata_sync(peers.left_transport.clone());
+    let mut right_sync = right.metadata_sync(peers.right_transport.clone());
+
+    right_sync.announce().await.map_err(other)?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    left_sync.pump().await.map_err(other)?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    right_sync.pump().await.map_err(other)?;
+
+    let left_entry = left.entry("notes/today.txt").await.map_err(other)?;
+    let right_entry = right.entry("notes/today.txt").await.map_err(other)?;
+    assert_eq!(right_entry.meta, left_entry.meta);
+
+    peers.close().await?;
+    fs::remove_dir_all(left_root)?;
+    fs::remove_dir_all(right_root)?;
+    Ok(())
 }
 
-impl TunnelAuthorizer for OrderedAuthorizer {
-    async fn authorize(
-        &self,
-        _: VaultId,
-        initiating: iroh::EndpointId,
-        accepting: iroh::EndpointId,
-        authorization: &[u8],
-    ) -> bool {
-        authorization == b"authorized"
-            && initiating == self.initiating
-            && accepting == self.accepting
+#[tokio::test]
+async fn fetches_content_over_a_scoped_tunnel() -> Result<(), Error> {
+    let peers = peers().await?;
+    let left_root = root("content-left");
+    let right_root = root("content-right");
+    let left = FileSystem::open(&left_root, peers.left.endpoint().id()).map_err(other)?;
+    let right = FileSystem::open(&right_root, peers.right.endpoint().id()).map_err(other)?;
+    left.set_residency("", Residency::Full)
+        .await
+        .map_err(other)?;
+    right
+        .set_residency("", Residency::Full)
+        .await
+        .map_err(other)?;
+    left.write("notes/today.txt", b"hello")
+        .await
+        .map_err(other)?;
+    let mut left_sync = left.metadata_sync(peers.left_transport.clone());
+    let mut right_sync = right.metadata_sync(peers.right_transport.clone());
+
+    right_sync.announce().await.map_err(other)?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    left_sync.pump().await.map_err(other)?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    right_sync.pump().await.map_err(other)?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    left_sync.pump().await.map_err(other)?;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    right_sync.pump().await.map_err(other)?;
+
+    assert_eq!(
+        right.read("notes/today.txt").await.map_err(other)?,
+        b"hello"
+    );
+
+    peers.close().await?;
+    fs::remove_dir_all(left_root)?;
+    fs::remove_dir_all(right_root)?;
+    Ok(())
+}
+
+struct Peers {
+    left: Server<InMemoryEndpointIdStore, TestAuthorizer>,
+    right: Server<InMemoryEndpointIdStore, TestAuthorizer>,
+    left_transport:
+        ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticTunnelAuthorization>,
+    right_transport:
+        ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticTunnelAuthorization>,
+    left_listener: tokio::task::JoinHandle<()>,
+    right_listener: tokio::task::JoinHandle<()>,
+}
+
+impl Peers {
+    async fn close(self) -> Result<(), Error> {
+        self.left.close().await;
+        self.right.close().await;
+        self.left_listener.await.map_err(other)?;
+        self.right_listener.await.map_err(other)?;
+        Ok(())
     }
 }
 
-#[tokio::test]
-async fn binds_tunnel_grants_to_the_initiating_device() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let endpoint_a_id = endpoint_a.id();
-    let endpoint_b_id = endpoint_b.id();
+async fn peers() -> Result<Peers, Error> {
+    let left_endpoint = endpoint().await?;
+    let right_endpoint = endpoint().await?;
     let allowed = InMemoryEndpointIdStore::new();
-    allowed.add(endpoint_a_id);
-    allowed.add(endpoint_b_id);
-    let manager_a = Server::new(
-        endpoint_a,
-        allowed.clone(),
-        OrderedAuthorizer {
-            initiating: endpoint_b_id,
-            accepting: endpoint_a_id,
-        },
-    );
-    let manager_b = Server::new(endpoint_b, allowed, TestAuthorizer);
-    let listener_manager_a = manager_a.clone();
-    let listener_a = spawn(async move { listener_manager_a.listen().await });
-    let listener_b = spawn_listener(manager_b.clone());
-
-    manager_b
-        .connect(
-            VaultId::new([6; 32]),
-            manager_a.endpoint().addr(),
-            b"authorized",
-        )
-        .await?;
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn syncs_over_an_authorized_scoped_tunnel() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed = InMemoryEndpointIdStore::new();
-    allowed.add(endpoint_a.id());
-    allowed.add(endpoint_b.id());
-    let manager_a = Server::new(endpoint_a, allowed.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-    let listener_b = spawn_listener(manager_b.clone());
+    allowed.add(left_endpoint.id());
+    allowed.add(right_endpoint.id());
+    let left = Server::new(left_endpoint, allowed.clone(), TestAuthorizer);
+    let right = Server::new(right_endpoint, allowed, TestAuthorizer);
+    let left_listener = spawn_listener(left.clone());
+    let right_listener = spawn_listener(right.clone());
     let vault_id = VaultId::new([7; 32]);
-    let transport_a = ScopedIrohTransport::new(
-        manager_a.clone(),
+    let left_transport = ScopedIrohTransport::new(
+        left.clone(),
         vault_id,
         StaticTunnelAuthorization::new(b"authorized".to_vec()),
     );
-    let transport_b = ScopedIrohTransport::new(
-        manager_b.clone(),
+    let right_transport = ScopedIrohTransport::new(
+        right.clone(),
         vault_id,
         StaticTunnelAuthorization::new(b"authorized".to_vec()),
     );
-    let mut peers_a = transport_a.subscribe_peers();
-    let mut peers_b = transport_b.subscribe_peers();
 
-    transport_b.connect(manager_a.endpoint().addr()).await?;
-    let peer_a = timeout(Duration::from_secs(5), peers_a.recv())
-        .await
-        .map_err(other)?
-        .map_err(other)?;
-    let peer_b = timeout(Duration::from_secs(5), peers_b.recv())
-        .await
-        .map_err(other)?
-        .map_err(other)?;
-    let file_system_a: TestFileSystem = FileSystem::new(
-        InMemoryStorage::new(),
-        manager_a.endpoint().id(),
-        transport_a,
-    )
-    .await
-    .map_err(other)?;
-    let file_system_b: TestFileSystem = FileSystem::new(
-        InMemoryStorage::new(),
-        manager_b.endpoint().id(),
-        transport_b,
-    )
-    .await
-    .map_err(other)?;
-
-    file_system_a
-        .write("notes/today.txt", b"hello")
-        .await
-        .map_err(other)?;
-    file_system_a.sync_peer(peer_a).await.map_err(other)?;
-    file_system_b.sync_peer(peer_b).await.map_err(other)?;
-
-    let entry = timeout(Duration::from_secs(5), async {
-        loop {
-            if let Ok(entry) = file_system_b.entry("notes/today.txt").await {
-                break entry;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .map_err(other)?;
-    assert_eq!(entry.size, 5);
-    assert!(!entry.local);
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn rejects_an_invalid_tunnel_authorization() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed = InMemoryEndpointIdStore::new();
-    allowed.add(endpoint_a.id());
-    allowed.add(endpoint_b.id());
-    let manager_a = Server::new(endpoint_a, allowed.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-
-    let result = manager_b
-        .connect(
-            VaultId::new([7; 32]),
-            manager_a.endpoint().addr(),
-            b"invalid",
-        )
-        .await;
-    assert!(result.is_err());
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn disconnects_a_scoped_tunnel_before_reconnecting() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed = InMemoryEndpointIdStore::new();
-    allowed.add(endpoint_a.id());
-    allowed.add(endpoint_b.id());
-    let manager_a = Server::new(endpoint_a, allowed.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-    let listener_b = spawn_listener(manager_b.clone());
-    let vault_id = VaultId::new([8; 32]);
-    let transport_a = ScopedIrohTransport::new(
-        manager_a.clone(),
-        vault_id,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let transport_b = ScopedIrohTransport::new(
-        manager_b.clone(),
-        vault_id,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let mut peers_a = transport_a.subscribe_peers();
-    let mut peers_b = transport_b.subscribe_peers();
-
-    transport_b.connect(manager_a.endpoint().addr()).await?;
-    let _ = receive_peer(&mut peers_a).await?;
-    let peer_b = receive_peer(&mut peers_b).await?;
-    assert!(transport_b.disconnect(peer_b).await);
-    assert!(transport_b.send(peer_b, vec![1]).await.is_err());
-
+    right_transport.connect(left.endpoint().addr()).await?;
     timeout(Duration::from_secs(5), async {
-        loop {
-            if transport_b
-                .connect(manager_a.endpoint().addr())
-                .await
-                .is_ok()
-            {
-                return;
-            }
+        while left_transport.peers().is_empty() || right_transport.peers().is_empty() {
             tokio::task::yield_now().await;
         }
     })
     .await
     .map_err(other)?;
 
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn rejects_new_streams_after_allowlist_removal() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed_a = InMemoryEndpointIdStore::new();
-    let allowed_b = InMemoryEndpointIdStore::new();
-    allowed_a.add(endpoint_b.id());
-    allowed_b.add(endpoint_a.id());
-    let manager_a = Server::new(endpoint_a, allowed_a.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed_b, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-    let listener_b = spawn_listener(manager_b.clone());
-
-    manager_b
-        .connect(
-            VaultId::new([9; 32]),
-            manager_a.endpoint().addr(),
-            b"authorized",
-        )
-        .await?;
-    assert!(allowed_a.remove(manager_b.endpoint().id()));
-    assert!(
-        manager_b
-            .connect(
-                VaultId::new([10; 32]),
-                manager_a.endpoint().addr(),
-                b"authorized",
-            )
-            .await
-            .is_err()
-    );
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn closes_active_streams_after_allowlist_removal() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed_a = InMemoryEndpointIdStore::new();
-    let allowed_b = InMemoryEndpointIdStore::new();
-    allowed_a.add(endpoint_b.id());
-    allowed_b.add(endpoint_a.id());
-    let manager_a = Server::new(endpoint_a, allowed_a.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed_b, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-    let listener_b = spawn_listener(manager_b.clone());
-    let vault_id = VaultId::new([11; 32]);
-
-    manager_b
-        .connect(vault_id, manager_a.endpoint().addr(), b"authorized")
-        .await?;
-    assert!(allowed_a.remove(manager_b.endpoint().id()));
-    assert_eq!(manager_a.close_disallowed().await, 1);
-    assert!(
-        !manager_a
-            .close_tunnel(vault_id, manager_b.endpoint().id())
-            .await
-    );
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn rejects_traffic_after_allowlist_removal() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed_a = InMemoryEndpointIdStore::new();
-    let allowed_b = InMemoryEndpointIdStore::new();
-    allowed_a.add(endpoint_b.id());
-    allowed_b.add(endpoint_a.id());
-    let manager_a = Server::new(endpoint_a, allowed_a.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed_b, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-    let listener_b = spawn_listener(manager_b.clone());
-    let vault_id = VaultId::new([12; 32]);
-    let transport_a = ScopedIrohTransport::new(
-        manager_a.clone(),
-        vault_id,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let transport_b = ScopedIrohTransport::new(
-        manager_b.clone(),
-        vault_id,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let mut peers_a = transport_a.subscribe_peers();
-
-    transport_b.connect(manager_a.endpoint().addr()).await?;
-    let peer_a = receive_peer(&mut peers_a).await?;
-    assert!(allowed_a.remove(manager_b.endpoint().id()));
-    assert_eq!(
-        transport_a.send(peer_a, vec![1]).await.unwrap_err().kind(),
-        ErrorKind::PermissionDenied
-    );
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn keeps_scopes_on_separate_streams() -> Result<(), Error> {
-    let endpoint_a = endpoint().await?;
-    let endpoint_b = endpoint().await?;
-    let allowed = InMemoryEndpointIdStore::new();
-    allowed.add(endpoint_a.id());
-    allowed.add(endpoint_b.id());
-    let manager_a = Server::new(endpoint_a, allowed.clone(), TestAuthorizer);
-    let manager_b = Server::new(endpoint_b, allowed, TestAuthorizer);
-    let listener_a = spawn_listener(manager_a.clone());
-    let listener_b = spawn_listener(manager_b.clone());
-    let vault_a = VaultId::new([1; 32]);
-    let vault_b = VaultId::new([2; 32]);
-    let transport_a1 = ScopedIrohTransport::new(
-        manager_a.clone(),
-        vault_a,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let transport_b1 = ScopedIrohTransport::new(
-        manager_b.clone(),
-        vault_a,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let transport_a2 = ScopedIrohTransport::new(
-        manager_a.clone(),
-        vault_b,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let transport_b2 = ScopedIrohTransport::new(
-        manager_b.clone(),
-        vault_b,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
-    );
-    let mut peers_a1 = transport_a1.subscribe_peers();
-    let mut peers_b1 = transport_b1.subscribe_peers();
-    let mut peers_a2 = transport_a2.subscribe_peers();
-    let mut peers_b2 = transport_b2.subscribe_peers();
-
-    transport_b1.connect(manager_a.endpoint().addr()).await?;
-    transport_b2.connect(manager_a.endpoint().addr()).await?;
-    let peer_a1 = receive_peer(&mut peers_a1).await?;
-    let peer_b1 = receive_peer(&mut peers_b1).await?;
-    let _ = receive_peer(&mut peers_a2).await?;
-    let _ = receive_peer(&mut peers_b2).await?;
-    let file_system_a1: TestFileSystem = FileSystem::new(
-        InMemoryStorage::new(),
-        manager_a.endpoint().id(),
-        transport_a1,
-    )
-    .await
-    .map_err(other)?;
-    let file_system_b1: TestFileSystem = FileSystem::new(
-        InMemoryStorage::new(),
-        manager_b.endpoint().id(),
-        transport_b1,
-    )
-    .await
-    .map_err(other)?;
-    let file_system_b2: TestFileSystem = FileSystem::new(
-        InMemoryStorage::new(),
-        manager_b.endpoint().id(),
-        transport_b2,
-    )
-    .await
-    .map_err(other)?;
-
-    file_system_a1
-        .write("notes/private.txt", b"scope a")
-        .await
-        .map_err(other)?;
-    file_system_a1.sync_peer(peer_a1).await.map_err(other)?;
-    file_system_b1.sync_peer(peer_b1).await.map_err(other)?;
-    timeout(Duration::from_secs(5), async {
-        loop {
-            if file_system_b1.entry("notes/private.txt").await.is_ok() {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
+    Ok(Peers {
+        left,
+        right,
+        left_transport,
+        right_transport,
+        left_listener,
+        right_listener,
     })
-    .await
-    .map_err(other)?;
-    assert!(file_system_b2.entry("notes/private.txt").await.is_err());
-
-    manager_a.close().await;
-    manager_b.close().await;
-    listener_a.await.map_err(other)?;
-    listener_b.await.map_err(other)?;
-    Ok(())
 }
 
 async fn endpoint() -> Result<Endpoint, Error> {
@@ -460,13 +179,13 @@ fn spawn_listener(
     })
 }
 
-async fn receive_peer(
-    receiver: &mut tokio::sync::broadcast::Receiver<iroh::EndpointId>,
-) -> Result<iroh::EndpointId, Error> {
-    timeout(Duration::from_secs(5), receiver.recv())
-        .await
-        .map_err(other)?
-        .map_err(other)
+fn root(name: &str) -> std::path::PathBuf {
+    env::temp_dir().join(format!(
+        "iroh-chain-file-system-{name}-{:?}",
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+    ))
 }
 
 fn other(error: impl Display) -> Error {

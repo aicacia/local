@@ -6,6 +6,7 @@ use alloc::{
     vec::Vec,
 };
 
+use model::contract::AuthorizationDetail;
 use serde::{Deserialize, Serialize};
 
 use super::SubjectTokenType;
@@ -28,6 +29,8 @@ pub struct TokenExchangeGrantRequest {
     pub resource: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audience: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_details: Option<Vec<AuthorizationDetail>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

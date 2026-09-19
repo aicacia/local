@@ -8,7 +8,7 @@ use alloc::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::contract::{TokenType, TokenUse};
+use crate::contract::{AuthorizationDetail, TokenType, TokenUse};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -25,9 +25,12 @@ pub struct StandardClaims {
     pub nbf: i64,
     pub iss: String,
     pub aud: String,
+    pub client_id: String,
     pub sub: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization_details: Option<Vec<AuthorizationDetail>>,
     #[serde(
         serialize_with = "crate::space_delimited::serialize",
         deserialize_with = "crate::space_delimited::deserialize"

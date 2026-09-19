@@ -25,7 +25,7 @@ use idp_service::{
 };
 use libsql::Database;
 use management_service::libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo};
-use management_service::{DeviceRepo, ManagementService, StorageSessionService};
+use management_service::{DeviceRepo, ManagementService};
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
 use tokio::{net::TcpListener, time::timeout};
 use tower_http::cors::CorsLayer;
@@ -38,7 +38,7 @@ use crate::{
     global_identity::{DesktopGlobalRuntime, DesktopSetupJoinExecutor, DesktopSetupNewExecutor},
     hosted_control_plane::HostedControlPlane,
     local_api,
-    scoped_transport::{AppFileSystemRuntime, TunnelContext},
+    scoped_transport::AppFileSystemRuntime,
     tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer},
 };
 
@@ -77,21 +77,18 @@ pub fn init_router(
         app_config.oauth2.clone(),
     ));
 
-    let storage_sessions = Arc::new(StorageSessionService::new());
     let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,
         database.clone(),
         oauth2_service.clone(),
-        storage_sessions.clone(),
         Arc::new(LibSqlDeviceRepo::new(database.clone())),
         device_identity,
     )
-    .with_local_setup(setup_data_dir.as_ref().to_path_buf(), setup_state);
+    .with_local_setup(setup_data_dir.as_ref().to_path_buf(), setup_state)
+    .with_storage_file_systems(Arc::clone(&file_systems));
     let router_state = Arc::new(match control_plane {
-        Some(control_plane) => router_state.with_storage_scope_resolver(Arc::new(
-            idp_server::HostedStorageScopeResolver::new(control_plane),
-        )),
+        Some(control_plane) => router_state.with_hosted_control_plane(control_plane),
         None => router_state,
     });
     let idp_router = idp_server::openapi_router(router_state.as_ref().clone(), "/lidp");
@@ -111,7 +108,7 @@ pub fn init_router(
         "/idp-management",
     );
 
-    let storage_router = storage_router(storage_sessions, file_systems);
+    let storage_router = storage_router(router_state.as_ref().clone(), file_systems);
     Ok((
         idp_router
             .split_for_parts()
@@ -307,14 +304,11 @@ pub async fn init_scoped_file_system_runtime(
     _: &AppConfig,
 ) -> tauri::Result<()> {
     let data_dir = app_handle.path().app_data_dir()?;
-    let context = TunnelContext::default();
     let local_peer = app_handle
         .try_state::<Arc<DeviceIdentity>>()
         .ok_or_else(|| tauri::Error::Io(io::Error::other("device identity is missing")))?
         .endpoint_id();
-    let runtime = AppFileSystemRuntime::new(data_dir, local_peer, context.transport_factory())
-        .map_err(tauri::Error::Io)?;
-    app_handle.manage(context);
+    let runtime = AppFileSystemRuntime::new(data_dir, local_peer).map_err(tauri::Error::Io)?;
     app_handle.manage(Arc::new(runtime));
     Ok(())
 }
@@ -345,7 +339,6 @@ pub async fn init_tunnel_manager(
         control_plane.clone(),
         Arc::clone(&global_grants),
     );
-    let local_authorizer = authorizer.local();
     let manager = Arc::new(DeviceTunnelManager::new(
         identity.endpoint(),
         allowlist.clone(),
@@ -467,15 +460,7 @@ pub async fn init_tunnel_manager(
         listener.listen().await;
     });
     let allowlist = Arc::new(allowlist);
-    app_handle
-        .try_state::<TunnelContext>()
-        .ok_or_else(|| tauri::Error::Io(io::Error::other("tunnel context is missing")))?
-        .set(
-            (*manager).clone(),
-            (*allowlist).clone(),
-            local_authorizer,
-            control_plane,
-        );
+
     app_handle.manage(allowlist);
     app_handle.manage(global_grants);
     app_handle.manage(manager);

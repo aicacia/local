@@ -1,42 +1,34 @@
-use alloc::vec::Vec;
-use core::{
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::{fs::File, io::Read};
 
-use futures_core::Stream;
+use crate::Error;
 
 #[derive(Debug)]
-pub struct ChunkStream {
-    content: Vec<u8>,
+pub struct ReadStream {
+    file: File,
     chunk_size: usize,
-    offset: usize,
 }
 
-#[cfg(feature = "sync")]
-impl ChunkStream {
-    pub(crate) fn new(content: Vec<u8>, chunk_size: usize) -> Self {
-        Self {
-            content,
-            chunk_size,
-            offset: 0,
+impl ReadStream {
+    pub(crate) fn new(file: File, chunk_size: usize) -> Result<Self, Error> {
+        if chunk_size == 0 {
+            return Err(Error::InvalidChunkSize);
         }
+        Ok(Self { file, chunk_size })
     }
 }
 
-impl Stream for ChunkStream {
-    type Item = Vec<u8>;
+impl Iterator for ReadStream {
+    type Item = Result<Vec<u8>, Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if self.offset == self.content.len() {
-            return Poll::Ready(None);
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chunk = vec![0; self.chunk_size];
+        match self.file.read(&mut chunk) {
+            Ok(0) => None,
+            Ok(len) => {
+                chunk.truncate(len);
+                Some(Ok(chunk))
+            }
+            Err(error) => Some(Err(error.into())),
         }
-        let end = self
-            .offset
-            .saturating_add(self.chunk_size)
-            .min(self.content.len());
-        let chunk = self.content[self.offset..end].to_vec();
-        self.offset = end;
-        Poll::Ready(Some(chunk))
     }
 }

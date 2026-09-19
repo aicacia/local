@@ -1,4 +1,5 @@
 use std::{
+    fs,
     future::Future,
     path::PathBuf,
     pin::Pin,
@@ -7,7 +8,8 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use bootstrap_service::bootstrap::BootstrapInput;
-use idp_model::contract::{ErrorCode, ErrorResponse};
+use file_system::Residency;
+
 use idp_service::{
     libsql::{
         LibSqlApplicationRepo, LibSqlClientRepo, LibSqlKeyRepo, LibSqlOAuth2AuthorizationCodeRepo,
@@ -17,9 +19,9 @@ use idp_service::{
 };
 use iroh::{Endpoint, EndpointId, SecretKey};
 use libsql::Database;
+use management_service::HostedControlPlane;
 use management_service::libsql::LibSqlDeviceRepo;
-use management_service::{HostedControlPlane, StorageScope, StorageSessionService};
-use storage_service::ResidencyPolicy;
+use storage_service::ScopedFileSystemRuntime;
 
 use crate::{
     GlobalIdentityReadGate,
@@ -31,8 +33,61 @@ use super::PairingAcceptanceControllerSlot;
 #[derive(Clone)]
 pub(crate) struct LocalSetupServices {
     pub setup: Arc<LocalSetup>,
-    pub residency_policy: Arc<Mutex<ResidencyPolicy>>,
+    pub residency_policy: Arc<Mutex<DeviceResidencyPolicy>>,
     pub residency_root: PathBuf,
+}
+
+pub(crate) struct DeviceResidencyPolicy {
+    device_default: Residency,
+}
+
+impl DeviceResidencyPolicy {
+    fn load(root: &std::path::Path) -> std::io::Result<Self> {
+        match fs::read(root.join("storage-residency.json")) {
+            Ok(content) => {
+                let value: serde_json::Value = serde_json::from_slice(&content)
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+                Ok(Self {
+                    device_default: match value
+                        .get("device_default")
+                        .and_then(serde_json::Value::as_str)
+                    {
+                        Some("full") => Residency::Full,
+                        _ => Residency::Passthrough,
+                    },
+                })
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) fn save(&self, root: &std::path::Path) -> std::io::Result<()> {
+        let device_default = match self.device_default {
+            Residency::Full => "full",
+            Residency::Passthrough => "passthrough",
+        };
+        fs::write(
+            root.join("storage-residency.json"),
+            format!("{{\n  \"device_default\": \"{device_default}\"\n}}\n"),
+        )
+    }
+
+    pub(crate) fn device_default(&self) -> Residency {
+        self.device_default
+    }
+
+    pub(crate) fn set_device_default(&mut self, residency: Residency) {
+        self.device_default = residency;
+    }
+}
+
+impl Default for DeviceResidencyPolicy {
+    fn default() -> Self {
+        Self {
+            device_default: Residency::Passthrough,
+        }
+    }
 }
 
 pub trait SetupNewExecutor: Send + Sync + 'static {
@@ -76,13 +131,6 @@ impl DeviceIdentity {
     pub fn sign(&self, message: &[u8]) -> String {
         URL_SAFE_NO_PAD.encode(self.secret_key.sign(message).to_bytes())
     }
-}
-
-pub trait StorageScopeResolver: Send + Sync + 'static {
-    fn resolve(
-        &self,
-        bearer_token: String,
-    ) -> Pin<Box<dyn Future<Output = Result<StorageScope, ErrorResponse>> + Send + '_>>;
 }
 
 pub trait SetupJoinExecutor: Send + Sync + 'static {
@@ -203,32 +251,6 @@ impl Default for SetupJoinExecutorSlot {
     }
 }
 
-pub struct HostedStorageScopeResolver {
-    control_plane: Arc<HostedControlPlane>,
-}
-
-impl HostedStorageScopeResolver {
-    #[must_use]
-    pub fn new(control_plane: Arc<HostedControlPlane>) -> Self {
-        Self { control_plane }
-    }
-}
-
-impl StorageScopeResolver for HostedStorageScopeResolver {
-    fn resolve(
-        &self,
-        bearer_token: String,
-    ) -> Pin<Box<dyn Future<Output = Result<StorageScope, ErrorResponse>> + Send + '_>> {
-        let control_plane = Arc::clone(&self.control_plane);
-        Box::pin(async move {
-            control_plane
-                .storage_scope(&bearer_token)
-                .await
-                .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))
-        })
-    }
-}
-
 #[derive(Clone)]
 pub struct RouterState {
     pub ui_base_uri: String,
@@ -244,12 +266,13 @@ pub struct RouterState {
             LibSqlKeyRepo,
         >,
     >,
-    pub storage_sessions: Arc<StorageSessionService>,
+
     pub devices: Arc<LibSqlDeviceRepo>,
     pub device_identity: Arc<DeviceIdentity>,
     pub pairing_acceptance: Arc<PairingAcceptanceControllerSlot>,
     pub hosted_control_plane: Option<Arc<HostedControlPlane>>,
-    pub storage_scope_resolver: Option<Arc<dyn StorageScopeResolver>>,
+
+    pub storage_file_systems: Option<Arc<ScopedFileSystemRuntime<EndpointId>>>,
     pub(crate) local_setup: Option<LocalSetupServices>,
     pub setup_join_executor: Arc<SetupJoinExecutorSlot>,
     pub setup_new_executor: Arc<SetupNewExecutorSlot>,
@@ -271,7 +294,7 @@ impl RouterState {
                 LibSqlKeyRepo,
             >,
         >,
-        storage_sessions: Arc<StorageSessionService>,
+
         devices: Arc<LibSqlDeviceRepo>,
         device_identity: Arc<DeviceIdentity>,
     ) -> Self {
@@ -280,12 +303,13 @@ impl RouterState {
             api_base_uri: api_base_uri.into(),
             database,
             oauth2_service,
-            storage_sessions,
+
             devices,
             device_identity,
             pairing_acceptance: Arc::new(PairingAcceptanceControllerSlot::new()),
             hosted_control_plane: None,
-            storage_scope_resolver: None,
+
+            storage_file_systems: None,
             local_setup: None,
             setup_join_executor: Arc::new(SetupJoinExecutorSlot::new()),
             setup_new_executor: Arc::new(SetupNewExecutorSlot::new()),
@@ -299,7 +323,7 @@ impl RouterState {
         setup_state: LocalSetupState,
     ) -> Self {
         let data_dir = data_dir.into();
-        let residency_policy = ResidencyPolicy::load(&data_dir)
+        let residency_policy = DeviceResidencyPolicy::load(&data_dir)
             .expect("failed to load local storage residency policy");
         self.local_setup = Some(LocalSetupServices {
             setup: Arc::new(LocalSetup::new(data_dir.clone(), setup_state)),
@@ -332,8 +356,11 @@ impl RouterState {
         self
     }
 
-    pub fn with_storage_scope_resolver(mut self, resolver: Arc<dyn StorageScopeResolver>) -> Self {
-        self.storage_scope_resolver = Some(resolver);
+    pub fn with_storage_file_systems(
+        mut self,
+        file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>,
+    ) -> Self {
+        self.storage_file_systems = Some(file_systems);
         self
     }
 

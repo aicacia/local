@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
+use alloc::vec::Vec;
 use core::error::Error;
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 
-use crate::LwwRecord;
+use crate::{LwwRecord, Timestamp};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMessage<Id, K, V> {
@@ -12,7 +12,7 @@ pub enum SyncMessage<Id, K, V> {
         node_id: Id,
         /// Highest timestamp the sender already possesses for the *receiver’s* writes.
         /// `None` = first contact.
-        since: Option<DateTime<Utc>>,
+        since: Option<Timestamp>,
     },
 
     /// Records the receiver is missing.

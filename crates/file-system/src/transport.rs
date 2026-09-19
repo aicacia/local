@@ -1,19 +1,26 @@
-use alloc::vec::Vec;
-use core::future::Future;
+use core::{error::Error, future::Future};
 
-use futures_core::Stream;
+use tokio::sync::broadcast;
 
-pub trait Transport {
-    type Error;
-    type PeerId;
-    type Incoming: Stream<Item = (Self::PeerId, Vec<u8>)> + Send;
+use crate::SyncMessage;
+
+pub type IncomingMessage<PeerId> = (PeerId, SyncMessage<PeerId>);
+
+pub trait Transport<PeerId> {
+    type Error: Error;
+
+    fn peers(&self) -> Vec<PeerId>;
 
     fn send(
         &self,
-        peer: Self::PeerId,
-        data: Vec<u8>,
+        peer: PeerId,
+        message: SyncMessage<PeerId>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    fn broadcast(&self, data: Vec<u8>) -> impl Future<Output = Result<(), Self::Error>> + Send;
-    fn peers(&self) -> Vec<Self::PeerId>;
-    fn subscribe(&self) -> impl Future<Output = Result<Self::Incoming, Self::Error>> + Send;
+
+    fn broadcast(
+        &self,
+        message: SyncMessage<PeerId>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn subscribe(&self) -> broadcast::Receiver<IncomingMessage<PeerId>>;
 }

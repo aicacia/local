@@ -1,42 +1,36 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use file_system::{PeerCodec, Transport};
-use storage_service::GlobalIdentityRuntime;
+use file_system::Transport;
+use iroh::EndpointId;
 
-use crate::GlobalIdentityCache;
+use crate::{GlobalIdentityCache, GlobalIdentityRuntime};
 
 pub trait GlobalIdentityReadGate: Send + Sync + 'static {
     fn verify(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>>;
 }
 
-pub struct ActiveGlobalIdentityReadGate<C, T>
+pub struct ActiveGlobalIdentityReadGate<T>
 where
-    C: PeerCodec,
-    T: Transport<PeerId = C::PeerId>,
+    T: Transport<EndpointId>,
 {
-    runtime: Arc<GlobalIdentityRuntime<C, T>>,
+    runtime: Arc<GlobalIdentityRuntime<T>>,
     cache: GlobalIdentityCache,
 }
 
-impl<C, T> ActiveGlobalIdentityReadGate<C, T>
+impl<T> ActiveGlobalIdentityReadGate<T>
 where
-    C: PeerCodec,
-    T: Transport<PeerId = C::PeerId>,
+    T: Transport<EndpointId>,
 {
     #[must_use]
-    pub fn new(runtime: Arc<GlobalIdentityRuntime<C, T>>, cache: GlobalIdentityCache) -> Self {
+    pub fn new(runtime: Arc<GlobalIdentityRuntime<T>>, cache: GlobalIdentityCache) -> Self {
         Self { runtime, cache }
     }
 }
 
-impl<C, T> GlobalIdentityReadGate for ActiveGlobalIdentityReadGate<C, T>
+impl<T> GlobalIdentityReadGate for ActiveGlobalIdentityReadGate<T>
 where
-    C: PeerCodec + Send + Sync + 'static,
-    C::Error: std::fmt::Display + Send + 'static,
-    C::PeerId: Send + Sync + 'static,
-    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T: Transport<EndpointId> + Clone + Send + Sync + 'static,
     T::Error: std::fmt::Display,
-    T::Incoming: Send + 'static,
 {
     fn verify(&self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
         Box::pin(async move {

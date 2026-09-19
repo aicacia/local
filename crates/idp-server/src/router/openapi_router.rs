@@ -38,7 +38,7 @@ use super::routes::setup::{
     __path_setup_join, __path_setup_new, __path_setup_status, complete_device_setup,
     device_residency, set_device_residency, setup_join, setup_new, setup_status,
 };
-use super::routes::storage_sessions::{__path_create_storage_session, create_storage_session};
+
 use super::routes::tunnel_authorizations::{
     __path_create_tunnel_authorization, create_tunnel_authorization,
 };
@@ -54,12 +54,6 @@ use super::routes::well_known::{
     modifiers(&SecurityAddon)
 )]
 pub(crate) struct ApiDoc;
-
-pub fn storage_session_openapi_router(router_state: RouterState) -> OpenApiRouter {
-    OpenApiRouter::new()
-        .routes(routes!(create_storage_session))
-        .with_state(router_state)
-}
 
 pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter {
     let prefix = if prefix == "/" { "" } else { prefix };
@@ -91,7 +85,6 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(token))
             .routes(routes!(revoke))
             .routes(routes!(sessions_logout))
-            .routes(routes!(create_storage_session))
             .routes(routes!(create_tunnel_authorization))
             .routes(routes!(setup_status))
             .routes(routes!(setup_join))

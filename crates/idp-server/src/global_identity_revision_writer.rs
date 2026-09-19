@@ -1,31 +1,29 @@
 use std::sync::Arc;
 
-use file_system::{PeerCodec, Transport};
+use file_system::Transport;
 use idp_model::contract::{GlobalIdentityManifest, GlobalIdentityRow};
-use storage_service::GlobalIdentityRuntime;
+use iroh::EndpointId;
 
-use crate::global_identity_cache::{GlobalIdentityCache, validate_snapshot};
+use crate::{
+    GlobalIdentityRuntime,
+    global_identity_cache::{GlobalIdentityCache, validate_snapshot},
+};
 
-pub struct GlobalIdentityRevisionWriter<C, T>
+pub struct GlobalIdentityRevisionWriter<T>
 where
-    C: PeerCodec,
-    T: Transport<PeerId = C::PeerId>,
+    T: Transport<EndpointId>,
 {
-    runtime: Arc<GlobalIdentityRuntime<C, T>>,
+    runtime: Arc<GlobalIdentityRuntime<T>>,
     cache: GlobalIdentityCache,
 }
 
-impl<C, T> GlobalIdentityRevisionWriter<C, T>
+impl<T> GlobalIdentityRevisionWriter<T>
 where
-    C: PeerCodec + Send + Sync + 'static,
-    C::Error: std::fmt::Display + Send + 'static,
-    C::PeerId: Send + 'static,
-    T: Transport<PeerId = C::PeerId> + Send + Sync + 'static,
+    T: Transport<EndpointId> + Clone + Send + Sync + 'static,
     T::Error: std::fmt::Display,
-    T::Incoming: Send + 'static,
 {
     #[must_use]
-    pub fn new(runtime: Arc<GlobalIdentityRuntime<C, T>>, cache: GlobalIdentityCache) -> Self {
+    pub fn new(runtime: Arc<GlobalIdentityRuntime<T>>, cache: GlobalIdentityCache) -> Self {
         Self { runtime, cache }
     }
 

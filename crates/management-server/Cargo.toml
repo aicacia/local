@@ -38,7 +38,7 @@ cli = { path = "../cli", default-features = false, features = [
 
 # Internal
 api = { path = "../api", default-features = false, features = [] }
-db = { path = "../db", default-features = false, features = ["migrate"] }
+db = { package = "idp-db", path = "../db", default-features = false, features = ["migrate"] }
 model = { path = "../model", default-features = false, features = [
   "std",
   "utoipa",

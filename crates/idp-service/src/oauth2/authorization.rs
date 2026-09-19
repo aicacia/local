@@ -10,6 +10,7 @@ use idp_model::contract::{
     ErrorResponseResult, ResponseMode, ResponseType,
 };
 use idp_model::model::Client;
+use model::contract::AuthorizationDetail;
 
 use super::scope::{parse_scopes, validate_scopes};
 
@@ -29,6 +30,36 @@ pub fn validate_authorization_request(
 
     if let Some(scope) = &request.scope {
         validate_scopes(&parse_scopes(scope), &client.allowed_scopes)?;
+    }
+
+    Ok(())
+}
+
+pub fn validate_authorization_details(details: &[AuthorizationDetail]) -> ErrorResponseResult<()> {
+    let [AuthorizationDetail::Storage(detail)] = details else {
+        return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
+            .with_description("exactly one storage authorization detail is required"));
+    };
+
+    if !detail.folder.is_empty()
+        && detail
+            .folder
+            .split('/')
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
+    {
+        return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
+            .with_description("storage folder must be a normalized relative path"));
+    }
+
+    if detail.actions.is_empty()
+        || detail
+            .actions
+            .iter()
+            .enumerate()
+            .any(|(index, action)| detail.actions[..index].contains(action))
+    {
+        return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
+            .with_description("storage actions must be non-empty and unique"));
     }
 
     Ok(())
@@ -98,6 +129,7 @@ fn validate_response_mode(request: &AuthorizationRequest) -> ErrorResponseResult
 #[cfg(test)]
 mod tests {
     use idp_model::contract::{ClientProfile, GrantType, TokenEndpointAuthMethod};
+    use model::contract::{StorageAuthorizationAction, StorageAuthorizationDetail};
 
     use super::*;
 
@@ -128,6 +160,17 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
+    }
+
+    #[test]
+    fn validate_storage_authorization_details_rejects_non_normalized_folder() {
+        let details = vec![AuthorizationDetail::Storage(StorageAuthorizationDetail {
+            folder: "documents/../private".to_string(),
+            actions: vec![StorageAuthorizationAction::Read],
+        })];
+
+        let error = validate_authorization_details(&details).unwrap_err();
+        assert_eq!(error.error, ErrorCode::InvalidRequest);
     }
 
     #[test]

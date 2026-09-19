@@ -6,8 +6,11 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use core::future::Future;
+
 use model::contract::{
-    AccessToken, IdToken, RefreshToken, StandardClaims, TokenResponse, TokenType, TokenUse,
+    AccessToken, AuthorizationDetail, IdToken, RefreshToken, StandardClaims, TokenResponse,
+    TokenType, TokenUse,
 };
 #[cfg(feature = "std")]
 use std::sync::Arc;
@@ -27,7 +30,7 @@ use idp_model::{
 };
 
 use crate::{
-    oauth2::{Principal, UserPrincipal, decode_jwt, encode_jwt},
+    oauth2::{Principal, UserPrincipal, decode_jwt, encode_jwt, verify_jwt},
     repo::{
         ApplicationRepo, ClientRepo, KeyRepo, KeyService, OAuth2AuthorizationCodeRepo,
         OAuth2UserConsentRepo, PrivateKeyRepo, UserRepo,
@@ -37,9 +40,18 @@ use crate::{
 
 use super::{
     OAuth2Config, intersect_scopes, parse_scopes, resolve_redirect_uri,
-    validate_authorization_code_grant, validate_authorization_request, validate_scopes,
-    verify_code_challenge,
+    validate_authorization_code_grant, validate_authorization_details,
+    validate_authorization_request, validate_scopes, verify_code_challenge,
 };
+
+pub trait TokenIssuerAuthorizer: Send + Sync {
+    fn authorize<'a>(
+        &'a self,
+        client: &'a Client,
+        subject: &'a str,
+        authorization_details: &'a [AuthorizationDetail],
+    ) -> impl Future<Output = ErrorResponseResult<()>> + Send + 'a;
+}
 
 pub struct OAuth2Service<A, C, AC, U, G, K> {
     pub application_repo: A,
@@ -379,11 +391,15 @@ where
         })
     }
 
-    pub async fn token(
+    pub async fn token_with_authorizer<T>(
         &self,
         request: TokenRequest,
         client_auth: Option<OAuth2ClientAuth>,
-    ) -> ErrorResponseResult<TokenResponse> {
+        authorizer: Option<&T>,
+    ) -> ErrorResponseResult<TokenResponse>
+    where
+        T: TokenIssuerAuthorizer,
+    {
         match request {
             TokenRequest::Password(request) => {
                 let client = self
@@ -459,6 +475,9 @@ where
                     principal.as_ref(),
                     &scopes,
                     request.resource.as_deref(),
+                    None,
+                    None,
+                    authorizer,
                 )
                 .await
             }
@@ -532,6 +551,9 @@ where
                     principal.as_ref(),
                     &authorization_code.scopes,
                     authorization_code.resource.as_deref(),
+                    None,
+                    None,
+                    authorizer,
                 )
                 .await
             }
@@ -599,7 +621,7 @@ where
 
                 let client = self
                     .client_repo
-                    .find_client_by_client_id(&refresh_token.aud)
+                    .find_client_by_client_id(&refresh_token.client_id)
                     .await
                     .map_err(ErrorResponse::from)?
                     .ok_or_else(|| {
@@ -638,28 +660,32 @@ where
                     principal.as_ref(),
                     &scopes,
                     refresh_token.resource.as_deref(),
+                    refresh_token.authorization_details.as_deref(),
+                    None,
+                    authorizer,
                 )
                 .await
             }
             TokenRequest::TokenExchange(request) => {
-                match request.subject_token_type {
-                    SubjectTokenType::AccessToken
-                    | SubjectTokenType::RefreshToken
-                    | SubjectTokenType::Jwt => {}
-                    _ => {
-                        return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
-                            .with_description(
-                                "unsupported subject_token_type for token exchange",
-                            ));
-                    }
+                if request.subject_token_type != SubjectTokenType::AccessToken {
+                    return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
+                        .with_description("subject_token_type must be access_token"));
                 }
 
-                let (jwt_header, subject_token) =
-                    decode_jwt::<StandardClaims>(&request.subject_token)?;
-
-                if subject_token.exp < Utc::now().timestamp() {
+                let (jwt_header, _) = decode_jwt::<StandardClaims>(&request.subject_token)?;
+                let jwk = self.find_public_jwk(jwt_header.kid).await?;
+                let (_, subject_token) =
+                    verify_jwt::<StandardClaims>(&jwk, &request.subject_token)?;
+                let now = Utc::now().timestamp();
+                if subject_token.r#type != TokenType::Bearer
+                    || subject_token.r#use != TokenUse::Access
+                    || subject_token.iss != self.oauth_config.issuer
+                    || subject_token.exp <= now
+                    || subject_token.nbf > now
+                    || subject_token.aud.is_empty()
+                {
                     return Err(ErrorResponse::new(ErrorCode::InvalidGrant)
-                        .with_description("subject_token is revoked"));
+                        .with_description("invalid subject access token"));
                 }
 
                 let key = self
@@ -676,7 +702,7 @@ where
 
                 let client = self
                     .client_repo
-                    .find_client_by_client_id(&subject_token.aud)
+                    .find_client_by_client_id(&subject_token.client_id)
                     .await
                     .map_err(ErrorResponse::from)?
                     .ok_or_else(|| {
@@ -696,19 +722,27 @@ where
                     intersect_scopes(&requested_scopes, &subject_token.scope)
                 };
 
+                if let Some(details) = &request.authorization_details {
+                    validate_authorization_details(details)?;
+                }
+
                 let principal = self.find_principal(key.id).await?.ok_or_else(|| {
                     ErrorResponse::new(ErrorCode::InvalidGrant)
                         .with_description("principal not found for subject_token")
                 })?;
+                let resource = request
+                    .resource
+                    .as_deref()
+                    .or(subject_token.resource.as_deref());
 
                 self.issue_tokens_for_client(
                     &client,
                     principal.as_ref(),
                     &scopes,
-                    request
-                        .resource
-                        .as_deref()
-                        .or(subject_token.resource.as_deref()),
+                    resource,
+                    request.authorization_details.as_deref(),
+                    resource,
+                    authorizer,
                 )
                 .await
             }
@@ -926,13 +960,19 @@ where
         })
     }
 
-    async fn issue_tokens_for_client(
+    async fn issue_tokens_for_client<T>(
         &self,
         client: &Client,
         principal: &dyn Principal,
         scopes: &[String],
         resource: Option<&str>,
-    ) -> ErrorResponseResult<TokenResponse> {
+        authorization_details: Option<&[AuthorizationDetail]>,
+        audience: Option<&str>,
+        authorizer: Option<&T>,
+    ) -> ErrorResponseResult<TokenResponse>
+    where
+        T: TokenIssuerAuthorizer,
+    {
         let now = Utc::now();
         let signing_jwk = self.load_signing_jwk(principal.get_key()).await?;
         let scope = if scopes.is_empty() {
@@ -948,11 +988,20 @@ where
             iat: now.timestamp(),
             nbf: now.timestamp(),
             iss: self.oauth_config.issuer.clone(),
-            aud: client.client_id.clone(),
+            aud: audience.unwrap_or(&client.client_id).to_string(),
+            client_id: client.client_id.clone(),
             sub: principal.get_entity_id().to_string(),
             scope: scopes.to_vec(),
-            resource: resource.map(|r| r.to_string()),
+            resource: resource.map(str::to_string),
+            authorization_details: authorization_details
+                .map(<[model::contract::AuthorizationDetail]>::to_vec),
         };
+
+        if let (Some(authorizer), Some(details)) = (authorizer, authorization_details) {
+            authorizer
+                .authorize(client, &access_claims.sub, details)
+                .await?;
+        }
 
         let access_token_value = encode_jwt(&signing_jwk, &access_claims)?;
 

@@ -19,7 +19,7 @@ migrate = ["dep:db", "dep:include_dir"]
 [dependencies]
 # Internal
 idp-model = { path = "../idp-model", default-features = false, features = [] }
-db = { path = "../db", default-features = false, features = ["migrate"], optional = true }
+db = { package = "idp-db", path = "../db", default-features = false, features = ["migrate"], optional = true }
 libsql = { version = "0.9", default-features = false, features = [] }
 
 # Serialization

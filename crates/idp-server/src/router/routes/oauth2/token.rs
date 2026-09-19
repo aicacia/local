@@ -1,11 +1,19 @@
+use std::{future::Future, sync::Arc};
+
 use axum::{
     Json,
     extract::{Form, State},
     http::HeaderMap,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use idp_model::contract::{ErrorResponse, OAuth2ClientAuth, TokenRequest};
-use model::contract::TokenResponse;
+use idp_model::{
+    contract::{ErrorCode, ErrorResponse, ErrorResponseResult, OAuth2ClientAuth, TokenRequest},
+    model::Client,
+};
+use idp_service::oauth2::TokenIssuerAuthorizer;
+use iroh::EndpointId;
+use model::contract::{AuthorizationDetail, StorageAuthorizationAction, TokenResponse};
+use storage_service::{Access, ScopedFileSystemRuntime};
 
 use crate::router::{RouterState, middleware::require_current_global_identity};
 
@@ -17,8 +25,74 @@ pub(crate) async fn token(
 ) -> Result<Json<TokenResponse>, ErrorResponse> {
     require_current_global_identity(&state).await?;
     let client_auth = parse_basic_client_auth(&headers)?;
-    let response = state.oauth2_service.token(request, client_auth).await?;
+    let authorizer = state
+        .storage_file_systems
+        .as_ref()
+        .map(|file_systems| StorageTokenAuthorizer::new(Arc::clone(file_systems)));
+    let response = state
+        .oauth2_service
+        .token_with_authorizer(request, client_auth, authorizer.as_ref())
+        .await?;
     Ok(Json(response))
+}
+
+struct StorageTokenAuthorizer {
+    file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>,
+}
+
+impl StorageTokenAuthorizer {
+    fn new(file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>) -> Self {
+        Self { file_systems }
+    }
+}
+
+impl TokenIssuerAuthorizer for StorageTokenAuthorizer {
+    fn authorize<'a>(
+        &'a self,
+        client: &'a Client,
+        subject: &'a str,
+        authorization_details: &'a [AuthorizationDetail],
+    ) -> impl Future<Output = ErrorResponseResult<()>> + Send + 'a {
+        async move {
+            let scope = StorageNamespace {
+                user_sub: subject,
+                application_id: client.application_id,
+            };
+            let store = self.file_systems.authorization(&scope).await.map_err(|_| {
+                ErrorResponse::new(ErrorCode::ServerError)
+                    .with_description("storage authorization is unavailable")
+            })?;
+            for detail in authorization_details {
+                let AuthorizationDetail::Storage(detail) = detail;
+                for action in &detail.actions {
+                    let access = match action {
+                        StorageAuthorizationAction::Read => Access::Read,
+                        StorageAuthorizationAction::Write => Access::ReadWrite,
+                    };
+                    if !store.authorize(subject, &detail.folder, access).await {
+                        return Err(ErrorResponse::new(ErrorCode::NotAuthorized)
+                            .with_description("storage authorization denied"));
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+struct StorageNamespace<'a> {
+    user_sub: &'a str,
+    application_id: i64,
+}
+
+impl storage_model::StorageNamespace for StorageNamespace<'_> {
+    fn user_sub(&self) -> &str {
+        self.user_sub
+    }
+
+    fn application_id(&self) -> i64 {
+        self.application_id
+    }
 }
 
 fn parse_basic_client_auth(headers: &HeaderMap) -> Result<Option<OAuth2ClientAuth>, ErrorResponse> {

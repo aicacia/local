@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State, http::HeaderMap};
 use bootstrap_service::bootstrap::BootstrapInput;
+use file_system::Residency;
 use idp_model::contract::{
     ErrorCode, ErrorResponse, SetupDeviceRequest, SetupDeviceStatus, SetupJoinRequest,
     SetupJoinState, SetupJoinStatus, SetupNewRequest, SetupResidency, SetupStage, SetupStatus,
 };
 use idp_service::generate_random_string;
 use iroh::EndpointAddr;
-use storage_service::Residency;
 
 use crate::{LocalSetupJoin, RouterState};
 

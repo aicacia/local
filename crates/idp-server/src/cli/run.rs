@@ -16,29 +16,23 @@ use idp_service::{
 };
 use iroh::{EndpointAddr, EndpointId};
 use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
-use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, StaticTunnelAuthorization};
+use iroh_chain_file_system::{ScopedIrohTransport, StaticTunnelAuthorization};
 use management_service::{
-    HostedControlPlane, StorageScope, StorageSessionService,
+    HostedControlPlane,
     libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo},
-    tunnel_authorization::{
-        HostedTunnelAuthorizationProvider, HostedTunnelAuthorizer,
-        LocalTunnelAuthorizationProvider, LocalTunnelAuthorizer,
-    },
+    tunnel_authorization::{HostedTunnelAuthorizer, LocalTunnelAuthorizer},
 };
 
 use std::{
     future::Future,
-    io::{self, Error},
+    io,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
     time::Duration,
 };
-use storage_service::{
-    GlobalIdentityRuntime, IrohTransportFactory, ScopedFileSystemRuntime,
-    ScopedTunnelAuthorizationProvider, TrustedEndpointAddrLookup, TunnelAuthorizationProvider,
-};
+use storage_service::ScopedFileSystemRuntime;
 use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
@@ -47,8 +41,7 @@ use crate::{
     ActiveGlobalIdentityReadGate, AppConfig, GlobalBootstrapGrants,
     GlobalBootstrapTunnelAuthorizer, GlobalIdentityCache, GlobalIdentityJoinApprover,
     GlobalIdentityRevisionWriter, LocalSetup, LocalSetupJoin, RouterState, SetupJoinExecutor,
-    SetupNewExecutor, SetupStage, TimedPairingAcceptanceController,
-    router::{HostedStorageScopeResolver, openapi_router},
+    SetupNewExecutor, SetupStage, TimedPairingAcceptanceController, router::openapi_router,
     storage_router,
 };
 
@@ -61,8 +54,6 @@ type LocalOAuth2Service = OAuth2Service<
     LibSqlKeyRepo,
 >;
 type CliLocalTunnelAuthorizer = LocalTunnelAuthorizer<LocalOAuth2Service, LibSqlDeviceRepo>;
-type CliLocalTunnelAuthorizationProvider =
-    LocalTunnelAuthorizationProvider<LocalOAuth2Service, LibSqlDeviceRepo>;
 
 enum CliTunnelAuthorizer {
     Hosted(
@@ -79,7 +70,7 @@ enum CliTunnelAuthorizer {
 
 type CliGlobalTransport =
     ScopedIrohTransport<DynamicEndpointIdStore, CliTunnelAuthorizer, StaticTunnelAuthorization>;
-type CliGlobalRuntime = GlobalIdentityRuntime<EndpointIdCodec, CliGlobalTransport>;
+type CliGlobalRuntime = crate::GlobalIdentityRuntime<CliGlobalTransport>;
 
 struct CliSetupJoinExecutor {
     manager: Server<DynamicEndpointIdStore, CliTunnelAuthorizer>,
@@ -294,68 +285,6 @@ impl TunnelAuthorizer for CliTunnelAuthorizer {
     }
 }
 
-#[derive(Clone)]
-enum CliAuthorizationProvider {
-    Hosted(Arc<HostedControlPlane>),
-    Local(Arc<CliLocalTunnelAuthorizer>),
-}
-
-impl ScopedTunnelAuthorizationProvider<StorageScope> for CliAuthorizationProvider {
-    type Authorization = CliTunnelAuthorization;
-
-    fn authorization(&self, scope: &StorageScope) -> Result<Self::Authorization, String> {
-        Ok(match self {
-            Self::Hosted(control_plane) => CliTunnelAuthorization::Hosted(
-                HostedTunnelAuthorizationProvider::new(Arc::clone(control_plane), scope.clone()),
-            ),
-            Self::Local(authorizer) => {
-                CliTunnelAuthorization::Local(authorizer.authorization_provider(scope.clone()))
-            }
-        })
-    }
-}
-
-#[derive(Clone)]
-enum CliTunnelAuthorization {
-    Hosted(HostedTunnelAuthorizationProvider),
-    Local(CliLocalTunnelAuthorizationProvider),
-}
-
-impl TunnelAuthorizationProvider for CliTunnelAuthorization {
-    fn authorization(
-        &self,
-        vault_id: VaultId,
-        local_id: EndpointId,
-        remote_id: EndpointId,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
-        match self {
-            Self::Hosted(provider) => provider.authorization(vault_id, local_id, remote_id),
-            Self::Local(provider) => provider.authorization(vault_id, local_id, remote_id),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct ScopeTrustedEndpoints {
-    control_plane: Option<Arc<HostedControlPlane>>,
-}
-
-impl TrustedEndpointAddrLookup<StorageScope> for ScopeTrustedEndpoints {
-    async fn trusted_endpoint_addrs(
-        &self,
-        scope: &StorageScope,
-    ) -> Result<Vec<EndpointAddr>, String> {
-        let trusted_devices = match &self.control_plane {
-            Some(control_plane) => control_plane.trusted_devices(&scope.access_token).await?,
-            None => scope.trusted_devices.clone(),
-        };
-        Ok(trusted_devices
-            .iter()
-            .filter_map(|device| serde_json::from_str(&device.address).ok())
-            .collect())
-    }
-}
-
 pub async fn run() -> io::Result<()> {
     match dotenvy::dotenv() {
         Ok(_) => {}
@@ -414,7 +343,7 @@ pub async fn run() -> io::Result<()> {
         key_service.clone(),
         oauth2_config,
     ));
-    let storage_sessions = Arc::new(StorageSessionService::new());
+
     let control_plane = app_config
         .control_plane_uri
         .as_deref()
@@ -427,17 +356,12 @@ pub async fn run() -> io::Result<()> {
         &app_config.api_public_uri,
         database.clone(),
         Arc::clone(&oauth2_service),
-        storage_sessions.clone(),
         Arc::clone(&devices),
         Arc::clone(&device_identity),
     )
     .with_local_setup(&app_config.data_dir, setup_state);
     let router_state = match &control_plane {
-        Some(control_plane) => router_state
-            .with_hosted_control_plane(Arc::clone(control_plane))
-            .with_storage_scope_resolver(Arc::new(HostedStorageScopeResolver::new(Arc::clone(
-                control_plane,
-            )))),
+        Some(control_plane) => router_state.with_hosted_control_plane(Arc::clone(control_plane)),
         None => router_state,
     };
     if let Some(token) = router_state.setup_token() {
@@ -447,6 +371,11 @@ pub async fn run() -> io::Result<()> {
         .parent()
         .unwrap_or(Path::new("."))
         .to_path_buf();
+    let file_systems = Arc::new(
+        ScopedFileSystemRuntime::new(storage_root, device_identity.endpoint_id())
+            .map_err(io::Error::other)?,
+    );
+    let router_state = router_state.with_storage_file_systems(Arc::clone(&file_systems));
     let allowlist = DynamicEndpointIdStore::default();
     let global_grants = Arc::new(GlobalBootstrapGrants::new());
     let authorizer = match &control_plane {
@@ -570,32 +499,10 @@ pub async fn run() -> io::Result<()> {
         listener.listen().await;
     });
     log::info!("Iroh endpoint: {:?}", device_identity.endpoint().addr());
-    let authorization_provider = match &control_plane {
-        Some(control_plane) => CliAuthorizationProvider::Hosted(Arc::clone(control_plane)),
-        None => CliAuthorizationProvider::Local(Arc::new(LocalTunnelAuthorizer::new(
-            Arc::clone(&oauth2_service),
-            Arc::clone(&devices),
-        ))),
-    };
-    let transport_factory = IrohTransportFactory::new(
-        manager,
-        allowlist,
-        authorization_provider,
-        ScopeTrustedEndpoints { control_plane },
-    );
-    let file_systems = Arc::new(
-        ScopedFileSystemRuntime::new(
-            storage_root,
-            device_identity.endpoint_id(),
-            transport_factory,
-        )
-        .map_err(io::Error::other)?,
-    );
-
-    let router = openapi_router(router_state, app_config.server.prefix())
+    let router = openapi_router(router_state.clone(), app_config.server.prefix())
         .split_for_parts()
         .0
-        .merge(storage_router(storage_sessions, file_systems))
+        .merge(storage_router(router_state, file_systems))
         .layer(CorsLayer::very_permissive().allow_private_network(true))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new().gzip(app_config.server.gzip));

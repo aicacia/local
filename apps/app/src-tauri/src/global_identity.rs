@@ -3,8 +3,8 @@ use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
 use bootstrap_service::bootstrap::{BootstrapConfig, BootstrapInput, BootstrapService};
 use db::close_database;
 use idp_server::{
-    GlobalIdentityCache, GlobalIdentityRevisionWriter, LocalSetup, LocalSetupJoin,
-    SetupJoinExecutor, SetupNewExecutor, SetupStage,
+    GlobalIdentityCache, GlobalIdentityRevisionWriter, GlobalIdentityRuntime, LocalSetup,
+    LocalSetupJoin, SetupJoinExecutor, SetupNewExecutor, SetupStage,
 };
 use idp_service::{
     PasswordConfig, generate_random_string,
@@ -13,15 +13,14 @@ use idp_service::{
 };
 use iroh::EndpointAddr;
 use iroh_chain::{DynamicEndpointIdStore, VaultId};
-use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, StaticTunnelAuthorization};
+use iroh_chain_file_system::{ScopedIrohTransport, StaticTunnelAuthorization};
 use management_service::libsql::{LibSqlDeviceRepo, LibSqlPermissionRepo, LibSqlRoleRepo};
-use storage_service::GlobalIdentityRuntime;
 
 use crate::tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer};
 
 type DesktopGlobalTransport =
     ScopedIrohTransport<DynamicEndpointIdStore, LidpTunnelAuthorizer, StaticTunnelAuthorization>;
-pub type DesktopGlobalRuntime = GlobalIdentityRuntime<EndpointIdCodec, DesktopGlobalTransport>;
+pub type DesktopGlobalRuntime = GlobalIdentityRuntime<DesktopGlobalTransport>;
 type IsolatedBootstrapService = BootstrapService<
     LibSqlApplicationRepo,
     LibSqlClientRepo,

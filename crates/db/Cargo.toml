@@ -1,5 +1,5 @@
 [package]
-name = "db"
+name = "idp-db"
 version = "0.1.0"
 publish = false
 authors.workspace = true
@@ -22,6 +22,7 @@ default = ["migrate", "cli", "completions", "remote"]
 cli = ["migrate", "dep:tokio", "dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli", "dep:env_logger"]
 completions = ["cli?/completions"]
 migrate = ["dep:sha2", "dep:hex", "dep:chrono"]
+replica = ["migrate", "dep:sync-db", "sync-db/automerge", "sync-db/in-memory"]
 remote = ["libsql/remote", "libsql/tls"]
 
 [dependencies]
@@ -39,6 +40,7 @@ cli = { path = "../cli", default-features = false, features = [
 
 # Database
 libsql = { version = "0.9", default-features = false, features = ["core"] }
+sync-db = { package = "db", path = "../../../db", default-features = false, features = ["sql"], optional = true }
 
 # Serialization
 serde = { version = "1.0", default-features = false, features = ["std", "derive"] }

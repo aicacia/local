@@ -1,220 +1,142 @@
-use alloc::{sync::Arc, vec::Vec};
-use core::{
-    convert::Infallible,
-    pin::Pin,
-    sync::atomic::{AtomicBool, Ordering},
-    task::{Context, Poll},
+use std::{
+    collections::BTreeMap,
+    fmt,
+    sync::{Arc, Mutex},
 };
 
-use futures_core::Stream;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::broadcast;
 
-use crate::Transport;
+use crate::{IncomingMessage, SyncMessage, Transport};
 
-type Message<P> = (P, Vec<u8>);
-type Sender<P> = mpsc::UnboundedSender<Message<P>>;
-pub type MemoryTransportMutator = Arc<dyn Fn(&mut Vec<u8>) + Send + Sync>;
-
-pub struct MemoryIncoming<P>(mpsc::UnboundedReceiver<Message<P>>);
-
-impl<P> Stream for MemoryIncoming<P> {
-    type Item = Message<P>;
-
-    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.0.poll_recv(context)
-    }
+struct MemoryNetworkState<PeerId> {
+    peers: Mutex<BTreeMap<PeerId, broadcast::Sender<IncomingMessage<PeerId>>>>,
+    capacity: usize,
 }
 
-struct Endpoint<P> {
-    online: AtomicBool,
-    sender: Sender<P>,
-    pending: Mutex<Vec<Message<P>>>,
+pub struct MemoryNetwork<PeerId> {
+    state: Arc<MemoryNetworkState<PeerId>>,
 }
 
-impl<P> Endpoint<P> {
-    async fn receive(&self, message: Message<P>) {
-        if self.online.load(Ordering::Acquire) {
-            let _ = self.sender.send(message);
-        } else {
-            self.pending.lock().await.push(message);
-        }
-    }
-
-    async fn set_online(&self, online: bool) {
-        self.online.store(online, Ordering::Release);
-        if !online {
-            return;
-        }
-        let pending = core::mem::take(&mut *self.pending.lock().await);
-        for message in pending {
-            let _ = self.sender.send(message);
-        }
-    }
-}
-
-struct MemoryTransportState<P> {
-    endpoint: Arc<Endpoint<P>>,
-    peers: Vec<(P, Arc<Endpoint<P>>)>,
-    incoming: Mutex<Option<MemoryIncoming<P>>>,
-    outbound: Mutex<Vec<(P, Vec<u8>)>>,
-    mutator: Option<MemoryTransportMutator>,
-    duplicate_next_outbound: AtomicBool,
-}
-
-pub struct MemoryTransport<P> {
-    peer: P,
-    state: Arc<MemoryTransportState<P>>,
-}
-
-impl<P> Clone for MemoryTransport<P>
-where
-    P: Clone,
-{
+impl<PeerId> Clone for MemoryNetwork<PeerId> {
     fn clone(&self) -> Self {
         Self {
-            peer: self.peer.clone(),
             state: Arc::clone(&self.state),
         }
     }
 }
 
-impl<P> MemoryTransport<P>
-where
-    P: Clone + Eq + Send + Sync + 'static,
-{
+impl<PeerId> MemoryNetwork<PeerId> {
     #[must_use]
-    pub fn pair(left_peer: P, right_peer: P) -> (Self, Self) {
-        Self::pair_with_mutators(left_peer, right_peer, None, None)
-    }
-
-    #[must_use]
-    pub fn pair_with_mutators(
-        left_peer: P,
-        right_peer: P,
-        left_mutator: Option<MemoryTransportMutator>,
-        right_mutator: Option<MemoryTransportMutator>,
-    ) -> (Self, Self) {
-        let (left_sender, left_receiver) = mpsc::unbounded_channel();
-        let (right_sender, right_receiver) = mpsc::unbounded_channel();
-        let left_endpoint = Arc::new(Endpoint {
-            online: AtomicBool::new(true),
-            sender: left_sender,
-            pending: Mutex::new(Vec::new()),
-        });
-        let right_endpoint = Arc::new(Endpoint {
-            online: AtomicBool::new(true),
-            sender: right_sender,
-            pending: Mutex::new(Vec::new()),
-        });
-        let left = Self {
-            peer: left_peer.clone(),
-            state: Arc::new(MemoryTransportState {
-                endpoint: Arc::clone(&left_endpoint),
-                peers: vec![(right_peer.clone(), Arc::clone(&right_endpoint))],
-                incoming: Mutex::new(Some(MemoryIncoming(left_receiver))),
-                outbound: Mutex::new(Vec::new()),
-                mutator: left_mutator,
-                duplicate_next_outbound: AtomicBool::new(false),
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            state: Arc::new(MemoryNetworkState {
+                peers: Mutex::new(BTreeMap::new()),
+                capacity,
             }),
-        };
-        let right = Self {
-            peer: right_peer.clone(),
-            state: Arc::new(MemoryTransportState {
-                endpoint: right_endpoint,
-                peers: vec![(left_peer, left_endpoint)],
-                incoming: Mutex::new(Some(MemoryIncoming(right_receiver))),
-                outbound: Mutex::new(Vec::new()),
-                mutator: right_mutator,
-                duplicate_next_outbound: AtomicBool::new(false),
-            }),
-        };
-        (left, right)
-    }
-
-    pub async fn set_online(&self, online: bool) {
-        self.state.endpoint.set_online(online).await;
-        if !online {
-            return;
-        }
-        let outbound = core::mem::take(&mut *self.state.outbound.lock().await);
-        for (peer, data) in outbound {
-            self.deliver(peer, data).await;
-        }
-    }
-
-    #[must_use]
-    pub fn is_online(&self) -> bool {
-        self.state.endpoint.online.load(Ordering::Acquire)
-    }
-
-    pub fn duplicate_next_outbound(&self) {
-        self.state
-            .duplicate_next_outbound
-            .store(true, Ordering::Release);
-    }
-
-    async fn deliver(&self, peer: P, mut data: Vec<u8>) {
-        if !self.is_online() {
-            self.state.outbound.lock().await.push((peer, data));
-            return;
-        }
-        if let Some(mutator) = &self.state.mutator {
-            mutator(&mut data);
-        }
-        let endpoint = self
-            .state
-            .peers
-            .iter()
-            .find_map(|(candidate, endpoint)| (*candidate == peer).then_some(endpoint))
-            .expect("unknown memory transport peer");
-
-        endpoint.receive((self.peer.clone(), data.clone())).await;
-        if self
-            .state
-            .duplicate_next_outbound
-            .swap(false, Ordering::AcqRel)
-        {
-            endpoint.receive((self.peer.clone(), data)).await;
         }
     }
 }
 
-impl<P> Transport for MemoryTransport<P>
-where
-    P: Clone + Eq + Send + Sync + 'static,
-{
-    type Error = Infallible;
-    type PeerId = P;
-    type Incoming = MemoryIncoming<P>;
+impl<PeerId: Clone + Ord> MemoryNetwork<PeerId> {
+    #[must_use]
+    pub fn transport(&self, peer: PeerId) -> MemoryTransport<PeerId> {
+        let sender = broadcast::channel(self.state.capacity).0;
+        self.state
+            .peers
+            .lock()
+            .expect("memory network lock poisoned")
+            .insert(peer.clone(), sender);
+        MemoryTransport {
+            peer,
+            network: self.clone(),
+        }
+    }
+}
 
-    async fn send(&self, peer: Self::PeerId, data: Vec<u8>) -> Result<(), Self::Error> {
-        self.deliver(peer, data).await;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryTransportError {
+    UnknownPeer,
+}
+
+impl fmt::Display for MemoryTransportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("memory transport peer was not found")
+    }
+}
+
+impl std::error::Error for MemoryTransportError {}
+
+pub struct MemoryTransport<PeerId> {
+    peer: PeerId,
+    network: MemoryNetwork<PeerId>,
+}
+
+impl<PeerId: Clone> Clone for MemoryTransport<PeerId> {
+    fn clone(&self) -> Self {
+        Self {
+            peer: self.peer.clone(),
+            network: self.network.clone(),
+        }
+    }
+}
+
+impl<PeerId> Transport<PeerId> for MemoryTransport<PeerId>
+where
+    PeerId: Clone + Ord + Send + Sync + 'static,
+{
+    type Error = MemoryTransportError;
+
+    fn peers(&self) -> Vec<PeerId> {
+        self.network
+            .state
+            .peers
+            .lock()
+            .expect("memory network lock poisoned")
+            .keys()
+            .filter(|peer| *peer != &self.peer)
+            .cloned()
+            .collect()
+    }
+
+    async fn send(&self, peer: PeerId, message: SyncMessage<PeerId>) -> Result<(), Self::Error> {
+        let sender = self
+            .network
+            .state
+            .peers
+            .lock()
+            .expect("memory network lock poisoned")
+            .get(&peer)
+            .cloned()
+            .ok_or(MemoryTransportError::UnknownPeer)?;
+        let _ = sender.send((self.peer.clone(), message));
         Ok(())
     }
 
-    async fn broadcast(&self, data: Vec<u8>) -> Result<(), Self::Error> {
-        for (peer, _) in &self.state.peers {
-            self.deliver(peer.clone(), data.clone()).await;
+    async fn broadcast(&self, message: SyncMessage<PeerId>) -> Result<(), Self::Error> {
+        let senders = self
+            .network
+            .state
+            .peers
+            .lock()
+            .expect("memory network lock poisoned")
+            .iter()
+            .filter(|(peer, _)| *peer != &self.peer)
+            .map(|(_, sender)| sender.clone())
+            .collect::<Vec<_>>();
+        for sender in senders {
+            let _ = sender.send((self.peer.clone(), message.clone()));
         }
         Ok(())
     }
 
-    fn peers(&self) -> Vec<Self::PeerId> {
-        self.state
-            .peers
-            .iter()
-            .filter(|(_, endpoint)| endpoint.online.load(Ordering::Acquire))
-            .map(|(peer, _)| peer.clone())
-            .collect()
-    }
-
-    async fn subscribe(&self) -> Result<Self::Incoming, Self::Error> {
-        Ok(self
+    fn subscribe(&self) -> broadcast::Receiver<IncomingMessage<PeerId>> {
+        self.network
             .state
-            .incoming
+            .peers
             .lock()
-            .await
-            .take()
-            .expect("memory transport subscribed twice"))
+            .expect("memory network lock poisoned")
+            .get(&self.peer)
+            .expect("memory transport is not registered")
+            .subscribe()
     }
 }

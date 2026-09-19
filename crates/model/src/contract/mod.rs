@@ -1,4 +1,5 @@
 mod access_token;
+mod authorization_details;
 mod error_response;
 mod health_response;
 mod health_status;
@@ -11,6 +12,9 @@ mod token_use;
 mod version_response;
 
 pub use access_token::AccessToken;
+pub use authorization_details::{
+    AuthorizationDetail, StorageAuthorizationAction, StorageAuthorizationDetail,
+};
 pub use error_response::ErrorResponse;
 pub use health_response::HealthResponse;
 pub use health_status::HealthStatus;

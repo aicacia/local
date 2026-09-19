@@ -2,7 +2,6 @@ use std::{
     collections::BTreeMap,
     future::Future,
     io::{Error, ErrorKind},
-    pin::Pin,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -195,10 +194,10 @@ impl TunnelAuthorizationProvider for HostedTunnelAuthorizationProvider {
         vault_id: VaultId,
         local_id: EndpointId,
         remote_id: EndpointId,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
         let control_plane = Arc::clone(&self.control_plane);
         let scope = self.scope.clone();
-        Box::pin(async move {
+        async move {
             let authorization = control_plane
                 .tunnel_authorization(
                     &scope.access_token,
@@ -211,7 +210,7 @@ impl TunnelAuthorizationProvider for HostedTunnelAuthorizationProvider {
                 .await
                 .map_err(|_| Error::new(ErrorKind::PermissionDenied, "grant was rejected"))?;
             Ok(authorization.token.into_bytes())
-        })
+        }
     }
 }
 
@@ -231,11 +230,11 @@ where
         vault_id: VaultId,
         local_id: EndpointId,
         remote_id: EndpointId,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + '_>> {
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
         let oauth2_service = Arc::clone(&self.oauth2_service);
         let devices = Arc::clone(&self.devices);
         let scope = self.scope.clone();
-        Box::pin(async move {
+        async move {
             let local_public_key = local_id.to_string();
             let remote_public_key = remote_id.to_string();
             let approved = devices
@@ -266,7 +265,7 @@ where
                 .await
                 .map_err(|_| Error::new(ErrorKind::PermissionDenied, "grant was rejected"))?;
             Ok(authorization.token.into_bytes())
-        })
+        }
     }
 }
 

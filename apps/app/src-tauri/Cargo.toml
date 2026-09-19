@@ -52,7 +52,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
 ] }
 tower-http = { version = "0.7", default-features = false, features = ["cors"] }
 
-db = { path = "../../../crates/db", default-features = false, features = [
+db = { package = "idp-db", path = "../../../crates/db", default-features = false, features = [
   "migrate",
 ] }
 management-server = { path = "../../../crates/management-server", default-features = false, features = [
@@ -73,11 +73,7 @@ management-service = { path = "../../../crates/management-service", default-feat
   "std",
 ] }
 model = { path = "../../../crates/model", default-features = false, features = ["std"] }
-file-system = { path = "../../../crates/file-system", default-features = false, features = [
-
-  "native",
-  "sync",
-] }
+file-system = { path = "../../../crates/file-system", default-features = false, features = [] }
 storage-server = { path = "../../../crates/storage-server", default-features = false, features = [] }
 storage-service = { path = "../../../crates/storage-service", default-features = false, features = [] }
 

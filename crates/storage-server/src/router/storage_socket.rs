@@ -1,92 +1,73 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{future::Future, sync::Arc};
 
 use axum::{
     Router,
     extract::{
-        State,
+        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::Response,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::get,
 };
-use storage_model::{StorageErrorCode, StorageResponse, StorageSession, StorageSocketRequest};
+use storage_model::{StorageErrorCode, StorageRequest, StorageResponse, StorageSession};
 
-type StorageSessionFuture<'a> =
-    Pin<Box<dyn Future<Output = Option<Arc<dyn StorageSocketSession>>> + Send + 'a>>;
+pub struct StorageSocketAccess<S> {
+    pub folder: String,
+    pub write: bool,
+    pub session: S,
+}
 
-pub trait StorageSocketSession: Send + Sync {
-    fn execute(
+pub trait StorageSocketAuthorizer: Send + Sync + 'static {
+    type Session: StorageSession + 'static;
+
+    fn authorize(
         &self,
-        request: storage_model::StorageRequest,
-    ) -> Pin<Box<dyn Future<Output = StorageResponse> + Send + '_>>;
+        token: String,
+    ) -> impl Future<Output = Result<StorageSocketAccess<Self::Session>, ()>> + Send;
 }
 
-pub trait StorageSessionResolver: Send + Sync + 'static {
-    fn take(&self, token: &str) -> StorageSessionFuture<'_>;
+#[derive(serde::Deserialize)]
+struct StorageQuery {
+    access_token: String,
 }
 
-impl<S: StorageSession> StorageSocketSession for S {
-    fn execute(
-        &self,
-        request: storage_model::StorageRequest,
-    ) -> Pin<Box<dyn Future<Output = StorageResponse> + Send + '_>> {
-        self.execute_session(request)
-    }
-}
-
-pub fn storage_router(resolver: Arc<dyn StorageSessionResolver>) -> Router {
+pub fn storage_router<A>(authorizer: Arc<A>) -> Router
+where
+    A: StorageSocketAuthorizer,
+{
     Router::new()
-        .route("/storage", get(upgrade_socket))
-        .with_state(resolver)
+        .route("/storage", get(upgrade_socket::<A>))
+        .with_state(authorizer)
 }
 
-async fn upgrade_socket(
+async fn upgrade_socket<A>(
     upgrade: WebSocketUpgrade,
-    State(resolver): State<Arc<dyn StorageSessionResolver>>,
-) -> Response {
-    upgrade.on_upgrade(move |socket| serve_socket(socket, resolver))
+    Query(query): Query<StorageQuery>,
+    State(authorizer): State<Arc<A>>,
+) -> Response
+where
+    A: StorageSocketAuthorizer,
+{
+    let Ok(access) = authorizer.authorize(query.access_token).await else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    upgrade.on_upgrade(move |socket| serve_socket(socket, access))
 }
 
-async fn serve_socket(mut socket: WebSocket, resolver: Arc<dyn StorageSessionResolver>) {
-    let Some(Ok(Message::Text(message))) = socket.recv().await else {
-        return;
-    };
-    let Ok(StorageSocketRequest::Authenticate { token }) = serde_json::from_str(&message) else {
-        let _ = send_response(
-            &mut socket,
-            StorageResponse::Error {
-                code: StorageErrorCode::InvalidRequest,
-            },
-        )
-        .await;
-        return;
-    };
-    let Some(session) = resolver.take(&token).await else {
-        let _ = send_response(
-            &mut socket,
-            StorageResponse::Error {
+async fn serve_socket<S>(mut socket: WebSocket, access: StorageSocketAccess<S>)
+where
+    S: StorageSession + 'static,
+{
+    while let Some(Ok(Message::Text(message))) = socket.recv().await {
+        let response = match serde_json::from_str::<StorageRequest>(&message) {
+            Ok(request) if allows(&access, &request) => {
+                access.session.execute_session(request).await
+            }
+            Ok(_) => StorageResponse::Error {
                 code: StorageErrorCode::OperationFailed,
             },
-        )
-        .await;
-        return;
-    };
-    if send_response(&mut socket, StorageResponse::Authenticated)
-        .await
-        .is_err()
-    {
-        return;
-    }
-    while let Some(Ok(message)) = socket.recv().await {
-        let Message::Text(message) = message else {
-            continue;
-        };
-        let response = match serde_json::from_str::<StorageSocketRequest>(&message) {
-            Ok(StorageSocketRequest::Request { request }) => session.execute(request).await,
             Err(_) => StorageResponse::Error {
-                code: StorageErrorCode::InvalidRequest,
-            },
-            Ok(StorageSocketRequest::Authenticate { .. }) => StorageResponse::Error {
                 code: StorageErrorCode::InvalidRequest,
             },
         };
@@ -96,10 +77,85 @@ async fn serve_socket(mut socket: WebSocket, resolver: Arc<dyn StorageSessionRes
     }
 }
 
+fn allows<S>(access: &StorageSocketAccess<S>, request: &StorageRequest) -> bool {
+    match request {
+        StorageRequest::Read { path }
+        | StorageRequest::Entry { path }
+        | StorageRequest::List { path } => in_folder(&access.folder, path),
+        StorageRequest::Write { path, .. }
+        | StorageRequest::Append { path, .. }
+        | StorageRequest::Delete { path }
+        | StorageRequest::CreateDir { path } => access.write && in_folder(&access.folder, path),
+        StorageRequest::Rename { from, to } => {
+            access.write && in_folder(&access.folder, from) && in_folder(&access.folder, to)
+        }
+    }
+}
+
+fn in_folder(folder: &str, path: &str) -> bool {
+    folder.is_empty()
+        || path == folder
+        || path
+            .strip_prefix(folder)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
 async fn send_response(socket: &mut WebSocket, response: StorageResponse) -> Result<(), ()> {
     let response = serde_json::to_string(&response).map_err(|_| ())?;
     socket
         .send(Message::Text(response.into()))
         .await
         .map_err(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StorageSocketAccess, allows};
+    use storage_model::{StorageRequest, StorageResponse, StorageSession};
+
+    struct Session;
+
+    impl StorageSession for Session {
+        fn execute_session(
+            &self,
+            _: StorageRequest,
+        ) -> impl std::future::Future<Output = StorageResponse> + Send {
+            async { StorageResponse::Deleted }
+        }
+    }
+
+    #[test]
+    fn authorization_is_folder_bounded_and_read_only() {
+        let access = StorageSocketAccess {
+            folder: "a".into(),
+            write: false,
+            session: Session,
+        };
+        assert!(allows(
+            &access,
+            &StorageRequest::Read {
+                path: "a/file".into()
+            }
+        ));
+        assert!(!allows(
+            &access,
+            &StorageRequest::Read {
+                path: "ab/file".into()
+            }
+        ));
+        assert!(!allows(
+            &access,
+            &StorageRequest::Write {
+                path: "a/file".into(),
+                content: Vec::new()
+            }
+        ));
+        assert!(!allows(
+            &access,
+            &StorageRequest::Rename {
+                from: "a/file".into(),
+                to: "b/file".into()
+            }
+        ));
+    }
 }

@@ -505,16 +505,16 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "automerge"
-version = "0.11.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1b59cbd9e7685a1ac6bf6046ddcd8acb550fa5bf03c09f6c1056728a742b40d"
+checksum = "629a51c7c6f21ab08059e237b3dfc87d16b2846605ee5b3e4ddcd397bbce264b"
 dependencies = [
  "cfg-if",
  "flate2",
  "getrandom 0.4.3",
  "hex",
  "hexane",
- "itertools 0.15.0",
+ "itertools 0.14.0",
  "leb128",
  "rand 0.10.2",
  "rustc-hash 2.1.3",
@@ -1618,19 +1618,114 @@ dependencies = [
 name = "db"
 version = "0.1.0"
 dependencies = [
- "chrono",
- "clap",
- "cli",
- "dotenvy",
- "env_logger 0.10.2",
- "hex",
- "libsql",
- "log",
+ "db-engine",
+ "db-engine-automerge",
+ "db-sql-translator",
+ "db-value",
+ "uuid",
+]
+
+[[package]]
+name = "db-btree"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "futures",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "db-btree-automerge"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "async-stream",
+ "automerge",
+ "base64 0.21.7",
+ "db-btree",
+ "futures",
  "serde",
- "sha2 0.11.0",
- "tokio",
- "tokio-util",
- "url",
+ "sha2 0.10.9",
+ "uuid",
+]
+
+[[package]]
+name = "db-engine"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "async-stream",
+ "db-btree",
+ "db-query",
+ "db-schema",
+ "db-value",
+ "futures",
+ "postcard",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "db-engine-automerge"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "automerge",
+ "db-btree",
+ "db-btree-automerge",
+ "db-engine",
+ "db-value",
+ "futures",
+ "postcard",
+ "uuid",
+]
+
+[[package]]
+name = "db-query"
+version = "0.1.0"
+dependencies = [
+ "db-schema",
+ "db-value",
+ "serde",
+ "thiserror 2.0.20",
+ "uuid",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "db-schema"
+version = "0.1.0"
+dependencies = [
+ "db-value",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "db-sql-translator"
+version = "0.1.0"
+dependencies = [
+ "db-query",
+ "db-schema",
+ "db-value",
+ "serde_json",
+ "sqlparser",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "db-value"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "serde",
+ "serde_json",
+ "uuid",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1677,11 +1772,11 @@ name = "deckv"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "chrono",
  "dashmap",
  "futures-core",
  "futures-util",
  "hashbrown 0.17.1",
+ "postcard",
  "redb",
  "serde",
  "tokio",
@@ -2268,13 +2363,10 @@ dependencies = [
 name = "file-system"
 version = "0.1.0"
 dependencies = [
- "automerge",
- "bitflags 2.13.1",
- "blake3",
- "futures-core",
- "libc",
- "percent-encoding",
- "thiserror 2.0.20",
+ "deckv",
+ "redb",
+ "serde",
+ "sha2 0.10.9",
  "tokio",
  "uuid",
 ]
@@ -3127,9 +3219,9 @@ dependencies = [
 
 [[package]]
 name = "hexane"
-version = "1.0.0-alpha.5"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81df830f11babb0eee9a082e09135ef0a7d8791f3fe9b279bb9485bf7eaf23e0"
+checksum = "8f4ecba0bb4e14df997df7cab6d1b584c6432d8865cf2adfced814706d715a7b"
 dependencies = [
  "leb128",
  "thiserror 2.0.20",
@@ -3580,6 +3672,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "idp-db"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "cli",
+ "db",
+ "dotenvy",
+ "env_logger 0.10.2",
+ "hex",
+ "libsql",
+ "log",
+ "serde",
+ "sha2 0.11.0",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "idp-model"
 version = "0.1.0"
 dependencies = [
@@ -3587,7 +3699,8 @@ dependencies = [
  "base64 0.22.1",
  "build-time",
  "chrono",
- "db",
+ "futures",
+ "idp-db",
  "include_dir",
  "key",
  "libsql",
@@ -3611,11 +3724,11 @@ dependencies = [
  "clap",
  "cli",
  "config",
- "db",
  "dotenvy",
  "env_logger 0.10.2",
  "file-system",
  "http 1.5.0",
+ "idp-db",
  "idp-model",
  "idp-service",
  "iroh",
@@ -3629,6 +3742,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_qs",
+ "sha2 0.10.9",
+ "storage-model",
  "storage-server",
  "storage-service",
  "tokio",
@@ -3648,10 +3763,10 @@ dependencies = [
  "apple-native-keyring-store",
  "base64 0.22.1",
  "chrono",
- "db",
  "dbus-secret-service-keyring-store",
  "file-system",
  "getrandom 0.3.4",
+ "idp-db",
  "idp-model",
  "k256",
  "key",
@@ -3679,9 +3794,9 @@ dependencies = [
  "clap",
  "cli",
  "config",
- "db",
  "dotenvy",
  "env_logger 0.10.2",
+ "idp-db",
  "idp-model",
  "idp-server",
  "idp-service",
@@ -3905,9 +4020,9 @@ name = "iroh-chain-file-system"
 version = "0.1.0"
 dependencies = [
  "file-system",
- "futures-core",
  "iroh",
  "iroh-chain",
+ "postcard",
  "tokio",
 ]
 
@@ -4137,9 +4252,9 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.15.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
 dependencies = [
  "either",
 ]
@@ -4562,10 +4677,10 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bootstrap-service",
- "db",
  "file-system",
  "futures-core",
  "getrandom 0.3.4",
+ "idp-db",
  "idp-model",
  "idp-server",
  "idp-service",
@@ -4696,10 +4811,10 @@ dependencies = [
  "clap",
  "cli",
  "config",
- "db",
  "dotenvy",
  "env_logger 0.10.2",
  "http 1.5.0",
+ "idp-db",
  "idp-model",
  "idp-server",
  "idp-service",
@@ -7543,6 +7658,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqlparser"
+version = "0.62.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c6d1b651dc4edf07eead2a0c6c78016ce971bc2c10da5266861b13f25e7cec"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7553,7 +7677,7 @@ name = "storage-model"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "db",
+ "idp-db",
  "idp-model",
  "include_dir",
  "libsql",
@@ -7598,11 +7722,6 @@ name = "storage-service"
 version = "0.1.0"
 dependencies = [
  "file-system",
- "futures-core",
- "idp-model",
- "iroh",
- "iroh-chain",
- "iroh-chain-file-system",
  "serde",
  "serde_json",
  "storage-model",
@@ -8995,6 +9114,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

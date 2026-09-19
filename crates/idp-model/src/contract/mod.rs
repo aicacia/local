@@ -122,6 +122,7 @@ pub use setup_residency::{SetupDeviceRequest, SetupDeviceStatus, SetupResidency}
 pub use setup_stage::SetupStage;
 pub use setup_status::SetupStatus;
 pub use sex::Sex;
+
 pub use storage_session::StorageSession;
 pub use subject_token_type::SubjectTokenType;
 pub use token_endpoint_auth_method::TokenEndpointAuthMethod;

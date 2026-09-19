@@ -21,17 +21,25 @@ Two constraints shape this design:
 
 ## Decision
 
-**Token scope claims: folder path, access level, connection type.**
-Access tokens issued for this server carry:
+**OAuth 2.0 token exchange with authorization details.**
+Clients first obtain an ordinary OAuth 2.0/OIDC access token. To connect to
+storage, they exchange it at the existing token endpoint using RFC 8693:
 
-- `folder`: the specific path/folder the token is scoped to
-- `access`: read-only or read-write
-- `conn`: connection type (currently only `websocket`)
+- `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`
+- the ordinary access token as `subject_token`
+- the storage server as the `resource` / audience
+- RFC 9396 `authorization_details` requesting one normalized folder and
+  `read` or `write` actions
 
-Folder-level owner/permission identifiers are stored on the file-system
-side (per ADR-002) and may use any identifier scheme; this server is
-responsible for mapping an authenticated IdP subject to the relevant
-file-system permission entries when issuing a scoped token.
+The token endpoint authenticates the client where applicable, validates the
+subject token, and asks `storage-service` for the current folder ACL decision
+immediately before signing the exchanged token. The result is an ordinary,
+short-lived signed OAuth access token, audience-bound to storage and narrowed
+to the granted authorization details. There is no storage-specific token type,
+issuer, or token endpoint.
+
+Folder ownership and grants are durable local `storage-service` policy as
+specified by ADR-002. They are not filesystem metadata and are not replicated.
 
 **WebSocket handshake auth: signed JWT via query string.**
 Because browser WebSocket clients cannot set an `Authorization` header (or
@@ -40,17 +48,17 @@ query-string parameter on the WebSocket connection URL rather than as a
 header. The token must be signed as usual; transport via query string does
 not change its signature requirements.
 
-**Token lifetime: short-lived, with refresh.**
-Tokens are issued with a short expiry and refreshed rather than being
-long-lived. This is the primary mechanism for keeping access aligned with
-current permissions.
+**Token lifetime: short-lived, with standard refresh.**
+The exchanged access token is short-lived. Refresh follows the existing OAuth
+refresh-token flow and re-evaluates the current `storage-service` ACL before
+issuing a replacement storage-audience access token. This keeps access aligned
+with current permissions without a separate storage session system.
 
 **No additional permission re-check on the handshake itself.**
-The WebSocket handshake does not perform a second, independent
-authorization check beyond validating the token's signature, scope, and
-expiry. The short-lived-plus-refresh token model is treated as sufficient
-enforcement: a revoked or changed permission takes effect at the next
-token refresh rather than being enforced mid-connection.
+The WebSocket handshake does not perform a second, independent ACL lookup
+beyond validating the ordinary access token's signature, issuer, audience,
+authorization details, and expiry. A revoked or changed permission takes effect
+at the next token refresh rather than being enforced mid-connection.
 
 **Server role: thin authenticated streaming endpoint.**
 Once the token is validated the server streams (or proxies) the client's
@@ -71,14 +79,13 @@ already present in the token.
   is attempted. The token lifetime therefore directly bounds how quickly
   a permission change takes effect — shorter lifetime means faster
   revocation propagation but more frequent refresh traffic.
-- Since access level is a token claim (read-only vs. read-write) rather
-  than checked live against the file system on every operation, the
-  token issuance step must be the single source of truth at issue time;
-  any race between a permission change and an in-flight token issuance
-  needs to resolve in favor of the file system's current state.
-- Supporting additional connection types later (e.g. plain HTTP range
-  requests) should be able to reuse the same claim shape by adding new
-  `conn` values, without changing the `folder`/`access` claims.
+- The exchanged token's authorization details, rather than live per-operation
+  ACL checks, define read-only or read-write access. Token issuance and refresh
+  must use the current `storage-service` decision atomically with respect to
+  permission updates.
+- Supporting another connection type later (for example HTTP range requests)
+  requires its own endpoint semantics. The storage audience and authorization
+  details remain reusable; no `conn` claim is needed initially.
 
 ## Alternatives Considered
 
@@ -86,10 +93,11 @@ already present in the token.
   WebSocket clients cannot set custom headers on the handshake; this
   would only work for non-browser clients and was ruled out in favor of
   a single consistent mechanism.
-- **Per-operation live permission check**: considered for stronger
-  consistency, but rejected for the handshake step specifically in favor
-  of the simpler short-lived-token model; revisit if revocation latency
-  proves too coarse in practice.
+- **Per-operation live permission check**: rejected for this milestone in
+  favor of short-lived RFC 8693 exchanged tokens and ACL re-evaluation during
+  standard refresh; revisit if revocation latency proves too coarse.
+- **Separate storage token issuer or opaque session token**: rejected. RFC 8693
+  produces a normal OAuth access token from the existing token endpoint.
 - **Embedding FUSE semantics in the server**: rejected. FUSE is a
   binary-level concern that sits above the crate's API (ADR-002). The
   server only needs to validate tokens and stream onto that API.

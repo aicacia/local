@@ -19,6 +19,8 @@ pub enum StorageResponse {
     Written { entry: StorageEntry },
     Appended { entry: StorageEntry },
     Deleted,
+    DirectoryCreated { entry: StorageEntry },
+    Renamed,
     Entry { entry: StorageEntry },
     Listed { entries: Vec<StorageEntry> },
     Error { code: StorageErrorCode },
