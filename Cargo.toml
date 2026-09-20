@@ -32,16 +32,11 @@ tokio = { version = "1.52", default-features = false, features = [
 [workspace]
 members = [
   "crates/db",
-  "crates/file-system",
   "crates/cli",
   "crates/api",
   "crates/bootstrap-service",
   "crates/key",
   "crates/model",
-  "crates/deckv",
-  "crates/iroh-chain",
-  "crates/iroh-chain-file-system",
-  "crates/iroh-client-wasm",
   "crates/management-server",
   "crates/management-service",
   "crates/idp-model",

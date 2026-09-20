@@ -37,7 +37,7 @@ cli = { path = "../cli", default-features = false, features = [
 
 # Internal
 api = { path = "../api", default-features = false, features = [] }
-file-system = { path = "../file-system", default-features = false, features = [] }
+file-system = { path = "../../../offs/crates/file-system", default-features = false, features = [] }
 key = { path = "../key", default-features = false, features = ["std"] }
 model = { path = "../model", default-features = false, features = ["std", "utoipa", "axum"] }
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }

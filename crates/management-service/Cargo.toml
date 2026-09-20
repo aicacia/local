@@ -34,11 +34,11 @@ std = [
 [dependencies]
 # Internal
 db = { package = "idp-db", path = "../db", default-features = false, features = [], optional = true }
-file-system = { path = "../file-system", default-features = false, features = ["sync"] }
+file-system = { path = "../../../offs/crates/file-system", default-features = false, features = ["sync"] }
 idp-model = { path = "../idp-model", default-features = false, features = [] }
 idp-service = { path = "../idp-service", default-features = false, features = [] }
-iroh-chain = { path = "../iroh-chain", default-features = false, features = [], optional = true }
-iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features = false, features = [], optional = true }
+iroh-chain = { path = "../../../offs/crates/iroh-chain", default-features = false, features = [], optional = true }
+iroh-chain-file-system = { path = "../../../offs/crates/iroh-chain-file-system", default-features = false, features = [], optional = true }
 model = { path = "../model", default-features = false, features = [] }
 storage-model = { path = "../storage-model", default-features = false, features = [] }
 
@@ -66,6 +66,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 getrandom = { version = "0.3", default-features = false, features = [], optional = true }
 
 [dev-dependencies]
-file-system = { path = "../file-system", default-features = false, features = ["in-memory", "sync"] }
+file-system = { path = "../../../offs/crates/file-system", default-features = false, features = ["in-memory", "sync"] }
 idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
 tokio = { version = "1.4", default-features = false, features = ["macros", "rt"] }

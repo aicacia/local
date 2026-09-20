@@ -44,8 +44,8 @@ reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls-native-roots",
 ] }
 iroh = { version = "1.1", default-features = false, features = ["tls-ring"] }
-iroh-chain = { path = "../../../crates/iroh-chain", default-features = false, features = [] }
-iroh-chain-file-system = { path = "../../../crates/iroh-chain-file-system", default-features = false, features = [] }
+iroh-chain = { path = "../../../../offs/crates/iroh-chain", default-features = false, features = [] }
+iroh-chain-file-system = { path = "../../../../offs/crates/iroh-chain-file-system", default-features = false, features = [] }
 tokio-rustls = { version = "0.26", default-features = false, features = [
   "ring",
 ] }
@@ -72,7 +72,7 @@ management-service = { path = "../../../crates/management-service", default-feat
   "std",
 ] }
 model = { path = "../../../crates/model", default-features = false, features = ["std"] }
-file-system = { path = "../../../crates/file-system", default-features = false, features = [] }
+file-system = { path = "../../../../offs/crates/file-system", default-features = false, features = [] }
 storage-server = { path = "../../../crates/storage-server", default-features = false, features = [] }
 storage-service = { path = "../../../crates/storage-service", default-features = false, features = [] }
 

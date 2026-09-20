@@ -42,7 +42,7 @@ db = { package = "idp-db", path = "../db", default-features = false, features = 
   "replica",
 ] }
 
-file-system = { path = "../file-system", default-features = false, features = [] }
+file-system = { path = "../../../offs/crates/file-system", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = [
   "std",
   "utoipa",
@@ -59,8 +59,8 @@ management-service = { path = "../management-service", default-features = false,
 storage-model = { path = "../storage-model", default-features = false, features = [] }
 storage-server = { path = "../storage-server", default-features = false, features = [] }
 storage-service = { path = "../storage-service", default-features = false, features = [] }
-iroh-chain = { path = "../iroh-chain", default-features = false, features = [] }
-iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features = false, features = [] }
+iroh-chain = { path = "../../../offs/crates/iroh-chain", default-features = false, features = [] }
+iroh-chain-file-system = { path = "../../../offs/crates/iroh-chain-file-system", default-features = false, features = [] }
 
 # Iroh
 iroh = { version = "1.1", default-features = false, features = ["tls-ring"] }

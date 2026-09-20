@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 # Internal
-file-system = { path = "../file-system", default-features = false, features = [] }
+file-system = { path = "../../../offs/crates/file-system", default-features = false, features = [] }
 idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
 
