@@ -42,7 +42,7 @@ Ordinary files use last-writer-wins metadata. `.automerge` and `.am` files use A
 
 Each installation has a persistent device identity. Devices enroll and pair through `management-service`.
 
-Approved devices synchronize application data peer-to-peer over Iroh. Connections use short-lived, single-use tunnel authorizations issued by the control plane.
+Approved devices synchronize application data peer-to-peer over Iroh. Connections use OAuth bearer access tokens with the `storage` scope, while trusted-device policy remains enforced before accepting a tunnel.
 
 Revoking a device closes its active tunnels and prevents future connections.
 

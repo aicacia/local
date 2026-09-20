@@ -34,9 +34,6 @@ use super::routes::oauth2::revoke::{__path_revoke, revoke};
 use super::routes::oauth2::sessions::{__path_sessions_logout, sessions_logout};
 use super::routes::oauth2::token::{__path_token, token};
 
-use super::routes::tunnel_authorizations::{
-    __path_create_tunnel_authorization, create_tunnel_authorization,
-};
 use super::routes::userinfo::{__path_userinfo, userinfo};
 use super::routes::version::{__path_version, version};
 use super::routes::well_known::{
@@ -80,7 +77,6 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(token))
             .routes(routes!(revoke))
             .routes(routes!(sessions_logout))
-            .routes(routes!(create_tunnel_authorization))
             .routes(routes!(version))
             .routes(routes!(jwks))
             .routes(routes!(openid_configuration))

@@ -10,6 +10,8 @@ pub mod fs;
 pub mod replica;
 
 #[cfg(feature = "std")]
+pub mod access_token_authorization;
+#[cfg(feature = "std")]
 mod device_enrollment;
 mod device_repo;
 mod error;
@@ -20,8 +22,6 @@ mod role_repo;
 mod service;
 #[cfg(feature = "std")]
 mod storage_session;
-#[cfg(feature = "std")]
-pub mod tunnel_authorization;
 
 #[cfg(feature = "std")]
 pub use device_enrollment::DeviceEnrollmentService;

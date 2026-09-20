@@ -8,15 +8,15 @@ use std::{
 use crate::{ScopedFileSystem, ScopedTransportFactory, StorageNamespace};
 use iroh::EndpointAddr;
 use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
-use iroh_chain_file_system::{EndpointIdCodec, ScopedIrohTransport, TunnelAuthorizationProvider};
+use iroh_chain_file_system::{AccessTokenProvider, EndpointIdCodec, ScopedIrohTransport};
 
 pub type IrohTransport<A, P> = ScopedIrohTransport<DynamicEndpointIdStore, A, P>;
 type IrohFactory<A, P, L, S> = IrohTransportFactory<A, P, L, S>;
 type DeferredIrohFactory<A, P, L, S> = Arc<Mutex<Option<Arc<IrohFactory<A, P, L, S>>>>>;
 type IrohTransports<A, P> = Arc<Mutex<BTreeMap<String, IrohTransport<A, P>>>>;
 
-pub trait ScopedTunnelAuthorizationProvider<S>: Send + Sync + 'static {
-    type Authorization: TunnelAuthorizationProvider;
+pub trait ScopedAccessTokenProvider<S>: Send + Sync + 'static {
+    type Authorization: AccessTokenProvider;
 
     fn authorization(&self, scope: &S) -> Result<Self::Authorization, String>;
 }
@@ -31,7 +31,7 @@ pub trait TrustedEndpointAddrLookup<S>: Send + Sync + 'static {
 pub struct DeferredIrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
     inner: DeferredIrohFactory<A, P, L, S>,
@@ -40,7 +40,7 @@ where
 impl<A, P, L, S> Clone for DeferredIrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
     fn clone(&self) -> Self {
@@ -53,7 +53,7 @@ where
 impl<A, P, L, S> Default for DeferredIrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
     fn default() -> Self {
@@ -66,7 +66,7 @@ where
 impl<A, P, L, S> DeferredIrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
     pub fn set(&self, factory: IrohTransportFactory<A, P, L, S>) {
@@ -89,7 +89,7 @@ impl<A, P, L, S> ScopedTransportFactory<EndpointIdCodec, IrohTransport<A, P::Aut
     for DeferredIrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
     S: StorageNamespace + Send + 'static,
 {
@@ -110,7 +110,7 @@ where
 pub struct IrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
     manager: Server<DynamicEndpointIdStore, A>,
@@ -125,7 +125,7 @@ where
 impl<A, P, L, S> IrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
 {
     pub fn new(
@@ -150,7 +150,7 @@ impl<A, P, L, S> ScopedTransportFactory<EndpointIdCodec, IrohTransport<A, P::Aut
     for IrohTransportFactory<A, P, L, S>
 where
     A: TunnelAuthorizer,
-    P: ScopedTunnelAuthorizationProvider<S>,
+    P: ScopedAccessTokenProvider<S>,
     L: TrustedEndpointAddrLookup<S>,
     S: StorageNamespace + Send + 'static,
 {

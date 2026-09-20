@@ -2,6 +2,4 @@
 
 mod scoped_transport;
 
-pub use scoped_transport::{
-    ScopedIrohTransport, StaticTunnelAuthorization, TunnelAuthorizationProvider,
-};
+pub use scoped_transport::{AccessTokenProvider, ScopedIrohTransport, StaticAccessToken};

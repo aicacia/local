@@ -18,8 +18,8 @@ const MAX_FRAME_SIZE: usize = 1024 * 1024;
 
 type Message = IncomingMessage<EndpointId>;
 
-pub trait TunnelAuthorizationProvider: Send + Sync + 'static {
-    fn authorization(
+pub trait AccessTokenProvider: Send + Sync + 'static {
+    fn access_token(
         &self,
         vault_id: VaultId,
         local_id: EndpointId,
@@ -28,16 +28,16 @@ pub trait TunnelAuthorizationProvider: Send + Sync + 'static {
 }
 
 #[derive(Clone)]
-pub struct StaticTunnelAuthorization(Vec<u8>);
+pub struct StaticAccessToken(Vec<u8>);
 
-impl StaticTunnelAuthorization {
+impl StaticAccessToken {
     pub fn new(authorization: Vec<u8>) -> Self {
         Self(authorization)
     }
 }
 
-impl TunnelAuthorizationProvider for StaticTunnelAuthorization {
-    fn authorization(
+impl AccessTokenProvider for StaticAccessToken {
+    fn access_token(
         &self,
         _: VaultId,
         _: EndpointId,
@@ -51,7 +51,7 @@ pub struct ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
-    P: TunnelAuthorizationProvider,
+    P: AccessTokenProvider,
 {
     inner: Arc<ScopedIrohTransportInner<A, V, P>>,
 }
@@ -60,7 +60,7 @@ struct ScopedIrohTransportInner<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
-    P: TunnelAuthorizationProvider,
+    P: AccessTokenProvider,
 {
     manager: Server<A, V>,
     vault_id: VaultId,
@@ -74,7 +74,7 @@ impl<A, V, P> ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
-    P: TunnelAuthorizationProvider,
+    P: AccessTokenProvider,
 {
     pub fn new(manager: Server<A, V>, vault_id: VaultId, authorization: P) -> Self {
         let (incoming, _) = broadcast::channel(INCOMING_CAPACITY);
@@ -108,7 +108,7 @@ where
         let authorization = self
             .inner
             .authorization
-            .authorization(
+            .access_token(
                 self.inner.vault_id,
                 self.inner.manager.endpoint().id(),
                 endpoint.id,
@@ -155,7 +155,7 @@ impl<A, V, P> Clone for ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
-    P: TunnelAuthorizationProvider,
+    P: AccessTokenProvider,
 {
     fn clone(&self) -> Self {
         Self {
@@ -168,7 +168,7 @@ impl<A, V, P> Transport<EndpointId> for ScopedIrohTransport<A, V, P>
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
-    P: TunnelAuthorizationProvider,
+    P: AccessTokenProvider,
 {
     type Error = Error;
     fn peers(&self) -> Vec<EndpointId> {
@@ -228,7 +228,7 @@ async fn add_tunnel<A, V, P>(inner: &Arc<ScopedIrohTransportInner<A, V, P>>, tun
 where
     A: AllowedEndpointId,
     V: TunnelAuthorizer,
-    P: TunnelAuthorizationProvider,
+    P: AccessTokenProvider,
 {
     let peer_id = tunnel.remote_id();
     if inner

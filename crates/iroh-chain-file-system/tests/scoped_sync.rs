@@ -9,7 +9,7 @@ use std::{
 use file_system::{FileSystem, Residency};
 use iroh::{Endpoint, RelayMode, endpoint::presets};
 use iroh_chain::{InMemoryEndpointIdStore, Server, TUNNEL_ALPN, TunnelAuthorizer, VaultId};
-use iroh_chain_file_system::{ScopedIrohTransport, StaticTunnelAuthorization};
+use iroh_chain_file_system::{AccessTokenProvider, ScopedIrohTransport, StaticAccessToken};
 use tokio::{spawn, time::timeout};
 
 #[derive(Clone)]
@@ -103,10 +103,9 @@ async fn fetches_content_over_a_scoped_tunnel() -> Result<(), Error> {
 struct Peers {
     left: Server<InMemoryEndpointIdStore, TestAuthorizer>,
     right: Server<InMemoryEndpointIdStore, TestAuthorizer>,
-    left_transport:
-        ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticTunnelAuthorization>,
+    left_transport: ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticAccessToken>,
     right_transport:
-        ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticTunnelAuthorization>,
+        ScopedIrohTransport<InMemoryEndpointIdStore, TestAuthorizer, StaticAccessToken>,
     left_listener: tokio::task::JoinHandle<()>,
     right_listener: tokio::task::JoinHandle<()>,
 }
@@ -135,12 +134,12 @@ async fn peers() -> Result<Peers, Error> {
     let left_transport = ScopedIrohTransport::new(
         left.clone(),
         vault_id,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+        StaticAccessToken::new(b"authorized".to_vec()),
     );
     let right_transport = ScopedIrohTransport::new(
         right.clone(),
         vault_id,
-        StaticTunnelAuthorization::new(b"authorized".to_vec()),
+        StaticAccessToken::new(b"authorized".to_vec()),
     );
 
     right_transport.connect(left.endpoint().addr()).await?;

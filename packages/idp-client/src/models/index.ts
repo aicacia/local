@@ -47,8 +47,7 @@ export * from "./TokenEndpointAuthMethod.js";
 export * from "./TokenResponse.js";
 export * from "./TokenType.js";
 export * from "./TrustedDevice.js";
-export * from "./TunnelAuthorization.js";
-export * from "./TunnelAuthorizationRequest.js";
+
 export * from "./UpdateDeviceRequest.js";
 export * from "./UserInfo.js";
 export * from "./VersionResponse.js";

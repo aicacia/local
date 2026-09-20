@@ -145,13 +145,13 @@ A Sync Document is the persisted Automerge metadata document for one filesystem 
 
 A Transport Tunnel is an isolated Iroh stream for one storage namespace and device pair. Iroh is a filesystem transport only; applications do not manage endpoint identities, tickets, peers, or synchronization directly.
 
-## Tunnel Authorization
+## Tunnel Access Token
 
-A Tunnel Authorization is a short-lived, single-use signed grant for one tunnel. It binds the user subject, application ID, vault hash, initiating and accepting device public keys, issuer, and expiration. The control plane issues it only after confirming both devices are trusted; the receiver verifies and consumes it before accepting the tunnel.
+A tunnel uses the OAuth bearer access token issued for the storage scope. The receiver validates the standard access-token claims and signature, then checks that both endpoint identities are trusted devices before accepting the tunnel. Access tokens are not single-use OAuth grants.
 
 ## Vault ID
 
-A Vault ID identifies the filesystem being synchronized. Its hash is included in a Tunnel Authorization so a valid grant for one namespace cannot authorize another namespace's tunnel.
+A Vault ID identifies the filesystem being synchronized. Its hash scopes the Iroh transport session; authorization is provided by the OAuth storage access token and trusted-device policy.
 
 ## Repository Backend
 

@@ -37,7 +37,7 @@ use crate::{
     hosted_control_plane::HostedControlPlane,
     local_api,
     scoped_transport::AppFileSystemRuntime,
-    tunnel_authorizer::{DeviceTunnelManager, LidpTunnelAuthorizer},
+    tunnel_authorizer::{AppTunnelAuthorizer, DeviceTunnelManager},
 };
 
 #[derive(Clone, Default)]
@@ -298,7 +298,7 @@ pub async fn init_tunnel_manager(
         .try_state::<Arc<AppConfig>>()
         .ok_or_else(|| tauri::Error::Io(io::Error::other("app config is missing")))?;
     let allowlist = iroh_chain::DynamicEndpointIdStore::default();
-    let authorizer = LidpTunnelAuthorizer::new(Arc::clone(&state), control_plane.clone());
+    let authorizer = AppTunnelAuthorizer::new(control_plane.clone());
     let manager = Arc::new(DeviceTunnelManager::new(
         identity.endpoint(),
         allowlist.clone(),

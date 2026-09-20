@@ -24,7 +24,7 @@ use idp_model::{
         DeviceAuthorizationRequest, EntityType, ErrorCode, ErrorResponse, ErrorResponseResult,
         GrantType, IdTokenClaims, IsAllowedForUserRequest, IsAllowedForUserResponse, JwkPrivate,
         JwkPublic, Jwks, OAuth2ClientAuth, RevocationRequest, SubjectTokenType, TokenRequest,
-        TunnelAuthorization, TunnelAuthorizationClaims, TunnelAuthorizationRequest, UserInfo,
+        UserInfo,
     },
     model::User,
 };
@@ -82,8 +82,6 @@ pub struct UpdateUserInfoRequest {
     pub phone_number: Option<String>,
     pub phone_number_verified: Option<bool>,
 }
-
-const TUNNEL_AUTHORIZATION_TTL: Duration = Duration::seconds(60);
 
 impl<A, C, AC, U, G, K> OAuth2Service<A, C, AC, U, G, K>
 where
@@ -900,35 +898,6 @@ where
 
     pub fn metadata(&self) -> AuthorizationServerMetadata {
         self.oauth_config.to_metadata()
-    }
-
-    pub async fn issue_tunnel_authorization(
-        &self,
-        principal: &dyn Principal,
-        application_id: Id,
-        request: TunnelAuthorizationRequest,
-    ) -> ErrorResponseResult<TunnelAuthorization> {
-        if principal.get_entity_type() != EntityType::User {
-            return Err(ErrorResponse::new(ErrorCode::AccessDenied));
-        }
-        let now = Utc::now();
-        let claims = TunnelAuthorizationClaims {
-            iss: self.oauth_config.issuer.clone(),
-            sub: principal.get_entity_id().to_string(),
-            application_id,
-            vault_id_hash: request.vault_id_hash,
-            local_public_key: request.local_public_key,
-            remote_public_key: request.remote_public_key,
-            exp: (now + TUNNEL_AUTHORIZATION_TTL).timestamp(),
-            iat: now.timestamp(),
-            nbf: now.timestamp(),
-        };
-        let signing_jwk = self.load_signing_jwk(principal.get_key()).await?;
-        let token = encode_jwt(&signing_jwk, &claims)?;
-        Ok(TunnelAuthorization {
-            token,
-            expires_at: claims.exp,
-        })
     }
 
     async fn load_signing_jwk(&self, key: &Key) -> ErrorResponseResult<JwkPrivate> {

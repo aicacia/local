@@ -22,7 +22,8 @@ use idp_service::{
 use iroh::EndpointId;
 use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
 use management_service::{
-    HostedControlPlane, replica::DbDeviceRepo, tunnel_authorization::HostedTunnelAuthorizer,
+    HostedControlPlane, access_token_authorization::HostedAccessTokenAuthorizer,
+    replica::DbDeviceRepo,
 };
 use storage_service::ScopedFileSystemRuntime;
 use tokio::{select, spawn, time::sleep};
@@ -35,7 +36,7 @@ use crate::{
 };
 
 enum CliTunnelAuthorizer {
-    Hosted(HostedTunnelAuthorizer),
+    Hosted(HostedAccessTokenAuthorizer),
     Deny,
 }
 
@@ -132,7 +133,7 @@ pub async fn run() -> io::Result<()> {
     let router_state = router_state.with_storage_file_systems(Arc::clone(&file_systems));
     let authorizer = match control_plane {
         Some(control_plane) => {
-            CliTunnelAuthorizer::Hosted(HostedTunnelAuthorizer::new(control_plane))
+            CliTunnelAuthorizer::Hosted(HostedAccessTokenAuthorizer::new(control_plane))
         }
         None => CliTunnelAuthorizer::Deny,
     };

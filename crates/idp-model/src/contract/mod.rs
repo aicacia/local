@@ -59,7 +59,7 @@ mod token_exchange;
 mod token_exchange_grant_request;
 mod token_request;
 mod trusted_device;
-mod tunnel_authorization;
+
 mod update_device_request;
 mod user_info;
 
@@ -130,8 +130,6 @@ pub use token_exchange::TokenExchange;
 pub use token_exchange_grant_request::TokenExchangeGrantRequest;
 pub use token_request::TokenRequest;
 pub use trusted_device::TrustedDevice;
-pub use tunnel_authorization::{
-    TunnelAuthorization, TunnelAuthorizationClaims, TunnelAuthorizationRequest,
-};
+
 pub use update_device_request::UpdateDeviceRequest;
 pub use user_info::UserInfo;

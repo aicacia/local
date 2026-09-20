@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exchanges_pairing_offer_without_tunnel_authorization() {
+    async fn exchanges_pairing_offer_without_access_token() {
         let sender = Server::new(endpoint().await, InMemoryEndpointIdStore::new(), DenyTunnel);
         let receiver = Server::new(endpoint().await, InMemoryEndpointIdStore::new(), DenyTunnel);
         let mut offers = receiver.subscribe_pairing_offers();

@@ -1,13 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use idp_service::oauth2::{decode_jwt, verify_jwt, verify_tunnel_authorization};
+use idp_service::oauth2::{decode_jwt, verify_jwt};
 
 use crate::StorageScope;
-use idp_model::contract::{
-    DeviceSelfRevocationRequest, Jwks, StorageSession, TrustedDevice, TunnelAuthorization,
-    TunnelAuthorizationClaims, TunnelAuthorizationRequest,
-};
-use iroh::EndpointId;
+use idp_model::contract::{DeviceSelfRevocationRequest, Jwks, StorageSession, TrustedDevice};
 use model::contract::{StandardClaims, TokenType, TokenUse};
 use reqwest::{Client, Url, redirect::Policy};
 
@@ -57,52 +53,7 @@ impl HostedControlPlane {
         self.post_empty("devices/revoke-self", &request).await
     }
 
-    pub async fn tunnel_authorization(
-        &self,
-        token: &str,
-        request: TunnelAuthorizationRequest,
-    ) -> Result<TunnelAuthorization, String> {
-        self.post("devices/tunnels", token, &request).await
-    }
-
-    pub async fn verifies_tunnel_authorization(
-        &self,
-        token: &str,
-        vault_id_hash: &str,
-        initiating_id: EndpointId,
-        accepting_id: EndpointId,
-    ) -> Result<TunnelAuthorizationClaims, String> {
-        let (header, claims) = decode_jwt::<TunnelAuthorizationClaims>(token)
-            .map_err(|_| "invalid grant".to_owned())?;
-        if claims.iss != self.base_url.as_str().trim_end_matches('/') {
-            return Err("grant issuer is not the configured control plane".to_owned());
-        }
-        let jwks: Jwks = self.get(".well-known/jwks.json", "").await?;
-        let jwk = jwks
-            .keys
-            .iter()
-            .find(|jwk| jwk.kid == header.kid)
-            .ok_or_else(|| "grant signing key is not trusted".to_owned())?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| "system clock is before Unix epoch".to_owned())?
-            .as_secs() as i64;
-        verify_tunnel_authorization(
-            jwk,
-            token,
-            self.base_url.as_str().trim_end_matches('/'),
-            &claims.sub,
-            claims.application_id,
-            vault_id_hash,
-            &initiating_id.to_string(),
-            &accepting_id.to_string(),
-            now,
-        )
-        .map_err(|_| "invalid grant".to_owned())?;
-        Ok(claims)
-    }
-
-    async fn verify_access_token(&self, token: &str) -> Result<StandardClaims, String> {
+    pub async fn verify_access_token(&self, token: &str) -> Result<StandardClaims, String> {
         let (header, claims) =
             decode_jwt::<StandardClaims>(token).map_err(|_| "invalid token".to_owned())?;
         if claims.iss != self.base_url.as_str().trim_end_matches('/') {
@@ -123,6 +74,7 @@ impl HostedControlPlane {
         if claims.r#type != TokenType::Bearer
             || claims.r#use != TokenUse::Access
             || claims.exp <= now
+            || claims.iat > now
             || claims.nbf > now
             || claims.sub.is_empty()
             || claims.aud.is_empty()
