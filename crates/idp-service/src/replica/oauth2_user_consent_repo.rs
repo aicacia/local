@@ -27,7 +27,7 @@ const COLUMNS: [&str; 7] = [
 pub struct DbOAuth2UserConsentRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     engine: Arc<Engine<K, R>>,
 }
@@ -35,7 +35,7 @@ where
 impl<K, R> DbOAuth2UserConsentRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     #[must_use]
     pub const fn new(engine: Arc<Engine<K, R>>) -> Self {
@@ -87,7 +87,7 @@ where
 impl<K, R> OAuth2UserConsentRepo for DbOAuth2UserConsentRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     async fn upsert_user_consent(
         &self,

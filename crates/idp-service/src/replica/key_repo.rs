@@ -32,7 +32,7 @@ const COLUMNS: [&str; 12] = [
 pub struct DbKeyRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     engine: Arc<Engine<K, R>>,
 }
@@ -40,7 +40,7 @@ where
 impl<K, R> DbKeyRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     #[must_use]
     pub const fn new(engine: Arc<Engine<K, R>>) -> Self {
@@ -78,7 +78,7 @@ where
 impl<K, R> KeyRepo for DbKeyRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     async fn list_active(&self) -> RepoResult<Vec<Key>> {
         let now = Utc::now();

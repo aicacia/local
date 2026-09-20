@@ -100,17 +100,19 @@ where
     K: Kernel,
     R: RowCodec<K::Transaction>,
 {
-    clear(
-        engine,
+    let mut rows = Vec::with_capacity(credentials.len() + keys.len());
+    rows.extend(
         credentials
             .iter()
-            .map(|&id| SecurityRow::new(SecurityTable::Credential, id))
-            .chain(
-                keys.iter()
-                    .map(|&id| SecurityRow::new(SecurityTable::Key, id)),
-            ),
-    )
-    .await
+            .copied()
+            .map(|id| SecurityRow::new(SecurityTable::Credential, id)),
+    );
+    rows.extend(
+        keys.iter()
+            .copied()
+            .map(|id| SecurityRow::new(SecurityTable::Key, id)),
+    );
+    clear(engine, &rows).await
 }
 
 pub async fn allows_authorization<K, R>(
@@ -121,7 +123,7 @@ where
     K: Kernel,
     R: RowCodec<K::Transaction>,
 {
-    clear(engine, rows.iter().copied()).await
+    clear(engine, rows).await
 }
 
 pub async fn allows_token_issuance<K, R>(
@@ -132,7 +134,7 @@ where
     K: Kernel,
     R: RowCodec<K::Transaction>,
 {
-    clear(engine, rows.iter().copied()).await
+    clear(engine, rows).await
 }
 
 pub async fn allows_tunnel_access<K, R>(
@@ -143,13 +145,12 @@ where
     K: Kernel,
     R: RowCodec<K::Transaction>,
 {
-    clear(
-        engine,
-        devices
-            .iter()
-            .map(|&id| SecurityRow::new(SecurityTable::Device, id)),
-    )
-    .await
+    let rows = devices
+        .iter()
+        .copied()
+        .map(|id| SecurityRow::new(SecurityTable::Device, id))
+        .collect::<Vec<_>>();
+    clear(engine, &rows).await
 }
 
 pub async fn resolve<K, R>(
@@ -191,15 +192,12 @@ where
     Ok(Some(audit))
 }
 
-async fn clear<K, R>(
-    engine: &Engine<K, R>,
-    rows: impl IntoIterator<Item = SecurityRow>,
-) -> EngineResult<bool>
+async fn clear<K, R>(engine: &Engine<K, R>, rows: &[SecurityRow]) -> EngineResult<bool>
 where
     K: Kernel,
     R: RowCodec<K::Transaction>,
 {
-    for row in rows {
+    for &row in rows {
         if !engine
             .row_conflicts(row.table.name(), &row.key())
             .await?

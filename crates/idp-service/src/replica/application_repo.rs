@@ -26,7 +26,7 @@ const COLUMNS: [&str; 6] = [
 pub struct DbApplicationRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     engine: Arc<Engine<K, R>>,
 }
@@ -34,7 +34,7 @@ where
 impl<K, R> DbApplicationRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     #[must_use]
     pub const fn new(engine: Arc<Engine<K, R>>) -> Self {
@@ -82,7 +82,7 @@ where
 impl<K, R> ApplicationRepo for DbApplicationRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     async fn find_by_id(&self, application_id: Id) -> RepoResult<Option<Application>> {
         self.find("id", Value::Uuid(application_id)).await

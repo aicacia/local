@@ -39,7 +39,7 @@ const COLUMNS: [&str; 14] = [
 pub struct DbOAuth2AuthorizationCodeRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     engine: Arc<Engine<K, R>>,
 }
@@ -47,7 +47,7 @@ where
 impl<K, R> DbOAuth2AuthorizationCodeRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     #[must_use]
     pub const fn new(engine: Arc<Engine<K, R>>) -> Self {
@@ -109,7 +109,7 @@ where
 impl<K, R> OAuth2AuthorizationCodeRepo for DbOAuth2AuthorizationCodeRepo<K, R>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
+    R: RowCodec<K::Transaction> + Send + Sync,
 {
     async fn create_authorization_code(
         &self,

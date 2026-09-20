@@ -50,8 +50,8 @@ const COLUMNS: [&str; 24] = [
 pub struct DbClientRepo<K, R, P = crate::repo::PrivateKeyKeyringRepo>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
-    P: PrivateKeyRepo,
+    R: RowCodec<K::Transaction> + Send + Sync,
+    P: PrivateKeyRepo + Send + Sync,
 {
     engine: Arc<Engine<K, R>>,
     key_service: Arc<KeyService<DbKeyRepo<K, R>, P>>,
@@ -60,8 +60,8 @@ where
 impl<K, R, P> DbClientRepo<K, R, P>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
-    P: PrivateKeyRepo,
+    R: RowCodec<K::Transaction> + Send + Sync,
+    P: PrivateKeyRepo + Send + Sync,
 {
     #[must_use]
     pub const fn new(
@@ -169,8 +169,8 @@ where
 impl<K, R, P> ClientRepo for DbClientRepo<K, R, P>
 where
     K: Kernel,
-    R: RowCodec<K::Transaction>,
-    P: PrivateKeyRepo,
+    R: RowCodec<K::Transaction> + Send + Sync,
+    P: PrivateKeyRepo + Send + Sync,
 {
     async fn find_client_by_client_id(&self, client_id: &str) -> RepoResult<Option<Client>> {
         let client = self
