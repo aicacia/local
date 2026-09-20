@@ -3,6 +3,7 @@ use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
 use idp_model::contract::{ErrorCode, ErrorResponse};
 use idp_service::oauth2::{Principal, decode_jwt};
 use model::contract::StandardClaims;
+use uuid::Uuid;
 
 use crate::RouterState;
 
@@ -33,7 +34,9 @@ where
             let router_state = RouterState::from_ref(state);
             let principal = router_state
                 .oauth2_service
-                .find_principal(jwt_header.kid)
+                .find_principal(Uuid::parse_str(&jwt_header.kid).map_err(|_| {
+                    ErrorResponse::new(ErrorCode::NotAuthorized).with_description("invalid key id")
+                })?)
                 .await?
                 .ok_or_else(|| {
                     ErrorResponse::new(ErrorCode::NotAuthorized)

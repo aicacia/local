@@ -20,7 +20,7 @@ pub enum Residency {
 #[serde(default)]
 pub struct ResidencyPolicy {
     device_default: Residency,
-    excluded_applications: BTreeSet<i64>,
+    excluded_applications: BTreeSet<idp_model::model::Id>,
     namespaces: BTreeMap<String, NamespacePolicy>,
 }
 
@@ -51,7 +51,7 @@ impl ResidencyPolicy {
     }
 
     #[must_use]
-    pub fn is_application_excluded(&self, application_id: i64) -> bool {
+    pub fn is_application_excluded(&self, application_id: idp_model::model::Id) -> bool {
         self.excluded_applications.contains(&application_id)
     }
 
@@ -66,7 +66,7 @@ impl ResidencyPolicy {
 
     pub fn set_application_excluded(
         &mut self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         excluded: bool,
     ) -> Result<(), String> {
         validate_application_id(application_id)?;
@@ -81,7 +81,7 @@ impl ResidencyPolicy {
     pub fn set_residency(
         &mut self,
         user_sub: &str,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         path: &str,
         residency: Residency,
     ) -> Result<(), String> {
@@ -98,7 +98,7 @@ impl ResidencyPolicy {
     pub fn residency(
         &self,
         user_sub: &str,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         path: &str,
     ) -> Result<Residency, String> {
         let namespace = namespace_id(user_sub, application_id)?;
@@ -112,13 +112,16 @@ impl ResidencyPolicy {
     }
 }
 
-fn namespace_id(user_sub: &str, application_id: i64) -> Result<(&str, i64), String> {
+fn namespace_id(
+    user_sub: &str,
+    application_id: idp_model::model::Id,
+) -> Result<(&str, idp_model::model::Id), String> {
     validate_user_sub(user_sub)?;
     validate_application_id(application_id)?;
     Ok((user_sub, application_id))
 }
 
-fn namespace_key(namespace: &(&str, i64)) -> String {
+fn namespace_key(namespace: &(&str, idp_model::model::Id)) -> String {
     format!("{}:{}", namespace.0, namespace.1)
 }
 
@@ -147,8 +150,8 @@ pub(crate) fn validate_user_sub(user_sub: &str) -> Result<(), String> {
     }
 }
 
-fn validate_application_id(application_id: i64) -> Result<(), String> {
-    if application_id > 0 {
+fn validate_application_id(application_id: idp_model::model::Id) -> Result<(), String> {
+    if !application_id.is_nil() {
         Ok(())
     } else {
         Err("invalid application id".to_owned())
@@ -183,7 +186,11 @@ mod tests {
         let policy = ResidencyPolicy::default();
         assert_eq!(policy.device_default(), Residency::Passthrough);
         assert_eq!(
-            policy.residency("user", 1, "notes/today.txt"),
+            policy.residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes/today.txt"
+            ),
             Ok(Residency::Passthrough)
         );
     }
@@ -193,7 +200,11 @@ mod tests {
         let mut policy = ResidencyPolicy::default();
         policy.set_device_default(Residency::Full);
         assert_eq!(
-            policy.residency("user", 1, "notes/today.txt"),
+            policy.residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes/today.txt"
+            ),
             Ok(Residency::Full)
         );
     }
@@ -202,20 +213,43 @@ mod tests {
     fn resolves_the_most_specific_rule() {
         let mut policy = ResidencyPolicy::default();
         policy
-            .set_residency("user", 1, "", Residency::Full)
+            .set_residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "",
+                Residency::Full,
+            )
             .unwrap();
         policy
-            .set_residency("user", 1, "notes", Residency::Passthrough)
+            .set_residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes",
+                Residency::Passthrough,
+            )
             .unwrap();
         policy
-            .set_residency("user", 1, "notes/today.txt", Residency::Full)
+            .set_residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes/today.txt",
+                Residency::Full,
+            )
             .unwrap();
         assert_eq!(
-            policy.residency("user", 1, "notes/other.txt"),
+            policy.residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes/other.txt"
+            ),
             Ok(Residency::Passthrough)
         );
         assert_eq!(
-            policy.residency("user", 1, "notes/today.txt"),
+            policy.residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes/today.txt"
+            ),
             Ok(Residency::Full)
         );
     }
@@ -223,10 +257,12 @@ mod tests {
     #[test]
     fn exclusions_apply_to_all_users() {
         let mut policy = ResidencyPolicy::default();
-        policy.set_application_excluded(1, true).unwrap();
-        assert!(policy.is_application_excluded(1));
+        policy
+            .set_application_excluded(idp_model::model::Id::from_u128(1), true)
+            .unwrap();
+        assert!(policy.is_application_excluded(idp_model::model::Id::from_u128(1)));
         assert_eq!(
-            policy.residency("another-user", 1, ""),
+            policy.residency("another-user", idp_model::model::Id::from_u128(1), ""),
             Ok(Residency::Passthrough)
         );
     }
@@ -239,9 +275,16 @@ mod tests {
         let mut policy = ResidencyPolicy::default();
         policy.set_device_default(Residency::Full);
         policy
-            .set_residency("user", 1, "notes", Residency::Full)
+            .set_residency(
+                "user",
+                idp_model::model::Id::from_u128(1),
+                "notes",
+                Residency::Full,
+            )
             .unwrap();
-        policy.set_application_excluded(2, true).unwrap();
+        policy
+            .set_application_excluded(idp_model::model::Id::from_u128(2), true)
+            .unwrap();
         policy.save(&root).unwrap();
         assert_eq!(ResidencyPolicy::load(&root).unwrap(), policy);
         let _ = fs::remove_dir_all(root);
@@ -257,12 +300,17 @@ mod tests {
         );
         assert!(
             policy
-                .set_residency("user", 0, "", Residency::Full)
+                .set_residency("user", idp_model::model::Id::nil(), "", Residency::Full)
                 .is_err()
         );
         assert!(
             policy
-                .set_residency("user", 1, "../notes", Residency::Full)
+                .set_residency(
+                    "user",
+                    idp_model::model::Id::from_u128(1),
+                    "../notes",
+                    Residency::Full
+                )
                 .is_err()
         );
     }

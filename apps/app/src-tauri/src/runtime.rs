@@ -79,18 +79,12 @@ pub fn run() {
                     .expect("device identity must initialize")
                     .inner()
                     .clone();
-                let setup_state = app_handle
-                    .try_state::<idp_server::LocalSetupState>()
-                    .expect("setup state must initialize")
-                    .inner()
-                    .clone();
+
                 let (router, router_state) = app::init_router(
                     runtime_config,
                     database,
                     file_systems,
                     device_identity,
-                    setup_state,
-                    app_data_dir.clone(),
                     control_plane.clone(),
                 )
                 .map_err(tauri::Error::Io)?;

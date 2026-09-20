@@ -3194,6 +3194,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
+ "uuid",
 ]
 
 [[package]]
@@ -4015,6 +4016,7 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
+ "uuid",
 ]
 
 [[package]]
@@ -7992,6 +7994,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+ "uuid",
 ]
 
 [[package]]

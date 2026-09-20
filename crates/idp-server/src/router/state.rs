@@ -24,7 +24,6 @@ type NativeOAuth2Service = OAuth2Service<
 >;
 
 pub type NativeDeviceRepo = DbDeviceRepo<RedbKernel, AutomergeRowCodec>;
-pub type NativeOAuth2ServiceRef = NativeOAuth2Service;
 
 #[derive(Clone)]
 pub struct DeviceIdentity {

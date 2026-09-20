@@ -16,9 +16,12 @@ const KEYS_READ_PERMISSION: &str = "keys.read";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct ManagementKey {
-    pub id: u32,
-    pub parent_id: Option<u32>,
+    #[schema(value_type = String, format = "uuid")]
+    pub id: idp_model::model::Id,
+    #[schema(value_type = Option<String>, format = "uuid")]
+    pub parent_id: Option<idp_model::model::Id>,
     pub entity_type: EntityType,
+    #[schema(value_type = String, format = "uuid")]
     pub entity_id: idp_model::model::Id,
     pub derivation_path: String,
     pub name: String,
@@ -78,7 +81,7 @@ pub(crate) async fn list_client_keys(
     get,
     path = "/keys/{key_id}/jwk",
     params(
-        ("key_id" = u32, Path, description = "Key ID")
+        ("key_id" = String, Path, description = "Key ID")
     ),
     responses((status = 200, description = "Get public JWK for key", body = JwkPublic)),
     security(
@@ -87,7 +90,7 @@ pub(crate) async fn list_client_keys(
 )]
 pub(crate) async fn get_key_jwk(
     State(state): State<RouterState>,
-    Path(key_id): Path<u32>,
+    Path(key_id): Path<idp_model::model::Id>,
     authorization: ManagementAuthorization,
 ) -> Result<Json<JwkPublic>, ErrorResponse> {
     require_application_permission(

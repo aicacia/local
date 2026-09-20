@@ -10,7 +10,7 @@ use axum::Router;
 use db::{NativeEngine, open_native_engine};
 use idp_model::contract::{DeviceSelfRevocationRequest, device_self_revocation_payload};
 use idp_server::{
-    AppConfig, DeviceIdentity, LocalSetupState, RouterState, TimedPairingAcceptanceController,
+    AppConfig, DeviceIdentity, RouterState, TimedPairingAcceptanceController,
     delete_device_identity, open_device_identity, storage_router,
 };
 use idp_service::{
@@ -22,7 +22,7 @@ use idp_service::{
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
 use management_service::{
-    ManagementService,
+    DeviceRepo, ManagementService,
     replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo},
 };
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
@@ -51,8 +51,6 @@ pub fn init_router(
     database: Arc<NativeEngine>,
     file_systems: Arc<AppFileSystemRuntime>,
     device_identity: Arc<DeviceIdentity>,
-    setup_state: LocalSetupState,
-    setup_data_dir: impl AsRef<Path>,
     control_plane: Option<Arc<HostedControlPlane>>,
 ) -> io::Result<(Router, Arc<RouterState>)> {
     let key_service = Arc::new(KeyService::new(
@@ -79,7 +77,6 @@ pub fn init_router(
         Arc::new(DbDeviceRepo::new(database.clone())),
         device_identity,
     )
-    .with_local_setup(setup_data_dir.as_ref().to_path_buf(), setup_state)
     .with_storage_file_systems(Arc::clone(&file_systems));
     let router_state = Arc::new(match control_plane {
         Some(control_plane) => router_state.with_hosted_control_plane(control_plane),
@@ -94,8 +91,6 @@ pub fn init_router(
     let management_router = management_server::openapi_router(
         management_server::RouterState::new(
             &app_config.api_public_uri,
-            database,
-            Arc::clone(&router_state.global_identity_read_gate),
             management_service,
             oauth2_service,
         ),
@@ -146,8 +141,7 @@ pub fn init_app_config(
             .map_err(|e| tauri::Error::Io(io::Error::other(e)))?
     } else {
         let mut default_config = AppConfig::default();
-        default_config.bootstrap.web = false;
-        default_config.bootstrap.desktop = true;
+
         default_config.data_dir = data_dir.as_ref().to_string_lossy().into_owned();
         default_config.oauth2.issuer = "https://localhost".to_owned();
         default_config.ui_public_uri = "https://localhost".to_owned();
@@ -172,10 +166,8 @@ pub async fn get_localhost_server_base_url(app_handle: AppHandle<Wry>) -> String
 }
 
 #[tauri::command]
-pub fn get_setup_token(app_handle: AppHandle<Wry>) -> Option<String> {
-    app_handle
-        .try_state::<Arc<RouterState>>()
-        .and_then(|state| state.setup_token())
+pub fn get_setup_token(_app_handle: AppHandle<Wry>) -> Option<String> {
+    None
 }
 
 #[tauri::command]
@@ -184,16 +176,6 @@ pub async fn reset_device(app_handle: AppHandle<Wry>) -> Result<(), String> {
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?;
-    let setup_state = app_handle
-        .try_state::<LocalSetupState>()
-        .ok_or_else(|| "setup state is missing".to_owned())?
-        .inner()
-        .clone();
-    let app_config = app_handle
-        .try_state::<Arc<AppConfig>>()
-        .ok_or_else(|| "app configuration is missing".to_owned())?
-        .inner()
-        .clone();
 
     if let Some(router_state) = app_handle.try_state::<Arc<RouterState>>() {
         let public_key = router_state.device_identity.endpoint_id().to_string();
@@ -217,14 +199,13 @@ pub async fn reset_device(app_handle: AppHandle<Wry>) -> Result<(), String> {
     close(&app_handle)
         .await
         .map_err(|error| error.to_string())?;
-    delete_device_identity(&setup_state).map_err(|error| error.to_string())?;
+    delete_device_identity().map_err(|error| error.to_string())?;
     remove_local_reset_data(&data_dir).map_err(|error| error.to_string())?;
     app_handle.exit(0);
     Ok(())
 }
 
 fn remove_local_reset_data(data_dir: &Path) -> io::Result<()> {
-    remove_path(&LocalSetupState::path(data_dir))?;
     remove_path(&data_dir.join("lidp.redb"))?;
     remove_path(&data_dir.join("vaults"))?;
     remove_path(&data_dir.join("storage-residency.json"))
@@ -279,9 +260,7 @@ pub async fn init_scoped_file_system_runtime(
 }
 
 pub async fn init_device_identity(app_handle: &AppHandle<Wry>) -> tauri::Result<()> {
-    let setup_state = LocalSetupState::load_or_create(app_handle.path().app_data_dir()?)?;
-    let identity = open_device_identity(&setup_state).await?;
-    app_handle.manage(setup_state);
+    let identity = open_device_identity().await?;
     app_handle.manage(Arc::new(identity));
     Ok(())
 }
@@ -354,8 +333,6 @@ pub fn app_config_for_localhost_base_url(
     config.oauth2.issuer = format!("{base_url}/lidp");
     config.ui_public_uri = base_url.to_owned();
     config.api_public_uri = base_url.to_owned();
-    config.bootstrap.idp_url = format!("{base_url}/lidp");
-    config.bootstrap.management_url = format!("{base_url}/idp-management");
     Arc::new(config)
 }
 

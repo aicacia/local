@@ -22,10 +22,7 @@ mod device_state;
 mod entity_type;
 mod error_code;
 mod error_response;
-mod global_identity_bootstrap_grant;
-mod global_identity_join;
-mod global_identity_manifest;
-mod global_identity_record;
+
 mod grant_type;
 mod id_token_claims;
 mod introspection_request;
@@ -90,12 +87,7 @@ pub use device_state::DeviceState;
 pub use entity_type::EntityType;
 pub use error_code::ErrorCode;
 pub use error_response::{ErrorResponse, ErrorResponseResult};
-pub use global_identity_bootstrap_grant::GlobalIdentityBootstrapGrant;
-pub use global_identity_join::{GlobalIdentityJoinOffer, GlobalIdentityJoinReply};
-pub use global_identity_manifest::{
-    GLOBAL_IDENTITY_MANIFEST_VERSION, GlobalIdentityManifest, GlobalIdentityRecord,
-};
-pub use global_identity_record::{GlobalIdentityRow, GlobalIdentityTable, GlobalIdentityValue};
+
 pub use grant_type::GrantType;
 pub use id_token_claims::IdTokenClaims;
 pub use introspection_request::IntrospectionRequest;

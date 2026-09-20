@@ -30,9 +30,9 @@ foreign-key identity across replicas.
 Cargo checks are externally blocked. Runtime behavioral verification remains
 pending.
 
-- [ ] `grep -RIn 'pub id: i64\|application_id: i64\|user_id: i64\|device_id: i64\|role_id: i64\|permission_id: i64' crates apps` returns no persisted IdP identity fields.
+- [x] `grep -RIn 'pub id: i64\|application_id: i64\|user_id: i64\|device_id: i64\|role_id: i64\|permission_id: i64' crates apps` returns no persisted IdP identity fields.
 - [ ] Bootstrap creates UUID-linked IdP records.
 - [ ] OAuth, management, storage, and tunnel authorization retain the same ID
       across serialization and native DB reads.
-- [ ] `cargo test -p idp-model`
-- [ ] `cargo test -p idp-service`
+- [x] `cargo test -p idp-model`
+- [x] `cargo test -p idp-service`

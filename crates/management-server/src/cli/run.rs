@@ -13,6 +13,7 @@ use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::open_native_engine;
 use env_logger::Env;
 use idp_service::{
+    PasswordConfig,
     oauth2::OAuth2Service,
     replica::{
         DbApplicationRepo, DbClientRepo, DbKeyRepo, DbOAuth2AuthorizationCodeRepo,
@@ -66,7 +67,7 @@ pub async fn run() -> io::Result<()> {
         DbApplicationRepo::new(Arc::clone(&engine)),
         DbClientRepo::new(Arc::clone(&engine), Arc::clone(&key_service)),
         DbOAuth2AuthorizationCodeRepo::new(Arc::clone(&engine)),
-        DbUserRepo::new(Arc::clone(&engine)),
+        DbUserRepo::new(Arc::clone(&engine), PasswordConfig::default()),
         DbOAuth2UserConsentRepo::new(Arc::clone(&engine)),
         key_service,
         app_config.oauth2.clone(),

@@ -23,7 +23,9 @@ pub(crate) struct ListUsersQuery {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct UserApplicationRoleResponse {
+    #[schema(value_type = String, format = "uuid")]
     pub role_id: idp_model::model::Id,
+    #[schema(value_type = String, format = "uuid")]
     pub application_id: idp_model::model::Id,
     pub role_name: String,
     pub role_description: Option<String>,
@@ -77,7 +79,7 @@ pub(crate) async fn list_users(
     get,
     path = "/users/{user_id}",
     params(
-        ("user_id" = idp_model::model::Id, Path, description = "User ID")
+        ("user_id" = String, Path, description = "User ID")
     ),
     responses((status = 200, description = "Get user", body = UserInfo)),
     security(
@@ -104,7 +106,7 @@ pub(crate) async fn get_user(
     get,
     path = "/users/{user_id}/roles",
     params(
-        ("user_id" = idp_model::model::Id, Path, description = "User ID")
+        ("user_id" = String, Path, description = "User ID")
     ),
     responses((status = 200, description = "List user roles across applications", body = [UserApplicationRoleResponse])),
     security(
