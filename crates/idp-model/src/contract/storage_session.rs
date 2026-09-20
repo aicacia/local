@@ -8,5 +8,6 @@ use crate::model::Id;
 pub struct StorageSession {
     pub token: String,
     pub expires_at: i64,
+    #[cfg_attr(feature = "utoipa", schema(value_type = String))]
     pub application_id: Id,
 }

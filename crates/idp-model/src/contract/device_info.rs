@@ -10,6 +10,7 @@ use crate::model::Id;
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceInfo {
+    #[cfg_attr(feature = "utoipa", schema(value_type = String))]
     pub id: Id,
     pub name: String,
     pub public_key: String,

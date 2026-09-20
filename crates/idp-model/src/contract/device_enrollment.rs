@@ -10,6 +10,7 @@ use crate::model::Id;
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceEnrollment {
+    #[cfg_attr(feature = "utoipa", schema(value_type = String))]
     pub id: Id,
     pub state: DeviceState,
     #[serde(skip_serializing_if = "Option::is_none")]

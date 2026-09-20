@@ -101,7 +101,7 @@ mod tests {
         }
 
         fn application_id(&self) -> idp_model::model::Id {
-            1
+            idp_model::model::Id::now_v7()
         }
     }
 
@@ -127,7 +127,7 @@ fn storage_namespace_id(scope: &impl StorageNamespace) -> Result<StorageNamespac
     {
         return Err("invalid user subject".to_owned());
     }
-    if scope.application_id() <= 0 {
+    if scope.application_id().is_nil() {
         return Err("invalid application id".to_owned());
     }
     Ok(StorageNamespaceId {

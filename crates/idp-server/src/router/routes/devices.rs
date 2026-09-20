@@ -2,9 +2,12 @@ use axum::{
     Json,
     extract::{Path, State},
 };
-use idp_model::contract::{
-    DeviceEnrollment, DeviceEnrollmentRequest, DeviceInfo, ErrorCode, ErrorResponse,
-    PairingAcceptance, TrustedDevice, UpdateDeviceRequest,
+use idp_model::{
+    contract::{
+        DeviceEnrollment, DeviceEnrollmentRequest, DeviceInfo, ErrorCode, ErrorResponse,
+        PairingAcceptance, TrustedDevice, UpdateDeviceRequest,
+    },
+    model::Id,
 };
 use management_service::{DeviceEnrollmentService, DeviceRepo};
 
@@ -104,14 +107,14 @@ pub(crate) async fn list_devices(
 #[utoipa::path(
     patch,
     path = "/devices/{id}",
-    params(("id" = i64, Path, description = "Device ID")),
+    params(("id" = String, Path, description = "Device ID")),
     request_body = UpdateDeviceRequest,
     responses((status = 200, description = "Updated device", body = DeviceInfo)),
     security(("authorization" = []))
 )]
 pub(crate) async fn update_device(
     State(state): State<RouterState>,
-    Path(device_id): Path<i64>,
+    Path(device_id): Path<Id>,
     StandardAuthorization { .. }: StandardAuthorization,
     Json(request): Json<UpdateDeviceRequest>,
 ) -> Result<Json<DeviceInfo>, ErrorResponse> {
@@ -124,13 +127,13 @@ pub(crate) async fn update_device(
 #[utoipa::path(
     delete,
     path = "/devices/{id}",
-    params(("id" = i64, Path, description = "Device ID")),
+    params(("id" = String, Path, description = "Device ID")),
     responses((status = 204, description = "Revoked device")),
     security(("authorization" = []))
 )]
 pub(crate) async fn revoke_device(
     State(state): State<RouterState>,
-    Path(device_id): Path<i64>,
+    Path(device_id): Path<Id>,
     StandardAuthorization { .. }: StandardAuthorization,
 ) -> Result<(), ErrorResponse> {
     DeviceEnrollmentService::new(state.devices)

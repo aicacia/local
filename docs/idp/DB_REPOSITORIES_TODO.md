@@ -2,7 +2,7 @@
 
 ## Goal
 
-Use concrete repositories backed by the native syncable `db` engine. The
+Use concrete repositories backed by the native syncable `converge` engine. The
 legacy LibSQL adapters and migrations are removed.
 
 ## Dependencies

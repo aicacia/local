@@ -19,4 +19,4 @@ replica = ["native", "converge/in-memory", "converge/macros"]
 
 [dependencies]
 # Database
-converge = { path = "../../../db", default-features = false, features = ["sql"], optional = true }
+converge = { path = "../../../converge", default-features = false, features = ["sql"], optional = true }

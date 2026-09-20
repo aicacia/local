@@ -155,4 +155,4 @@ A Vault ID identifies the filesystem being synchronized. Its hash is included in
 
 ## Repository Backend
 
-A Repository Backend persists a service trait through the native replicated `db` engine. CLI and desktop runtimes compose the native DB repositories directly.
+A Repository Backend persists a service trait through the native replicated `converge` engine. CLI and desktop runtimes compose the native DB repositories directly.

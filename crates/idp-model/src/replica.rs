@@ -1,9 +1,6 @@
 use include_dir::{Dir, include_dir};
 
-use db::{
-    Engine, EngineResult, Kernel, Row, RowCodec, SqlTranslator, Uuid, Value,
-    migrate::{MigrationFile, replica_up},
-};
+use db::{Engine, EngineResult, Kernel, Row, RowCodec, SqlTranslator, Uuid, Value};
 
 static MIGRATIONS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/replica_migrations");
 
@@ -12,7 +9,20 @@ where
     K: Kernel,
     R: RowCodec<K::Transaction>,
 {
-    replica_up(engine, &migration_files()).await
+    for file in MIGRATIONS.files() {
+        for statement in file
+            .contents_utf8()
+            .expect("replica migration must be UTF-8")
+            .split(';')
+            .map(str::trim)
+            .filter(|statement| !statement.is_empty())
+        {
+            engine
+                .translate_and_execute(statement, &SqlTranslator)
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -199,19 +209,6 @@ where
         }
     }
     Ok(true)
-}
-
-fn migration_files() -> Vec<MigrationFile> {
-    MIGRATIONS
-        .files()
-        .map(|file| MigrationFile {
-            name: file.path().to_string_lossy().into_owned(),
-            contents: file
-                .contents_utf8()
-                .expect("replica migration must be UTF-8")
-                .to_owned(),
-        })
-        .collect()
 }
 
 fn resolution_insert(audit: &ResolutionAudit) -> String {

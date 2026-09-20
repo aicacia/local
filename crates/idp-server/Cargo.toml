@@ -66,7 +66,7 @@ iroh-chain-file-system = { path = "../iroh-chain-file-system", default-features 
 iroh = { version = "1.1", default-features = false, features = ["tls-ring"] }
 
 # Database
-sync-db = { package = "converge", path = "../../../db", default-features = false, features = [
+converge = { package = "converge", path = "../../../converge", default-features = false, features = [
   "automerge",
   "redb",
 ] }

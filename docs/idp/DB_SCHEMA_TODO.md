@@ -2,8 +2,8 @@
 
 ## Goal
 
-Define the native `db` schema that replaces LibSQL tables for replicated IdP
-state.
+Define the native `converge` schema that replaces LibSQL tables for replicated
+IdP state.
 
 ## Independent scope
 

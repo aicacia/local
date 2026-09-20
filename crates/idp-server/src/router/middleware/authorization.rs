@@ -2,12 +2,11 @@ use std::marker::PhantomData;
 
 use axum::extract::{FromRef, FromRequestParts};
 use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
-use idp_model::contract::EntityType;
 use idp_model::contract::{ErrorCode, ErrorResponse};
+use idp_model::{contract::EntityType, model::Id};
 use idp_service::oauth2::{Principal, decode_jwt, verify_jwt};
 use model::contract::{StandardClaims, TokenType, TokenUse};
 use serde::de::DeserializeOwned;
-use uuid::Uuid;
 
 use crate::RouterState;
 
@@ -56,7 +55,7 @@ pub async fn authorize_bearer(
     let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
     let key_id = jwt_header
         .kid
-        .parse::<Uuid>()
+        .parse::<Id>()
         .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?;
     let principal = router_state
         .oauth2_service

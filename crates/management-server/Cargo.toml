@@ -53,7 +53,7 @@ idp-service = { path = "../idp-service", default-features = false, features = ["
 management-service = { path = "../management-service", default-features = false, features = ["replica", "std"] }
 
 # Database
-sync-db = { package = "converge", path = "../../../db", default-features = false, features = [
+converge = { package = "converge", path = "../../../converge", default-features = false, features = [
   "automerge",
   "redb",
 ] }

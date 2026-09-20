@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use converge::{AutomergeRowCodec, RedbKernel};
 use idp_service::{
     oauth2::OAuth2Service,
     replica::{
@@ -10,7 +11,6 @@ use idp_service::{
 use iroh::{Endpoint, EndpointId, SecretKey};
 use management_service::{HostedControlPlane, replica::DbDeviceRepo};
 use storage_service::ScopedFileSystemRuntime;
-use sync_db::{AutomergeRowCodec, RedbKernel};
 
 use super::PairingAcceptanceControllerSlot;
 

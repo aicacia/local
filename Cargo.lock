@@ -7262,6 +7262,7 @@ name = "storage-service"
 version = "0.1.0"
 dependencies = [
  "file-system",
+ "idp-model",
  "serde",
  "serde_json",
  "storage-model",
