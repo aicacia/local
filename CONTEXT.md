@@ -4,11 +4,11 @@
 
 The IdP is the OAuth 2.0 and OpenID Connect authority. It authenticates users, registers and validates OAuth clients, obtains consent, issues and verifies tokens, exposes OIDC metadata and JWKS, and manages signing-key metadata.
 
-The IdP does not own device enrollment, trusted-device policy, storage sessions, storage scopes, filesystem synchronization, or tunnel policy.
+The IdP does not own device enrollment, trusted-device policy, storage resource management, or database/filesystem synchronization.
 
 ## Management Service
 
-The Management Service is the control plane for an IdP installation. It owns management applications, roles, permissions, user-role assignments, device enrollment and revocation, trusted-device policy, storage sessions, hosted-control-plane access, and tunnel authorization.
+The Management Service is the control plane for an IdP installation. It owns management applications, roles, permissions, user-role assignments, device enrollment and revocation, trusted-device policy, and hosted-control-plane access.
 
 It may use IdP repositories for application records because an application is an OAuth resource, but management authorization and lifecycle policy belong here.
 
@@ -26,13 +26,13 @@ Raw passwords are never persisted or synchronized.
 
 ## Application
 
-An Application is a logical product or resource identified by a stable URI. It groups one or more OAuth Clients and defines the application side of an application-scoped Storage Namespace.
+An Application is a logical product or resource identified by a stable URI. It groups one or more OAuth Clients and scopes storage resources owned by a user.
 
 An application is not an OAuth client.
 
 ## OAuth Client
 
-An OAuth Client is a concrete web, native, or machine integration for an Application. It has a `client_id`, redirect URIs, grant and response types, allowed scopes, and client authentication configuration. Multiple clients may belong to one application and share that application's storage namespace for the same user.
+An OAuth Client is a concrete web, native, or machine integration for an Application. It has a `client_id`, redirect URIs, grant and response types, allowed scopes, and client authentication configuration. Multiple clients may access that application's resources when authorized by the same user.
 
 ## OAuth Consent
 
@@ -76,9 +76,7 @@ Reset Device removes one runtime's local setup state, local synchronized data, a
 
 Installation Setup establishes a new installation or joins an existing one. A
 joining user authenticates with the existing IdP and explicitly authorizes the
-new Device through its setup API. The IdP then replicates its DB checkpoint and
-missing envelopes to the new Device. Installation Setup completes only after
-that synchronization succeeds.
+new Device through its setup API. The joining Device obtains the IdP's durable database state through authenticated synchronization. Installation Setup completes only after that synchronization succeeds.
 _Avoid_: Master setup, primary-node setup
 
 ## Device Setup
@@ -93,65 +91,57 @@ _Avoid_: Default admin, bootstrap admin
 
 ## Trusted Device
 
-A Trusted Device is an approved, non-revoked Device eligible to synchronize a scope and participate in a tunnel. The trusted-device list is dynamic; runtimes refresh it and close tunnels to revoked peers.
+A Trusted Device is an approved, non-revoked Device eligible to participate in the mesh. Approval alone does not grant access to any database or filesystem.
 
 ## Hosted Control Plane
 
-A Hosted Control Plane is the configured HTTP(S) authority a local runtime trusts for access-token verification, trusted-device discovery, storage-session issuance, and tunnel grants. A runtime must validate token and grant issuer claims against this configured URL, never a URL derived from untrusted claims.
+A Hosted Control Plane is the configured HTTP(S) authority a local runtime trusts for access-token verification and trusted-device discovery. Its issuer is configured locally, never derived from untrusted claims.
 
-## Storage Session
+## Storage Resource
 
-A Storage Session is a random, short-lived, single-use token exchanged from a valid storage-scoped OAuth access token. It carries a Storage Scope into the storage WebSocket handshake and is consumed when used.
+A Storage Resource is a database or filesystem owned by a User within an Application. Each has a distinct stable ID and may have a non-unique display name; one user/application may own multiple of either kind.
 
-## Storage Scope
+## Resource Catalog
 
-A Storage Scope is the authorization context for application storage: `(user subject, application ID)`, plus the active principal, trusted devices, and bearer token needed by the runtime. It implements `StorageNamespace`.
+The Resource Catalog is the synchronized record of storage resource identity, ownership, display names, discoverable grants, and deletion status. Discovery does not imply local possession of resource content; filesystem grant policy remains authoritative in the File System.
 
-Client IDs, device IDs, local paths, and user-supplied namespace strings are not storage scopes.
+## Storage-Audience Access Token
 
-## Storage Namespace
+A Storage-Audience Access Token is a standard IdP access token exchanged from an application client's user token for scoped Storage API access. It is not a separate token type or a single-use storage session.
+_Avoid_: Storage Session, storage client token
 
-A Storage Namespace is the stable logical partition identified by `(user subject, application ID)`. Each namespace maps to one local filesystem per node. All clients for the same user and application share that namespace.
+## Resource Grant
 
-## Storage Residency
+A Resource Grant is owner-controlled permission for another subject to read or write an entire database or a path subtree of a filesystem. A grant for one resource or kind gives no rights to another.
 
-Storage Residency is a device-local choice for a Storage Namespace: full or passthrough. Full residency stores metadata and blobs; passthrough synchronizes metadata and obtains blobs from peers when read and writes blobs directly to an available full-residency peer. Passthrough is the initial default. It may be set for a namespace, folder, or file; the most-specific rule applies. A device may exclude an entire Application, meaning it stores no metadata or blobs for any of that application's Storage Namespaces. Changes apply by fetching or deleting local data to match the selected residency.
+## Filesystem ID
+
+A Filesystem ID is the stable identity of one filesystem instance, independent of its local root path. It scopes filesystem authorization and synchronization.
+_Avoid_: Vault ID
+
+## Database ID
+
+A Database ID is the stable identity of one application database, separate from the IdP/management control-plane database and every Filesystem ID.
+
+## Resource Selection
+
+Resource Selection is a device-local choice to retain and synchronize a resource its user can access. Deselecting removes only the local copy, not the resource itself.
+
+## Residency
+
+Residency is a device-local choice per filesystem path: Full or Passthrough. Full stores metadata and content locally; Passthrough stores metadata and reads content from an available Full peer but cannot write. Residency is not synchronized.
 
 ## File System
 
-The File System is the local-first replicated storage engine. It stores file content by hash and maintains Automerge metadata per folder. It synchronizes metadata and obtains missing content from peers through an authorized transport.
-
-The filesystem stores application-scoped content; IdP and management records are not filesystem data.
+The File System is a local-first replicated storage engine for paths, metadata, grants, and file content. It is separate from application databases and IdP/management records.
 
 ## File Entry
 
-A File Entry is replicated metadata for one path: content hash, size, known content providers, locality, deletion state, and merge strategy. A content hash identifies immutable file bytes.
+A File Entry is metadata for one filesystem path, with a stable file ID, content revision, and provider information. Deletions are represented by synchronized metadata tombstones.
 
 ## Tombstone
 
-A Tombstone is a replicated deleted File Entry. It prevents a deleted path from returning when nodes synchronize. Tombstones remain part of the filesystem metadata until an explicit future compaction policy removes them.
-
-## Merge Strategy
-
-A Merge Strategy determines how concurrent file updates reconcile. Ordinary files use last-writer-wins metadata. `.automerge` and `.am` files use Automerge document merging.
-
-Filesystem repositories should keep each mutable record in a stable path and rely on the documented strategy; they must not assume offline writes are globally serializable.
-
-## Sync Document
-
-A Sync Document is the persisted Automerge metadata document for one filesystem folder. It records that folder's File Entries and is exchanged with peers. Dirty-folder markers ensure local metadata changes survive restart before synchronization completes.
-
-## Transport Tunnel
-
-A Transport Tunnel is an isolated Iroh stream for one storage namespace and device pair. Iroh is a filesystem transport only; applications do not manage endpoint identities, tickets, peers, or synchronization directly.
-
-## Tunnel Access Token
-
-A tunnel uses the OAuth bearer access token issued for the storage scope. The receiver validates the standard access-token claims and signature, then checks that both endpoint identities are trusted devices before accepting the tunnel. Access tokens are not single-use OAuth grants. Storage tunnels authorize filesystem traffic only; they do not enroll Devices or replicate IdP records.
-
-## Vault ID
-
-A Vault ID identifies the filesystem being synchronized. Its hash scopes the Iroh transport session; authorization is provided by the OAuth storage access token and trusted-device policy.
+A Tombstone is a synchronized deletion record that prevents a deleted file entry or storage resource from returning when an offline device reconnects.
 
 ## Repository Backend
 
