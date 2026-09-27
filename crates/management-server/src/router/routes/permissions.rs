@@ -14,9 +14,7 @@ const PERMISSIONS_WRITE_PERMISSION: &str = "permissions.write";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct PermissionResponse {
-    #[schema(value_type = String, format = "uuid")]
     pub id: idp_model::model::Id,
-    #[schema(value_type = String, format = "uuid")]
     pub application_id: idp_model::model::Id,
     pub name: String,
     pub description: Option<String>,
@@ -57,7 +55,7 @@ pub(crate) struct CreatePermissionRequest {
     get,
     path = "/applications/{application_id}/permissions",
     params(
-        ("application_id" = String, Path, description = "Application ID"),
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
         ListPermissionsQuery
     ),
     responses((status = 200, description = "List permissions", body = [PermissionResponse])),
@@ -91,7 +89,7 @@ pub(crate) async fn list_permissions(
     post,
     path = "/applications/{application_id}/permissions",
     params(
-        ("application_id" = String, Path, description = "Application ID")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID")
     ),
     request_body = CreatePermissionRequest,
     responses((status = 201, description = "Create permission", body = PermissionResponse)),
@@ -125,8 +123,8 @@ pub(crate) async fn create_permission(
     delete,
     path = "/applications/{application_id}/permissions/{permission_id}",
     params(
-        ("application_id" = String, Path, description = "Application ID"),
-        ("permission_id" = String, Path, description = "Permission ID")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
+        ("permission_id" = idp_model::model::Id, Path, description = "Permission ID")
     ),
     responses((status = 204, description = "Delete permission")),
     security(
@@ -168,8 +166,8 @@ pub(crate) async fn delete_permission(
     get,
     path = "/applications/{application_id}/roles/{role_id}/permissions",
     params(
-        ("application_id" = String, Path, description = "Application ID"),
-        ("role_id" = String, Path, description = "Role ID")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
+        ("role_id" = idp_model::model::Id, Path, description = "Role ID")
     ),
     responses((status = 200, description = "List role permissions", body = [PermissionResponse])),
     security(
@@ -201,9 +199,9 @@ pub(crate) async fn list_role_permissions(
     post,
     path = "/applications/{application_id}/roles/{role_id}/permissions/{permission_id}",
     params(
-        ("application_id" = String, Path, description = "Application ID"),
-        ("role_id" = String, Path, description = "Role ID"),
-        ("permission_id" = String, Path, description = "Permission ID")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
+        ("role_id" = idp_model::model::Id, Path, description = "Role ID"),
+        ("permission_id" = idp_model::model::Id, Path, description = "Permission ID")
     ),
     responses((status = 204, description = "Assign permission to role")),
     security(
@@ -259,9 +257,9 @@ pub(crate) async fn assign_permission_to_role(
     delete,
     path = "/applications/{application_id}/roles/{role_id}/permissions/{permission_id}",
     params(
-        ("application_id" = String, Path, description = "Application ID"),
-        ("role_id" = String, Path, description = "Role ID"),
-        ("permission_id" = String, Path, description = "Permission ID")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
+        ("role_id" = idp_model::model::Id, Path, description = "Role ID"),
+        ("permission_id" = idp_model::model::Id, Path, description = "Permission ID")
     ),
     responses((status = 204, description = "Revoke permission from role")),
     security(

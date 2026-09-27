@@ -14,7 +14,6 @@ const APPLICATIONS_WRITE_PERMISSION: &str = "applications.write";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct ApplicationResponse {
-    #[schema(value_type = String, format = "uuid")]
     pub id: idp_model::model::Id,
     pub name: String,
     pub uri: String,
@@ -124,7 +123,7 @@ pub(crate) async fn create_application(
     get,
     path = "/applications/{application_id}",
     params(
-        ("application_id" = String, Path, description = "Application ID (URI)")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID (URI)")
     ),
     responses((status = 200, description = "Get application", body = ApplicationResponse)),
     security(
@@ -159,7 +158,7 @@ pub(crate) async fn get_application(
     put,
     path = "/applications/{application_id}",
     params(
-        ("application_id" = String, Path, description = "Application ID (URI)")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID (URI)")
     ),
     request_body = UpdateApplicationRequest,
     responses((status = 200, description = "Update application", body = ApplicationResponse)),
@@ -212,7 +211,7 @@ pub(crate) async fn update_application(
     delete,
     path = "/applications/{application_id}",
     params(
-        ("application_id" = String, Path, description = "Application ID (URI)")
+        ("application_id" = idp_model::model::Id, Path, description = "Application ID (URI)")
     ),
     responses((status = 204, description = "Delete application")),
     security(

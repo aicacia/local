@@ -9,10 +9,9 @@ Accepted
 We need an identity provider that is compliant with OIDC/OAuth2 so that
 standard relying parties (RPs), client libraries, and tooling can integrate
 with it without custom protocol work. At the same time, we want user
-identity to be rooted in public-key cryptography rather than a
-password/credential store, consistent with the key-oriented design already
-used elsewhere in the system (the DFS crate's content-addressed objects and
-its always-Full Global Identity Namespace).
+identity is rooted in public-key cryptography rather than a password-only
+credential store, consistent with the key-oriented design used elsewhere in
+the system.
 
 The central design tension is that OIDC expects a subject identifier
 (`sub`) to be stable for a given client over time, while we want user keys
@@ -52,8 +51,40 @@ client on all future approvals. This gives:
 The login/authorization challenge flow (redirect-based `/authorize`,
 signature challenge in place of a password, `/token` exchange, PKCE for
 public clients) follows standard OAuth2 shapes so existing client
-integrations require no special-casing beyond "how you prove control of
-the key."
+integrations require no special-casing beyond "how you prove control of the
+key."
+
+**Initial lifecycle: explicit setup before the router is ready.**
+A newly opened local database is in `needs setup` state. Startup must not
+invent credentials, run baseline bootstrap from ambient configuration, or
+start normal DB-backed routes before setup completes. The setup flow offers
+exactly two choices:
+
+1. **Create a new system.** The user supplies the device name and admin
+   username/password. The application initializes the schema, writes the
+   complete baseline and the first approved device through the DB repositories,
+   then constructs and starts the router on the next application start.
+2. **Join an existing system.** The user signs in to the existing IdP and
+   authorizes this device through its authenticated setup API. The IdP records
+   the device approval in the replicated DB, then sends the joining device a
+   `ofdb` checkpoint and subsequent missing envelopes. The joining client
+   authenticates through the existing OAuth flow and sends the resulting bearer
+   token in the HTTP `Authorization` header; this is not a separate setup token,
+   authenticated device tunnel, or storage tunnel. Only after the local DB is
+   complete and conflict-free does the joining application construct and start
+   its normal router on the next application start. Setup completion does not
+   hot-swap a running router.
+
+**Storage authorization is separate from setup synchronization.** A signed-in
+user receives an OAuth access token and exchanges a storage-scoped token for a
+single-use storage session. The storage server uses that session to authorize
+storage access. Device enrollment and IdP DB replication use the authenticated
+IdP setup/sync API; they do not use a filesystem or storage tunnel.
+
+Setup credentials are entered by the user during setup; they are not default
+configuration values. A local DB that is empty, incomplete, conflicted, or
+not safely authorized remains in setup or denial state rather than starting
+partially initialized services.
 
 **Standard OIDC surface required regardless of the above:**
 

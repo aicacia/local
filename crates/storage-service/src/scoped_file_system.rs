@@ -93,9 +93,7 @@ mod tests {
 
     use super::ScopedFileSystemRuntime;
 
-    struct Namespace {
-        application_id: idp_model::model::Id,
-    }
+    struct Namespace;
 
     impl StorageNamespace for Namespace {
         fn user_sub(&self) -> &str {
@@ -103,7 +101,7 @@ mod tests {
         }
 
         fn application_id(&self) -> idp_model::model::Id {
-            self.application_id
+            idp_model::model::Id::now_v7()
         }
     }
 
@@ -112,9 +110,7 @@ mod tests {
         let root = env::temp_dir().join(format!("storage-runtime-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let runtime = ScopedFileSystemRuntime::new(root.clone(), 1_u8).unwrap();
-        let namespace = Namespace {
-            application_id: idp_model::model::Id::now_v7(),
-        };
+        let namespace = Namespace;
         let first = runtime.authorization(&namespace).await.unwrap();
         let second = runtime.authorization(&namespace).await.unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));

@@ -6,6 +6,6 @@ mod localhost_server;
 mod localhost_trust;
 mod runtime;
 mod scoped_transport;
-mod tunnel_authorizer;
+mod setup;
 
 pub use runtime::run;

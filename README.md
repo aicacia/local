@@ -1,7 +1,7 @@
 # Offline-First IdP and Storage
 
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)](LICENSE-MIT)
-![Test Status](https://github.com/aicacia/rs-oauth/actions/workflows/ci.yml/badge.svg)
+![Test Status](https://github.com/nathanfaucett/rs-of/actions/workflows/ci.yml/badge.svg)
 
 An OAuth 2.0 and OpenID Connect identity provider with application-scoped, offline-first storage.
 

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use converge::{AutomergeRowCodec, RedbKernel};
 use idp_service::{
     oauth2::OAuth2Service,
     replica::{
@@ -12,6 +11,7 @@ use management_service::{
     ManagementService,
     replica::{DbPermissionRepo, DbRoleRepo},
 };
+use ofdb::{AutomergeRowCodec, RedbKernel};
 
 type DbApplication = DbApplicationRepo<RedbKernel, AutomergeRowCodec>;
 type DbClient = DbClientRepo<RedbKernel, AutomergeRowCodec>;

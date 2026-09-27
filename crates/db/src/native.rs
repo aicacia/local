@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use converge::{AutomergeRowCodec, Engine, RedbKernel, redb};
+use ofdb::{AutomergeRowCodec, Engine, RedbKernel, redb};
 
 pub type NativeEngine = Engine<RedbKernel, AutomergeRowCodec>;
 

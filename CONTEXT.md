@@ -74,7 +74,11 @@ Reset Device removes one runtime's local setup state, local synchronized data, a
 
 ## Installation Setup
 
-Installation Setup establishes a new installation or joins an existing one. It completes only after the initial synchronization succeeds.
+Installation Setup establishes a new installation or joins an existing one. A
+joining user authenticates with the existing IdP and explicitly authorizes the
+new Device through its setup API. The IdP then replicates its DB checkpoint and
+missing envelopes to the new Device. Installation Setup completes only after
+that synchronization succeeds.
 _Avoid_: Master setup, primary-node setup
 
 ## Device Setup
@@ -86,10 +90,6 @@ _Avoid_: Setup Mode, device initialization
 
 The Initial Administrator is the username/password user whose supplied credentials establish administrative access when a new installation is created.
 _Avoid_: Default admin, bootstrap admin
-
-## Setup Token
-
-A Setup Token is the one-time random credential a server generates at startup while Installation Setup is incomplete. It authorizes setup requests and is discarded after successful setup.
 
 ## Trusted Device
 
@@ -147,7 +147,7 @@ A Transport Tunnel is an isolated Iroh stream for one storage namespace and devi
 
 ## Tunnel Access Token
 
-A tunnel uses the OAuth bearer access token issued for the storage scope. The receiver validates the standard access-token claims and signature, then checks that both endpoint identities are trusted devices before accepting the tunnel. Access tokens are not single-use OAuth grants.
+A tunnel uses the OAuth bearer access token issued for the storage scope. The receiver validates the standard access-token claims and signature, then checks that both endpoint identities are trusted devices before accepting the tunnel. Access tokens are not single-use OAuth grants. Storage tunnels authorize filesystem traffic only; they do not enroll Devices or replicate IdP records.
 
 ## Vault ID
 
@@ -155,4 +155,4 @@ A Vault ID identifies the filesystem being synchronized. Its hash scopes the Iro
 
 ## Repository Backend
 
-A Repository Backend persists a service trait through the native replicated `converge` engine. CLI and desktop runtimes compose the native DB repositories directly.
+A Repository Backend persists a service trait through the native replicated `ofdb` engine. CLI and desktop runtimes compose the native DB repositories directly.

@@ -1,4 +1,4 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
 import { ensureTauriIdpApiUrl } from "./idpClient.svelte";
 
 export type SetupStage = "installation" | "device" | "ready";
@@ -15,7 +15,9 @@ type SetupNewInput = {
 
 type SetupJoinInput = {
   deviceName: string;
-  endpointAddr: string;
+  idpUrl: string;
+  username: string;
+  password: string;
 };
 
 export type SetupResidency = "full" | "passthrough";
@@ -36,14 +38,6 @@ async function setupUrl(path: string): Promise<string> {
   return `${baseUrl}${path}`;
 }
 
-async function setupToken(): Promise<string> {
-  const token = await invoke<string | null>("get_setup_token");
-  if (!token) {
-    throw new Error("Setup is already complete");
-  }
-  return token;
-}
-
 async function request(path: string, init?: RequestInit): Promise<Response> {
   return fetch(await setupUrl(path), init);
 }
@@ -59,10 +53,7 @@ export async function getSetupStage(): Promise<SetupStage> {
 export async function setupNew(input: SetupNewInput): Promise<void> {
   const response = await request("/setup/new", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-setup-token": await setupToken(),
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -71,23 +62,41 @@ export async function setupNew(input: SetupNewInput): Promise<void> {
 }
 
 export async function setupJoin(input: SetupJoinInput): Promise<void> {
+  const idpUrl = input.idpUrl.replace(/\/$/, "");
+  const tokenResponse = await fetch(`${idpUrl}/oauth2/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "password",
+      client_id: "management-desktop",
+      username: input.username,
+      password: input.password,
+      scope: "openid profile email setup",
+    }),
+  });
+  if (!tokenResponse.ok) {
+    throw new Error("Could not authenticate with the existing installation");
+  }
+  const token = (await tokenResponse.json()) as { access_token?: string };
+  if (!token.access_token) {
+    throw new Error("Existing installation returned no access token");
+  }
+
   const response = await request("/setup/join", {
     method: "POST",
     headers: {
+      authorization: `Bearer ${token.access_token}`,
       "content-type": "application/json",
-      "x-setup-token": await setupToken(),
     },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ deviceName: input.deviceName, idpUrl }),
   });
   if (!response.ok) {
-    throw new Error("Could not start joining the installation");
+    throw new Error("Could not join the existing installation");
   }
 }
 
 export async function getDeviceResidency(): Promise<SetupResidency> {
-  const response = await request("/setup/device/residency", {
-    headers: { "x-setup-token": await setupToken() },
-  });
+  const response = await request("/setup/device/residency");
   if (!response.ok) {
     throw new Error("Could not read device storage settings");
   }
@@ -99,10 +108,7 @@ export async function setDeviceResidency(
 ): Promise<void> {
   const response = await request("/setup/device/residency", {
     method: "PUT",
-    headers: {
-      "content-type": "application/json",
-      "x-setup-token": await setupToken(),
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ residency }),
   });
   if (!response.ok) {
@@ -111,10 +117,7 @@ export async function setDeviceResidency(
 }
 
 export async function completeDeviceSetup(): Promise<void> {
-  const response = await request("/setup/device", {
-    method: "POST",
-    headers: { "x-setup-token": await setupToken() },
-  });
+  const response = await request("/setup/device", { method: "POST" });
   if (!response.ok) {
     throw new Error("Could not complete device setup");
   }

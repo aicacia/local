@@ -334,8 +334,8 @@ where
 
     async fn ensure_management_admin_access(
         &self,
-        user_id: idp_model::model::Id,
-        application_id: idp_model::model::Id,
+        user_id: i64,
+        application_id: i64,
     ) -> BootstrapResult<()> {
         log::debug!(
             "Ensuring management admin access for user_id: {} and application_id: {}",
@@ -368,7 +368,7 @@ where
 
     async fn ensure_role(
         &self,
-        application_id: idp_model::model::Id,
+        application_id: i64,
         role_name: &str,
         description: Option<&str>,
     ) -> BootstrapResult<idp_model::model::Role> {
@@ -400,7 +400,7 @@ where
 
     async fn ensure_permission(
         &self,
-        application_id: idp_model::model::Id,
+        application_id: i64,
         permission_name: &str,
         description: Option<&str>,
     ) -> BootstrapResult<idp_model::model::Permission> {
@@ -433,9 +433,9 @@ where
 
     async fn ensure_role_permission(
         &self,
-        application_id: idp_model::model::Id,
-        role_id: idp_model::model::Id,
-        permission_id: idp_model::model::Id,
+        application_id: i64,
+        role_id: i64,
+        permission_id: i64,
     ) -> BootstrapResult<()> {
         let role_permissions = self
             .permission_repo
@@ -468,9 +468,9 @@ where
 
     async fn ensure_user_role(
         &self,
-        application_id: idp_model::model::Id,
-        user_id: idp_model::model::Id,
-        role_id: idp_model::model::Id,
+        application_id: i64,
+        user_id: i64,
+        role_id: i64,
     ) -> BootstrapResult<()> {
         let user_roles = self
             .role_repo
@@ -501,7 +501,7 @@ where
     async fn ensure_active_key(
         &self,
         entity_type: EntityType,
-        entity_id: idp_model::model::Id,
+        entity_id: i64,
         name: &str,
         passphrase: &str,
         hardened: bool,

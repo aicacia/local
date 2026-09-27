@@ -1181,21 +1181,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
-name = "converge"
-version = "0.1.0"
-dependencies = [
- "engine",
- "engine-automerge",
- "engine-redb",
- "macros",
- "query",
- "schema",
- "sql-translator",
- "uuid",
- "value",
-]
-
-[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2174,10 +2159,12 @@ dependencies = [
 name = "file-system"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "deckv",
+ "futures-core",
+ "futures-util",
  "redb",
  "serde",
- "sha2 0.10.9",
  "tokio",
  "uuid",
 ]
@@ -3130,7 +3117,7 @@ dependencies = [
 name = "idp-db"
 version = "0.1.0"
 dependencies = [
- "converge",
+ "ofdb",
 ]
 
 [[package]]
@@ -3165,7 +3152,6 @@ dependencies = [
  "clap",
  "cli",
  "config",
- "converge",
  "dotenvy",
  "env_logger",
  "file-system",
@@ -3180,6 +3166,7 @@ dependencies = [
  "log",
  "management-service",
  "model",
+ "ofdb",
  "serde",
  "serde_json",
  "serde_qs",
@@ -3194,7 +3181,6 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
- "uuid",
 ]
 
 [[package]]
@@ -3385,26 +3371,24 @@ name = "iroh-chain"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "chrono",
  "dashmap",
- "futures",
  "iroh",
- "iroh-tickets",
  "noq",
  "serde",
  "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]
 name = "iroh-chain-file-system"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "file-system",
+ "futures-util",
  "iroh",
  "iroh-chain",
  "postcard",
+ "serde",
  "tokio",
 ]
 
@@ -3500,20 +3484,6 @@ dependencies = [
  "url",
  "webpki-roots",
  "ws_stream_wasm",
-]
-
-[[package]]
-name = "iroh-tickets"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da53233419ca36bf521ed45683b7748366f9b233032891eefc2d70567a84ac54"
-dependencies = [
- "data-encoding",
- "derive_more",
- "iroh-base",
- "n0-error",
- "postcard",
- "serde",
 ]
 
 [[package]]
@@ -3871,8 +3841,6 @@ dependencies = [
  "idp-server",
  "idp-service",
  "iroh",
- "iroh-chain",
- "iroh-chain-file-system",
  "log",
  "management-server",
  "management-service",
@@ -3997,7 +3965,6 @@ dependencies = [
  "clap",
  "cli",
  "config",
- "converge",
  "dotenvy",
  "env_logger",
  "http",
@@ -4007,6 +3974,7 @@ dependencies = [
  "log",
  "management-service",
  "model",
+ "ofdb",
  "serde",
  "serde_json",
  "tokio",
@@ -4016,7 +3984,6 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
- "uuid",
 ]
 
 [[package]]
@@ -4916,6 +4883,21 @@ dependencies = [
  "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-foundation",
+]
+
+[[package]]
+name = "ofdb"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "engine-automerge",
+ "engine-redb",
+ "macros",
+ "query",
+ "schema",
+ "sql-translator",
+ "uuid",
+ "value",
 ]
 
 [[package]]
@@ -7994,7 +7976,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
- "uuid",
 ]
 
 [[package]]

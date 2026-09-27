@@ -58,14 +58,8 @@ clean:
 doc:
     cargo doc --workspace --no-deps
 
-lidp:
-    pnpx portless idp-api cargo run -p idp-server -- -c config.yaml
+api:
+    pnpx portless api cargo run -- -c ./config/primary/config.yaml
 
-idp-management:
-    pnpx portless management-api cargo run -p management-server -- -c config.yaml
-
-unified:
-    pnpx portless unified cargo run -- -c ./config/primary/config.yaml
-
-unified-secondary:
-    pnpx portless unified-secondary cargo run -- -c ./config/secondary/config.yaml
+api-secondary:
+    pnpx portless api-secondary cargo run -- -c ./config/secondary/config.yaml

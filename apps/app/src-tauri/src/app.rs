@@ -10,8 +10,8 @@ use axum::Router;
 use db::{NativeEngine, open_native_engine};
 use idp_model::contract::{DeviceSelfRevocationRequest, device_self_revocation_payload};
 use idp_server::{
-    AppConfig, DeviceIdentity, RouterState, TimedPairingAcceptanceController,
-    delete_device_identity, open_device_identity, storage_router,
+    AppConfig, DeviceIdentity, RouterState, delete_device_identity, open_device_identity,
+    storage_router,
 };
 use idp_service::{
     oauth2::OAuth2Service,
@@ -34,16 +34,29 @@ use crate::localhost_server::{
     start_unified_localhost_server,
 };
 use crate::{
-    hosted_control_plane::HostedControlPlane,
-    local_api,
-    scoped_transport::AppFileSystemRuntime,
-    tunnel_authorizer::{AppTunnelAuthorizer, DeviceTunnelManager},
+    hosted_control_plane::HostedControlPlane, local_api, scoped_transport::AppFileSystemRuntime,
+    setup, setup::SetupState,
 };
 
 #[derive(Clone, Default)]
 pub struct LocalhostServerState {
     pub base_url: String,
     pub ready: bool,
+}
+
+pub fn init_setup_router(
+    app_config: Arc<AppConfig>,
+    database: Arc<NativeEngine>,
+    device_identity: Arc<DeviceIdentity>,
+) -> Router {
+    Router::new().nest(
+        "/lidp",
+        setup::router(SetupState {
+            database,
+            app_config,
+            device_identity,
+        }),
+    )
 }
 
 pub fn init_router(
@@ -166,11 +179,6 @@ pub async fn get_localhost_server_base_url(app_handle: AppHandle<Wry>) -> String
 }
 
 #[tauri::command]
-pub fn get_setup_token(_app_handle: AppHandle<Wry>) -> Option<String> {
-    None
-}
-
-#[tauri::command]
 pub async fn reset_device(app_handle: AppHandle<Wry>) -> Result<(), String> {
     let data_dir = app_handle
         .path()
@@ -265,42 +273,6 @@ pub async fn init_device_identity(app_handle: &AppHandle<Wry>) -> tauri::Result<
     Ok(())
 }
 
-pub async fn init_tunnel_manager(
-    app_handle: &AppHandle<Wry>,
-    state: Arc<RouterState>,
-    control_plane: Option<Arc<HostedControlPlane>>,
-) -> tauri::Result<()> {
-    let identity = app_handle
-        .try_state::<Arc<DeviceIdentity>>()
-        .ok_or_else(|| tauri::Error::Io(io::Error::other("device identity is missing")))?;
-    let app_config = app_handle
-        .try_state::<Arc<AppConfig>>()
-        .ok_or_else(|| tauri::Error::Io(io::Error::other("app config is missing")))?;
-    let allowlist = iroh_chain::DynamicEndpointIdStore::default();
-    let authorizer = AppTunnelAuthorizer::new(control_plane.clone());
-    let manager = Arc::new(DeviceTunnelManager::new(
-        identity.endpoint(),
-        allowlist.clone(),
-        authorizer,
-    ));
-    state
-        .pairing_acceptance
-        .bind(Arc::new(TimedPairingAcceptanceController::new(
-            (*manager).clone(),
-            Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
-        )))
-        .map_err(|error| tauri::Error::Io(io::Error::other(error)))?;
-    let listener = Arc::clone(&manager);
-    tauri::async_runtime::spawn(async move {
-        listener.listen().await;
-    });
-    let allowlist = Arc::new(allowlist);
-
-    app_handle.manage(allowlist);
-    app_handle.manage(manager);
-    Ok(())
-}
-
 pub async fn init_unified_localhost_server(
     app_handle: &AppHandle<Wry>,
     router: Router,
@@ -343,8 +315,6 @@ pub async fn close(app_handle: &AppHandle<Wry>) -> io::Result<()> {
             server.close().await?;
         }
     }
-    if let Some(manager) = app_handle.try_state::<Arc<DeviceTunnelManager>>() {
-        manager.close().await;
-    }
+
     Ok(())
 }

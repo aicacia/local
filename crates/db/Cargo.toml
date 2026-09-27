@@ -14,9 +14,9 @@ name = "db"
 
 [features]
 default = ["native", "replica"]
-native = ["dep:converge", "converge/automerge", "converge/redb"]
-replica = ["native", "converge/in-memory", "converge/macros"]
+native = ["dep:ofdb", "ofdb/automerge", "ofdb/redb"]
+replica = ["native", "ofdb/in-memory", "ofdb/macros"]
 
 [dependencies]
 # Database
-converge = { path = "../../../converge", default-features = false, features = ["sql"], optional = true }
+ofdb = { path = "../../../ofdb", default-features = false, features = ["sql"], optional = true }

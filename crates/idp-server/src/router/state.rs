@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use converge::{AutomergeRowCodec, RedbKernel};
 use idp_service::{
     oauth2::OAuth2Service,
     replica::{
@@ -10,6 +9,7 @@ use idp_service::{
 };
 use iroh::{Endpoint, EndpointId, SecretKey};
 use management_service::{HostedControlPlane, replica::DbDeviceRepo};
+use ofdb::{AutomergeRowCodec, RedbKernel};
 use storage_service::ScopedFileSystemRuntime;
 
 use super::PairingAcceptanceControllerSlot;
@@ -24,6 +24,7 @@ type NativeOAuth2Service = OAuth2Service<
 >;
 
 pub type NativeDeviceRepo = DbDeviceRepo<RedbKernel, AutomergeRowCodec>;
+pub type NativeOAuth2ServiceRef = NativeOAuth2Service;
 
 #[derive(Clone)]
 pub struct DeviceIdentity {

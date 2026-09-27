@@ -1,4 +1,6 @@
+use idp_model::contract::DeviceState;
 use idp_server::DeviceIdentity;
+use management_service::{DeviceRepo, replica::DbDeviceRepo};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, Window, WindowEvent, Wry};
 #[cfg(any(windows, target_os = "linux"))]
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -25,7 +27,6 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![
             app::get_localhost_server_base_url,
-            app::get_setup_token,
             app::reset_device
         ])
         .setup(|app| {
@@ -80,16 +81,30 @@ pub fn run() {
                     .inner()
                     .clone();
 
-                let (router, router_state) = app::init_router(
-                    runtime_config,
-                    database,
-                    file_systems,
-                    device_identity,
-                    control_plane.clone(),
-                )
-                .map_err(tauri::Error::Io)?;
-                app_handle.manage(router_state.clone());
-                app::init_tunnel_manager(&app_handle, router_state, control_plane).await?;
+                let ready = DbDeviceRepo::new(database.clone())
+                    .list()
+                    .await
+                    .map(|devices| {
+                        devices
+                            .iter()
+                            .any(|device| device.state == DeviceState::Approved)
+                    })
+                    .unwrap_or(false);
+
+                let router = if ready {
+                    let (router, router_state) = app::init_router(
+                        runtime_config,
+                        database,
+                        file_systems,
+                        device_identity,
+                        control_plane.clone(),
+                    )
+                    .map_err(tauri::Error::Io)?;
+                    app_handle.manage(router_state.clone());
+                    router
+                } else {
+                    app::init_setup_router(runtime_config, database, device_identity)
+                };
                 app::init_unified_localhost_server(&app_handle, router, listener, base_url.clone())
                     .await?;
 

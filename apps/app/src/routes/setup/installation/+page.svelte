@@ -6,7 +6,9 @@
     let deviceName = $state("");
     let adminUsername = $state("");
     let adminPassword = $state("");
-    let endpointAddr = $state("");
+    let idpUrl = $state("");
+    let username = $state("");
+    let password = $state("");
     let error = $state("");
 
     let submitting = $state(false);
@@ -18,9 +20,14 @@
         try {
             if (mode === "new") {
                 await setupNew({ deviceName, adminUsername, adminPassword });
-                await goto("/setup/device");
+                await goto("/signin");
             } else {
-                await setupJoin({ deviceName, endpointAddr });
+                await setupJoin({
+                    deviceName,
+                    idpUrl,
+                    username,
+                    password,
+                });
                 await goto("/setup/device");
             }
         } catch (reason) {
@@ -77,9 +84,30 @@
                 </label>
             {:else}
                 <label class="flex flex-col">
-                    Approved device endpoint address
-                    <textarea bind:value={endpointAddr} required rows="4"
-                    ></textarea>
+                    Existing IdP URL
+                    <input
+                        bind:value={idpUrl}
+                        placeholder="https://idp.example/lidp"
+                        required
+                        type="url"
+                    />
+                </label>
+                <label class="flex flex-col">
+                    Admin username
+                    <input
+                        bind:value={username}
+                        autocomplete="username"
+                        required
+                    />
+                </label>
+                <label class="flex flex-col">
+                    Admin password
+                    <input
+                        bind:value={password}
+                        autocomplete="current-password"
+                        required
+                        type="password"
+                    />
                 </label>
             {/if}
             {#if error}
