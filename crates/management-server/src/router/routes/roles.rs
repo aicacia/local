@@ -12,7 +12,9 @@ const ROLES_WRITE_PERMISSION: &str = "roles.write";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct RoleResponse {
+    #[schema(value_type = String)]
     pub id: idp_model::model::Id,
+    #[schema(value_type = String)]
     pub application_id: idp_model::model::Id,
     pub name: String,
     pub description: Option<String>,
@@ -53,7 +55,7 @@ pub(crate) struct CreateRoleRequest {
     get,
     path = "/applications/{application_id}/roles",
     params(
-        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
+        ("application_id" = String, Path, description = "Application ID"),
         ListRolesQuery
     ),
     responses((status = 200, description = "List roles", body = [RoleResponse])),
@@ -87,7 +89,7 @@ pub(crate) async fn list_roles(
     post,
     path = "/applications/{application_id}/roles",
     params(
-        ("application_id" = idp_model::model::Id, Path, description = "Application ID")
+        ("application_id" = String, Path, description = "Application ID")
     ),
     request_body = CreateRoleRequest,
     responses((status = 201, description = "Create role", body = RoleResponse)),
@@ -121,8 +123,8 @@ pub(crate) async fn create_role(
     delete,
     path = "/applications/{application_id}/roles/{role_id}",
     params(
-        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
-        ("role_id" = idp_model::model::Id, Path, description = "Role ID")
+        ("application_id" = String, Path, description = "Application ID"),
+        ("role_id" = String, Path, description = "Role ID")
     ),
     responses((status = 204, description = "Delete role")),
     security(
@@ -162,8 +164,8 @@ pub(crate) async fn delete_role(
     get,
     path = "/applications/{application_id}/users/{user_id}/roles",
     params(
-        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
-        ("user_id" = idp_model::model::Id, Path, description = "User ID")
+        ("application_id" = String, Path, description = "Application ID"),
+        ("user_id" = String, Path, description = "User ID")
     ),
     responses((status = 200, description = "List user roles", body = [RoleResponse])),
     security(
@@ -195,9 +197,9 @@ pub(crate) async fn list_user_roles(
     post,
     path = "/applications/{application_id}/users/{user_id}/roles/{role_id}",
     params(
-        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
-        ("user_id" = idp_model::model::Id, Path, description = "User ID"),
-        ("role_id" = idp_model::model::Id, Path, description = "Role ID")
+        ("application_id" = String, Path, description = "Application ID"),
+        ("user_id" = String, Path, description = "User ID"),
+        ("role_id" = String, Path, description = "Role ID")
     ),
     responses((status = 204, description = "Assign role to user")),
     security(
@@ -241,9 +243,9 @@ pub(crate) async fn assign_role_to_user(
     delete,
     path = "/applications/{application_id}/users/{user_id}/roles/{role_id}",
     params(
-        ("application_id" = idp_model::model::Id, Path, description = "Application ID"),
-        ("user_id" = idp_model::model::Id, Path, description = "User ID"),
-        ("role_id" = idp_model::model::Id, Path, description = "Role ID")
+        ("application_id" = String, Path, description = "Application ID"),
+        ("user_id" = String, Path, description = "User ID"),
+        ("role_id" = String, Path, description = "Role ID")
     ),
     responses((status = 204, description = "Revoke role from user")),
     security(

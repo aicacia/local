@@ -74,18 +74,6 @@ where
         input: &BootstrapInput,
         device: Option<(String, String)>,
     ) -> BootstrapResult<User> {
-        if let Some((public_key, address)) = device {
-            super::ensure_bootstrap_device(
-                &self.device_repo,
-                DeviceEnrollmentRequest {
-                    name: input.device_name.clone(),
-                    public_key,
-                    address,
-                },
-            )
-            .await?;
-        }
-
         let idp_application = self
             .ensure_application("IdP".to_string(), "lidp".to_string())
             .await?;
@@ -178,6 +166,18 @@ where
         }
 
         let admin_user = self.ensure_admin_user(input).await?;
+        if let Some((public_key, address)) = device {
+            super::ensure_bootstrap_device(
+                &self.device_repo,
+                admin_user.id.to_string(),
+                DeviceEnrollmentRequest {
+                    name: input.device_name.clone(),
+                    public_key,
+                    address,
+                },
+            )
+            .await?;
+        }
         self.ensure_management_admin_access(admin_user.id, management_application.id)
             .await?;
         let _admin_user_key = self
@@ -334,8 +334,8 @@ where
 
     async fn ensure_management_admin_access(
         &self,
-        user_id: i64,
-        application_id: i64,
+        user_id: idp_model::model::Id,
+        application_id: idp_model::model::Id,
     ) -> BootstrapResult<()> {
         log::debug!(
             "Ensuring management admin access for user_id: {} and application_id: {}",
@@ -368,7 +368,7 @@ where
 
     async fn ensure_role(
         &self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         role_name: &str,
         description: Option<&str>,
     ) -> BootstrapResult<idp_model::model::Role> {
@@ -400,7 +400,7 @@ where
 
     async fn ensure_permission(
         &self,
-        application_id: i64,
+        application_id: idp_model::model::Id,
         permission_name: &str,
         description: Option<&str>,
     ) -> BootstrapResult<idp_model::model::Permission> {
@@ -433,9 +433,9 @@ where
 
     async fn ensure_role_permission(
         &self,
-        application_id: i64,
-        role_id: i64,
-        permission_id: i64,
+        application_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
+        permission_id: idp_model::model::Id,
     ) -> BootstrapResult<()> {
         let role_permissions = self
             .permission_repo
@@ -468,9 +468,9 @@ where
 
     async fn ensure_user_role(
         &self,
-        application_id: i64,
-        user_id: i64,
-        role_id: i64,
+        application_id: idp_model::model::Id,
+        user_id: idp_model::model::Id,
+        role_id: idp_model::model::Id,
     ) -> BootstrapResult<()> {
         let user_roles = self
             .role_repo
@@ -501,7 +501,7 @@ where
     async fn ensure_active_key(
         &self,
         entity_type: EntityType,
-        entity_id: i64,
+        entity_id: idp_model::model::Id,
         name: &str,
         passphrase: &str,
         hardened: bool,

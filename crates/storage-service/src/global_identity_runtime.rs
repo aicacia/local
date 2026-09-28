@@ -272,6 +272,10 @@ mod tests {
     ) -> GlobalIdentityRow {
         let mut columns = std::collections::BTreeMap::new();
         columns.insert(
+            "owner_subject".to_owned(),
+            GlobalIdentityValue::Text("subject".to_owned()),
+        );
+        columns.insert(
             "name".to_owned(),
             GlobalIdentityValue::Text("device".to_owned()),
         );

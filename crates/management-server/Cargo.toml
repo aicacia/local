@@ -51,6 +51,7 @@ idp-model = { path = "../idp-model", default-features = false, features = [
 ] }
 idp-service = { path = "../idp-service", default-features = false, features = ["replica", "std"] }
 management-service = { path = "../management-service", default-features = false, features = ["replica", "std"] }
+storage-model = { path = "../storage-model", default-features = false, features = [] }
 
 # Database
 ofdb = { package = "ofdb", path = "../../../ofdb", default-features = false, features = [

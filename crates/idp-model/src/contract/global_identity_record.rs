@@ -156,6 +156,7 @@ impl GlobalIdentityTable {
                 "updated_at",
             ],
             Self::Devices => &[
+                "owner_subject",
                 "name",
                 "public_key",
                 "address",
@@ -217,6 +218,11 @@ impl GlobalIdentityRow {
                 .columns()
                 .iter()
                 .all(|column| self.columns.contains_key(*column))
+            && (self.table != GlobalIdentityTable::Devices
+                || matches!(
+                    self.columns.get("owner_subject"),
+                    Some(GlobalIdentityValue::Text(owner)) if !owner.trim().is_empty()
+                ))
     }
 }
 
@@ -248,11 +254,45 @@ mod tests {
     }
 
     #[test]
-    fn includes_active_device_pairing_state() {
+    fn device_records_require_owner_and_include_pairing_state() {
+        assert!(
+            GlobalIdentityTable::Devices
+                .columns()
+                .contains(&"owner_subject")
+        );
         assert!(
             GlobalIdentityTable::Devices
                 .columns()
                 .contains(&"pairing_accepting_public_key")
+        );
+    }
+
+    #[test]
+    fn rejects_device_rows_with_empty_or_non_text_owners() {
+        let mut columns = GlobalIdentityTable::Devices
+            .columns()
+            .iter()
+            .map(|column| ((*column).to_owned(), GlobalIdentityValue::Null))
+            .collect::<BTreeMap<_, _>>();
+        columns.insert(
+            "owner_subject".to_owned(),
+            GlobalIdentityValue::Text("  ".to_owned()),
+        );
+        let row = GlobalIdentityRow {
+            table: GlobalIdentityTable::Devices,
+            id: 1,
+            columns: columns.clone(),
+        };
+        assert!(!row.is_valid());
+
+        columns.insert("owner_subject".to_owned(), GlobalIdentityValue::Null);
+        assert!(
+            !GlobalIdentityRow {
+                table: GlobalIdentityTable::Devices,
+                id: 1,
+                columns,
+            }
+            .is_valid()
         );
     }
 

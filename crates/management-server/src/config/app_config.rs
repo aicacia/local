@@ -13,6 +13,9 @@ pub struct AppConfig {
     pub key_namespace: String,
     pub log_level: String,
     pub api_public_uri: String,
+    pub idp_api_base: String,
+    pub expected_issuer: String,
+    pub storage_audience: String,
 }
 
 impl Default for AppConfig {
@@ -24,6 +27,9 @@ impl Default for AppConfig {
             key_namespace: "idp-management".to_string(),
             log_level: "DEBUG".to_string(),
             api_public_uri: "https://management-api.localhost:1355".to_string(),
+            idp_api_base: String::new(),
+            expected_issuer: String::new(),
+            storage_audience: String::new(),
         }
     }
 }

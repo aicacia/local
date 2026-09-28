@@ -1,8 +1,11 @@
-mod authorization;
+mod database_catalog;
+mod database_runtime;
 mod scoped_file_system;
 mod service;
 
-pub use authorization::{Access, AuthorizationStore, FolderRule};
+pub use database_catalog::{DatabaseCatalog, DatabaseId, DatabaseResource};
+pub use database_runtime::DatabaseRuntime;
+pub use file_system::{FileSystemId, FileSystemResource};
 pub use scoped_file_system::{ScopedFileSystem, ScopedFileSystemRuntime};
 pub use service::{ScopedStorageService, StorageService, StorageServiceError};
 pub use storage_model::{StorageErrorCode, StorageNamespace, StorageRequest, StorageResponse};

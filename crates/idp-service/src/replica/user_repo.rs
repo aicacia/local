@@ -871,8 +871,10 @@ fn select(table: &str, columns: &[&str], predicate: Option<QueryExpr>) -> Query 
             .iter()
             .map(|column_name| column(table, column_name))
             .collect(),
+        distinct: false,
         predicate,
         aggregates: vec![],
+        text_concats: vec![],
         group_by: vec![],
         order_by: vec![],
         limit: None,

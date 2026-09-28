@@ -1,8 +1,10 @@
 use axum::extract::{FromRef, FromRequestParts};
 use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
-use idp_model::contract::{ErrorCode, ErrorResponse};
-use idp_service::oauth2::{Principal, decode_jwt};
-use model::contract::StandardClaims;
+use idp_model::contract::{EntityType, ErrorCode, ErrorResponse};
+use idp_service::oauth2::{Principal, decode_jwt, verify_jwt};
+use model::contract::{StandardClaims, TokenType, TokenUse};
+
+use management_service::MANAGEMENT_APPLICATION_URI;
 
 use crate::RouterState;
 
@@ -29,22 +31,76 @@ where
         if let Some(authorization_header_value) = parts.headers.get(AUTHORIZATION) {
             let authorization_string = authorization_from_header(authorization_header_value)?;
             let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
-
+            let key_id = jwt_header
+                .kid
+                .parse::<idp_model::model::Id>()
+                .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?;
             let router_state = RouterState::from_ref(state);
             let principal = router_state
                 .oauth2_service
-                .find_principal(jwt_header.kid)
+                .find_principal(key_id)
                 .await?
                 .ok_or_else(|| {
                     ErrorResponse::new(ErrorCode::NotAuthorized)
                         .with_description("principal not found for key id")
                 })?;
+            let jwk = router_state.oauth2_service.find_public_jwk(key_id).await?;
+            let (_, claims) = verify_jwt::<StandardClaims>(&jwk, authorization_string)?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?
+                .as_secs() as i64;
+            if claims.r#type != TokenType::Bearer
+                || claims.r#use != TokenUse::Access
+                || claims.iss != router_state.oauth2_service.metadata().issuer
+                || claims.exp <= now
+                || claims.nbf > now
+                || claims.iat > now
+                || claims.sub != principal.get_entity_id().to_string()
+                || principal.get_entity_type() != EntityType::User
+                || !management_audience(&claims)
+            {
+                return Err(ErrorResponse::new(ErrorCode::NotAuthorized)
+                    .with_description("invalid bearer token claims"));
+            }
 
             return Ok(Self::new(principal));
         }
 
         Err(ErrorResponse::new(ErrorCode::NotAuthorized)
             .with_description("missing authorization header"))
+    }
+}
+
+fn management_audience(claims: &StandardClaims) -> bool {
+    claims.aud == MANAGEMENT_APPLICATION_URI
+}
+
+#[cfg(test)]
+mod tests {
+    use model::contract::{StandardClaims, TokenType, TokenUse};
+
+    use super::management_audience;
+
+    #[test]
+    fn storage_audience_does_not_authorize_management() {
+        let mut claims = StandardClaims {
+            r#type: TokenType::Bearer,
+            r#use: TokenUse::Access,
+            exp: i64::MAX,
+            iat: 0,
+            nbf: 0,
+            iss: "issuer".into(),
+            aud: "storage".into(),
+            client_id: "client".into(),
+            sub: "owner".into(),
+            resource: Some("storage".into()),
+            authorization_details: None,
+            scope: vec!["storage".into()],
+        };
+        assert!(!management_audience(&claims));
+        claims.aud = management_service::MANAGEMENT_APPLICATION_URI.into();
+        assert!(management_audience(&claims));
     }
 }
 

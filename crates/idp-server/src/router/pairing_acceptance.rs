@@ -3,38 +3,26 @@ use std::{
     time::Duration,
 };
 
-use iroh_chain::{AllowedEndpointId, Server, TunnelAuthorizer};
+use iroh_chain::Server;
 
 pub trait PairingAcceptanceController: Send + Sync + 'static {
     fn set_pairing_accepting(&self, accepting: bool) -> Result<(), String>;
     fn pairing_accepting(&self) -> Result<bool, String>;
 }
 
-pub struct TimedPairingAcceptanceController<A, V>
-where
-    A: AllowedEndpointId,
-    V: TunnelAuthorizer,
-{
-    server: Server<A, V>,
+pub struct TimedPairingAcceptanceController {
+    server: Server,
     timeout: Duration,
 }
 
-impl<A, V> TimedPairingAcceptanceController<A, V>
-where
-    A: AllowedEndpointId,
-    V: TunnelAuthorizer,
-{
+impl TimedPairingAcceptanceController {
     #[must_use]
-    pub fn new(server: Server<A, V>, timeout: Duration) -> Self {
+    pub fn new(server: Server, timeout: Duration) -> Self {
         Self { server, timeout }
     }
 }
 
-impl<A, V> PairingAcceptanceController for TimedPairingAcceptanceController<A, V>
-where
-    A: AllowedEndpointId,
-    V: TunnelAuthorizer,
-{
+impl PairingAcceptanceController for TimedPairingAcceptanceController {
     fn set_pairing_accepting(&self, accepting: bool) -> Result<(), String> {
         if accepting {
             self.server.set_pairing_enabled_for(self.timeout);

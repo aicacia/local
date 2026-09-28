@@ -13,6 +13,7 @@ use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::open_native_engine;
 use env_logger::Env;
 use idp_service::{
+    PasswordConfig,
     oauth2::OAuth2Service,
     replica::{
         DbApplicationRepo, DbClientRepo, DbKeyRepo, DbOAuth2AuthorizationCodeRepo,
@@ -21,8 +22,8 @@ use idp_service::{
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
 use management_service::{
-    ManagementService,
-    replica::{DbPermissionRepo, DbRoleRepo},
+    HostedControlPlane, ManagementService,
+    replica::{DbPermissionRepo, DbRoleRepo, DbSelectionPolicyRepo},
 };
 use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
@@ -46,6 +47,20 @@ pub async fn run() -> io::Result<()> {
         }
     });
 
+    if app_config.idp_api_base.trim().is_empty()
+        || app_config.expected_issuer.trim().is_empty()
+        || app_config.storage_audience.trim().is_empty()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "idp_api_base, expected_issuer and storage_audience are required",
+        ));
+    }
+    let control_plane = Arc::new(
+        HostedControlPlane::new_with_issuer(&app_config.idp_api_base, &app_config.expected_issuer)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
+    );
+
     env_logger::Builder::from_env(Env::default().default_filter_or(&app_config.log_level)).init();
 
     create_dir_all(&app_config.data_dir)?;
@@ -66,7 +81,7 @@ pub async fn run() -> io::Result<()> {
         DbApplicationRepo::new(Arc::clone(&engine)),
         DbClientRepo::new(Arc::clone(&engine), Arc::clone(&key_service)),
         DbOAuth2AuthorizationCodeRepo::new(Arc::clone(&engine)),
-        DbUserRepo::new(Arc::clone(&engine)),
+        DbUserRepo::new(Arc::clone(&engine), PasswordConfig::default()),
         DbOAuth2UserConsentRepo::new(Arc::clone(&engine)),
         key_service,
         app_config.oauth2.clone(),
@@ -80,6 +95,9 @@ pub async fn run() -> io::Result<()> {
         &app_config.api_public_uri,
         management_service,
         oauth2_service,
+        Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine))),
+        control_plane,
+        &app_config.storage_audience,
     );
     let router = openapi_router(router_state, app_config.server.prefix())
         .layer(CorsLayer::very_permissive().allow_private_network(true))

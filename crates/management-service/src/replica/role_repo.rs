@@ -411,11 +411,12 @@ where
         permission_name: &str,
     ) -> ManagementResult<bool> {
         let applications = self
-            .rows::<ApplicationRow>("applications", &["id", "uri", "revoked_at"])
+            .rows::<ApplicationRow>("applications", &["id", "uri"])
             .await?;
-        let Some(application) = applications.into_iter().find(|application| {
-            application.uri == application_uri && application.revoked_at.is_none()
-        }) else {
+        let Some(application) = applications
+            .into_iter()
+            .find(|application| application.uri == application_uri)
+        else {
             return Ok(false);
         };
         let permissions = self.list_user_permissions(application.id, user_id).await?;
@@ -595,7 +596,6 @@ impl From<UserRoleRow> for Row {
 struct ApplicationRow {
     id: Uuid,
     uri: String,
-    revoked_at: Option<i64>,
 }
 
 impl FromRow for ApplicationRow {
@@ -603,7 +603,6 @@ impl FromRow for ApplicationRow {
         Ok(Self {
             id: decode(row, columns, "id")?,
             uri: decode(row, columns, "uri")?,
-            revoked_at: decode(row, columns, "revoked_at")?,
         })
     }
 }
@@ -655,8 +654,10 @@ fn select(table: &str, columns: &[&str]) -> Query {
     Query::Select(QuerySelect {
         from: from(table),
         projection: columns.iter().map(|name| column(table, name)).collect(),
+        distinct: false,
         predicate: None,
         aggregates: vec![],
+        text_concats: vec![],
         group_by: vec![],
         order_by: vec![],
         limit: None,

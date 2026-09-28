@@ -18,6 +18,11 @@ use super::routes::clients::{
 use super::routes::consents::{
     __path_list_user_consents, __path_revoke_user_consent, list_user_consents, revoke_user_consent,
 };
+use super::routes::device_selection::{
+    __path_delete_device_resource_selection, __path_delete_device_selection,
+    __path_put_device_restriction, __path_put_device_selection, delete_device_resource_selection,
+    delete_device_selection, put_device_restriction, put_device_selection,
+};
 use super::routes::health::{__path_health, health};
 use super::routes::keys::{
     __path_get_key_jwk, __path_list_client_keys, get_key_jwk, list_client_keys,
@@ -71,6 +76,10 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(list_user_roles_across_applications))
             .routes(routes!(list_user_consents))
             .routes(routes!(revoke_user_consent))
+            .routes(routes!(put_device_selection))
+            .routes(routes!(put_device_restriction))
+            .routes(routes!(delete_device_selection))
+            .routes(routes!(delete_device_resource_selection))
             .routes(routes!(list_roles))
             .routes(routes!(create_role))
             .routes(routes!(delete_role))

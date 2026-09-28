@@ -41,16 +41,6 @@ pub fn validate_authorization_details(details: &[AuthorizationDetail]) -> ErrorR
             .with_description("exactly one storage authorization detail is required"));
     };
 
-    if !detail.folder.is_empty()
-        && detail
-            .folder
-            .split('/')
-            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
-    {
-        return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
-            .with_description("storage folder must be a normalized relative path"));
-    }
-
     if detail.actions.is_empty()
         || detail
             .actions
@@ -166,14 +156,12 @@ mod tests {
     }
 
     #[test]
-    fn validate_storage_authorization_details_rejects_non_normalized_folder() {
+    fn validate_storage_authorization_details_accepts_resource_wide_actions() {
         let details = vec![AuthorizationDetail::Storage(StorageAuthorizationDetail {
-            folder: "documents/../private".to_string(),
             actions: vec![StorageAuthorizationAction::Read],
         })];
 
-        let error = validate_authorization_details(&details).unwrap_err();
-        assert_eq!(error.error, ErrorCode::InvalidRequest);
+        assert!(validate_authorization_details(&details).is_ok());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
+use alloc::{string::String, vec::Vec};
 
 use idp_model::contract::DeviceEnrollmentRequest;
 
@@ -9,6 +9,7 @@ use crate::BootstrapResult;
 
 pub async fn ensure_bootstrap_device<R>(
     devices: &R,
+    owner_subject: String,
     device: DeviceEnrollmentRequest,
 ) -> BootstrapResult<()>
 where
@@ -19,6 +20,7 @@ where
     }
     devices
         .create(
+            owner_subject,
             device.name,
             device.public_key,
             device.address,

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR 0001](../adr/0001-offline-storage-resources.md). Preserved as historical context; do not implement its folder grants, per-path ACLs, or token/session design.
 
 ## Context
 

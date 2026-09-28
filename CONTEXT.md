@@ -8,7 +8,7 @@ The IdP does not own device enrollment, trusted-device policy, storage resource 
 
 ## Management Service
 
-The Management Service is the control plane for an IdP installation. It owns management applications, roles, permissions, user-role assignments, device enrollment and revocation, trusted-device policy, and hosted-control-plane access.
+The Management Service is the control plane for an IdP installation. It owns management applications, roles, permissions, user-role assignments, device enrollment and revocation, ownership, resource selection, administrator storage limits, trusted-device policy, and hosted-control-plane access.
 
 It may use IdP repositories for application records because an application is an OAuth resource, but management authorization and lifecycle policy belong here.
 
@@ -64,7 +64,7 @@ The built-in management application URI is `idp-management`.
 
 ## Device
 
-A Device is one installation's persistent transport endpoint identity, represented by its locally supplied name, public key, and reachable address. A device is pending, approved, or revoked. Device records are control-plane metadata, not application data.
+A Device is one installation's persistent transport endpoint identity, represented by its locally supplied name, public key, and reachable address. A device is pending, approved, or revoked. A user who introduces a device owns it; device identity links transports, not user identity or resource permission.
 
 A pairing request creates a pending device. An approved device signs the pairing approval payload. Revocation removes future trust but cannot erase data already copied to the revoked device.
 
@@ -91,7 +91,7 @@ _Avoid_: Default admin, bootstrap admin
 
 ## Trusted Device
 
-A Trusted Device is an approved, non-revoked Device eligible to participate in the mesh. Approval alone does not grant access to any database or filesystem.
+A Trusted Device is an approved, non-revoked Device eligible to participate in the mesh. Approval is transport trust, not user authorization.
 
 ## Hosted Control Plane
 
@@ -99,20 +99,21 @@ A Hosted Control Plane is the configured HTTP(S) authority a local runtime trust
 
 ## Storage Resource
 
-A Storage Resource is a database or filesystem owned by a User within an Application. Each has a distinct stable ID and may have a non-unique display name; one user/application may own multiple of either kind.
+A Storage Resource is a database or filesystem in one User's Application namespace, identified by `(subject, application_id)`. Each has a distinct stable ID and may have a non-unique display name; multiple OAuth clients of that Application share the namespace, while other subjects cannot open it.
 
 ## Resource Catalog
 
-The Resource Catalog is the synchronized record of storage resource identity, ownership, display names, discoverable grants, and deletion status. Discovery does not imply local possession of resource content; filesystem grant policy remains authoritative in the File System.
+The Resource Catalog is the synchronized record of storage resource identity, ownership, display names, and deletion status. Discovery does not imply local possession of resource content or user permission to access it.
 
 ## Storage-Audience Access Token
 
-A Storage-Audience Access Token is a standard IdP access token exchanged from an application client's user token for scoped Storage API access. It is not a separate token type or a single-use storage session.
+A Storage-Audience Access Token is a standard IdP access token for the Storage API, obtained through sign-in or exchange from an application client's user token. It binds subject, Application and API action limits, not mesh synchronization. It is not a separate token type or a single-use storage session.
 _Avoid_: Storage Session, storage client token
 
-## Resource Grant
+## Resource Ownership
 
-A Resource Grant is owner-controlled permission for another subject to read or write an entire database or a path subtree of a filesystem. A grant for one resource or kind gives no rights to another.
+Resource Ownership is the exclusive `(subject, application_id)` boundary for a database or filesystem. Every file belongs to the namespace subject; other subjects and applications cannot access or select the resource. There are no file permission bits, groups, or cross-user grants.
+_Avoid_: Device grant, endpoint grant
 
 ## Filesystem ID
 
@@ -125,7 +126,7 @@ A Database ID is the stable identity of one application database, separate from 
 
 ## Resource Selection
 
-Resource Selection is a device-local choice to retain and synchronize a resource its user can access. Deselecting removes only the local copy, not the resource itself.
+Resource Selection is a whole-resource choice of what a device retains and synchronizes, independent of ongoing user sessions. Its owner may select resources in their own subject/application namespaces, subject to administrator storage limits, and may deselect them. Deselecting removes only the local copy, not the resource itself.
 
 ## Residency
 
@@ -133,7 +134,7 @@ Residency is a device-local choice per filesystem path: Full or Passthrough. Ful
 
 ## File System
 
-The File System is a local-first replicated storage engine for paths, metadata, grants, and file content. It is separate from application databases and IdP/management records.
+The File System is a local-first replicated storage engine for paths, metadata, permissions, and file content. It is separate from application databases and IdP/management records.
 
 ## File Entry
 

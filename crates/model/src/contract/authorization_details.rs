@@ -24,7 +24,6 @@ pub enum AuthorizationDetail {
     tsify(into_wasm_abi, from_wasm_abi)
 )]
 pub struct StorageAuthorizationDetail {
-    pub folder: String,
     pub actions: Vec<StorageAuthorizationAction>,
 }
 
@@ -48,13 +47,12 @@ mod tests {
     #[test]
     fn serializes_storage_detail_with_rfc_type() {
         let detail = AuthorizationDetail::Storage(StorageAuthorizationDetail {
-            folder: "documents".to_string(),
             actions: vec![StorageAuthorizationAction::Read],
         });
 
         assert_eq!(
             serde_json::to_string(&detail).unwrap(),
-            r#"{"type":"storage","folder":"documents","actions":["read"]}"#
+            r#"{"type":"storage","actions":["read"]}"#
         );
     }
 }

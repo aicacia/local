@@ -27,8 +27,12 @@ where
 
     pub async fn enroll(
         &self,
+        owner_subject: String,
         request: DeviceEnrollmentRequest,
     ) -> ErrorResponseResult<DeviceEnrollment> {
+        if owner_subject.trim().is_empty() {
+            return Err(ErrorResponse::new(ErrorCode::AccessDenied));
+        }
         validate_enrollment(&request)?;
         if self.repo.has_any().await.map_err(ErrorResponse::from)? {
             return Err(ErrorResponse::new(ErrorCode::AccessDenied));
@@ -36,6 +40,7 @@ where
         let device = self
             .repo
             .create(
+                owner_subject,
                 request.name,
                 request.public_key,
                 request.address,
@@ -125,9 +130,9 @@ where
         ))
     }
 
-    pub async fn list(&self) -> ErrorResponseResult<Vec<DeviceInfo>> {
+    pub async fn list(&self, owner_subject: &str) -> ErrorResponseResult<Vec<DeviceInfo>> {
         self.repo
-            .list()
+            .list_owned(owner_subject)
             .await
             .map(|devices| devices.into_iter().map(Device::into).collect())
             .map_err(ErrorResponse::from)
@@ -135,12 +140,13 @@ where
 
     pub async fn rename(
         &self,
+        owner_subject: &str,
         device_id: idp_model::model::Id,
         request: UpdateDeviceRequest,
     ) -> ErrorResponseResult<DeviceInfo> {
         validate_name(&request.name)?;
         self.repo
-            .rename(device_id, request.name)
+            .rename(owner_subject, device_id, request.name)
             .await
             .map_err(ErrorResponse::from)?
             .map(Into::into)
@@ -149,11 +155,12 @@ where
 
     pub async fn revoke(
         &self,
+        owner_subject: &str,
         device_id: idp_model::model::Id,
         protected_public_key: &str,
     ) -> ErrorResponseResult<()> {
         self.repo
-            .revoke(device_id, protected_public_key)
+            .revoke(owner_subject, device_id, protected_public_key)
             .await
             .map_err(ErrorResponse::from)?
             .then_some(())
@@ -185,7 +192,13 @@ fn validate_name(name: &str) -> ErrorResponseResult<()> {
 }
 
 fn validate_public_key(public_key: &str) -> ErrorResponseResult<()> {
-    (valid_value(public_key) && public_key.parse::<EndpointId>().is_ok())
+    if !valid_value(public_key) {
+        return Err(ErrorResponse::new(ErrorCode::InvalidRequest));
+    }
+    let endpoint_id = public_key
+        .parse::<EndpointId>()
+        .map_err(|_| ErrorResponse::new(ErrorCode::InvalidRequest))?;
+    (endpoint_id.to_string() == public_key)
         .then_some(())
         .ok_or_else(|| ErrorResponse::new(ErrorCode::InvalidRequest))
 }
@@ -206,4 +219,23 @@ fn verify_signature(public_key: &str, payload: &str, signature: &str) -> ErrorRe
     public_key
         .verify(payload.as_bytes(), &signature)
         .map_err(|_| ErrorResponse::new(ErrorCode::AccessDenied))
+}
+
+#[cfg(test)]
+mod tests {
+    use iroh::{EndpointId, SecretKey};
+
+    use super::validate_public_key;
+
+    #[test]
+    fn public_keys_must_use_the_canonical_endpoint_id_encoding() {
+        let canonical = SecretKey::generate().public().to_string();
+        assert!(validate_public_key(&canonical).is_ok());
+        assert!(validate_public_key("not-an-endpoint-id").is_err());
+
+        let alternate_case = canonical.to_ascii_uppercase();
+        if alternate_case != canonical && alternate_case.parse::<EndpointId>().is_ok() {
+            assert!(validate_public_key(&alternate_case).is_err());
+        }
+    }
 }

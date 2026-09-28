@@ -14,7 +14,9 @@ const CONSENTS_WRITE_PERMISSION: &str = "consents.write";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub(crate) struct UserConsentResponse {
+    #[schema(value_type = String)]
     pub id: idp_model::model::Id,
+    #[schema(value_type = String)]
     pub user_id: idp_model::model::Id,
     pub client_id: String,
     pub redirect_uri: String,
@@ -51,7 +53,7 @@ pub(crate) struct ListUserConsentsQuery {
     get,
     path = "/users/{user_id}/consents",
     params(
-        ("user_id" = idp_model::model::Id, Path, description = "User ID"),
+        ("user_id" = String, Path, description = "User ID"),
         ListUserConsentsQuery
     ),
     responses((status = 200, description = "List user consents", body = [UserConsentResponse])),
@@ -84,8 +86,8 @@ pub(crate) async fn list_user_consents(
     delete,
     path = "/users/{user_id}/consents/{consent_id}",
     params(
-        ("user_id" = idp_model::model::Id, Path, description = "User ID"),
-        ("consent_id" = idp_model::model::Id, Path, description = "Consent ID")
+        ("user_id" = String, Path, description = "User ID"),
+        ("consent_id" = String, Path, description = "Consent ID")
     ),
     responses((status = 204, description = "Revoke user consent")),
     security(

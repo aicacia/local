@@ -787,6 +787,7 @@ name = "btree"
 version = "0.1.0"
 dependencies = [
  "async-lock",
+ "async-stream",
  "futures",
  "thiserror 2.0.20",
 ]
@@ -1541,21 +1542,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deckv"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "futures-core",
- "futures-util",
- "hashbrown 0.17.1",
- "postcard",
- "redb",
- "serde",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1990,6 +1976,8 @@ dependencies = [
  "engine",
  "futures",
  "postcard",
+ "serde",
+ "sync",
  "uuid",
  "value",
 ]
@@ -2004,6 +1992,7 @@ dependencies = [
  "engine",
  "futures",
  "redb",
+ "uuid",
  "value",
 ]
 
@@ -2159,10 +2148,14 @@ dependencies = [
 name = "file-system"
 version = "0.1.0"
 dependencies = [
+ "btree-redb",
  "bytes",
- "deckv",
  "futures-core",
  "futures-util",
+ "iroh",
+ "kv",
+ "kv-sync",
+ "postcard",
  "redb",
  "serde",
  "tokio",
@@ -3161,9 +3154,10 @@ dependencies = [
  "idp-service",
  "iroh",
  "iroh-chain",
- "iroh-chain-file-system",
  "key",
+ "keyring-core",
  "log",
+ "management-server",
  "management-service",
  "model",
  "ofdb",
@@ -3371,23 +3365,8 @@ name = "iroh-chain"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "dashmap",
  "iroh",
  "noq",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "iroh-chain-file-system"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "file-system",
- "futures-util",
- "iroh",
- "iroh-chain",
- "postcard",
  "serde",
  "tokio",
 ]
@@ -3751,6 +3730,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "kv"
+version = "0.1.0"
+dependencies = [
+ "automerge",
+ "btree",
+ "btree-automerge",
+ "futures",
+ "uuid",
+]
+
+[[package]]
+name = "kv-sync"
+version = "0.1.0"
+dependencies = [
+ "btree",
+ "btree-automerge",
+ "kv",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3977,6 +3978,7 @@ dependencies = [
  "ofdb",
  "serde",
  "serde_json",
+ "storage-model",
  "tokio",
  "tokio-util",
  "tower",
@@ -3992,21 +3994,20 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "file-system",
  "getrandom 0.3.4",
  "idp-db",
  "idp-model",
  "idp-service",
  "iroh",
- "iroh-chain",
- "iroh-chain-file-system",
  "model",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "storage-model",
+ "sync",
  "thiserror 2.0.20",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -4896,6 +4897,7 @@ dependencies = [
  "query",
  "schema",
  "sql-translator",
+ "sync",
  "uuid",
  "value",
 ]
@@ -6700,10 +6702,12 @@ version = "0.1.0"
 dependencies = [
  "file-system",
  "idp-model",
+ "ofdb",
  "serde",
  "serde_json",
  "storage-model",
  "tokio",
+ "utoipa",
 ]
 
 [[package]]
@@ -6804,6 +6808,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sync"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "iroh",
+ "postcard",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.20",
+ "uuid",
+ "value",
 ]
 
 [[package]]

@@ -42,6 +42,17 @@ use super::routes::well_known::{
 
 #[derive(OpenApi)]
 #[openapi(
+    paths(
+        super::storage::create_database,
+        super::storage::list_databases,
+        super::storage::get_database,
+        super::storage::delete_database,
+        super::storage::create_file_system,
+        super::storage::list_file_systems,
+        super::storage::get_file_system,
+        super::storage::delete_file_system
+    ),
+    components(schemas(super::storage::FileSystemResourceResponse)),
     info(title = "OAuth Server", version = env!("CARGO_PKG_VERSION")),
     modifiers(&SecurityAddon)
 )]
@@ -126,5 +137,25 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
         runtime_router.merge(openapi_json_routes)
     } else {
         runtime_router.nest(prefix, openapi_json_routes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use utoipa::OpenApi;
+
+    use super::ApiDoc;
+
+    #[test]
+    fn documents_storage_resource_routes() {
+        let document = ApiDoc::openapi();
+        for path in [
+            "/storage/databases",
+            "/storage/databases/{database_id}",
+            "/storage/filesystems",
+            "/storage/filesystems/{filesystem_id}",
+        ] {
+            assert!(document.paths.paths.contains_key(path), "missing {path}");
+        }
     }
 }

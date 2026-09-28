@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use key::{DerivationPath, DerivedKey};
@@ -18,6 +21,17 @@ impl PrivateKeyKeyringRepo {
     pub fn new(service_name: impl Into<String>) -> Self {
         init_credential_store().expect("Failed to initialize credential store");
 
+        Self {
+            service_name: service_name.into(),
+        }
+    }
+
+    pub fn new_with_store(
+        service_name: impl Into<String>,
+        store: Arc<keyring_core::CredentialStore>,
+    ) -> Self {
+        keyring_core::set_default_store(store);
+        SET_CREDENTIAL_STORE.store(true, Ordering::Release);
         Self {
             service_name: service_name.into(),
         }

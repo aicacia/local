@@ -5,6 +5,7 @@ use crate::ManagementResult;
 pub trait DeviceRepo {
     fn create(
         &self,
+        owner_subject: String,
         name: String,
         public_key: String,
         address: String,
@@ -34,7 +35,20 @@ pub trait DeviceRepo {
 
     fn list(&self) -> impl Future<Output = ManagementResult<Vec<Device>>>;
 
-    fn list_approved(&self) -> impl Future<Output = ManagementResult<Vec<TrustedDevice>>>;
+    fn find_approved_by_public_key(
+        &self,
+        public_key: &str,
+    ) -> impl Future<Output = ManagementResult<Option<Device>>>;
+
+    fn list_owned(
+        &self,
+        owner_subject: &str,
+    ) -> impl Future<Output = ManagementResult<Vec<Device>>>;
+
+    fn list_approved(
+        &self,
+        owner_subject: &str,
+    ) -> impl Future<Output = ManagementResult<Vec<TrustedDevice>>>;
 
     fn are_approved(
         &self,
@@ -50,12 +64,14 @@ pub trait DeviceRepo {
 
     fn rename(
         &self,
+        owner_subject: &str,
         device_id: idp_model::model::Id,
         name: String,
     ) -> impl Future<Output = ManagementResult<Option<Device>>>;
 
     fn revoke(
         &self,
+        owner_subject: &str,
         device_id: idp_model::model::Id,
         protected_public_key: &str,
     ) -> impl Future<Output = ManagementResult<bool>>;

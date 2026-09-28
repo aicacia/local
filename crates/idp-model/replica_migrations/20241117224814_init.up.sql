@@ -109,6 +109,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS clients_client_id ON clients (client_id);
 
 CREATE TABLE IF NOT EXISTS devices (
     id UUID PRIMARY KEY,
+    owner_subject TEXT NOT NULL,
     name TEXT,
     public_key TEXT,
     address TEXT,
@@ -222,4 +223,23 @@ CREATE TABLE IF NOT EXISTS idp_conflict_resolutions (
     row_id UUID,
     columns TEXT,
     created_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS device_selection_policies (
+    device_id UUID PRIMARY KEY,
+    owner_subject TEXT NOT NULL,
+    application_id UUID,
+    selected_kind TEXT,
+    selected_id UUID,
+    admin_allowed BOOLEAN NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS device_resource_selections (
+    id UUID PRIMARY KEY,
+    device_id UUID NOT NULL,
+    owner_subject TEXT NOT NULL,
+    application_id UUID NOT NULL,
+    selected_kind TEXT NOT NULL,
+    selected_id UUID NOT NULL,
+    selected BOOLEAN NOT NULL
 );

@@ -10,7 +10,7 @@ use idp_service::{
 use iroh::{Endpoint, EndpointId, SecretKey};
 use management_service::{HostedControlPlane, replica::DbDeviceRepo};
 use ofdb::{AutomergeRowCodec, RedbKernel};
-use storage_service::ScopedFileSystemRuntime;
+use storage_service::{DatabaseRuntime, ScopedFileSystemRuntime};
 
 use super::PairingAcceptanceControllerSlot;
 
@@ -74,6 +74,7 @@ pub struct RouterState {
     pub pairing_acceptance: Arc<PairingAcceptanceControllerSlot>,
     pub hosted_control_plane: Option<Arc<HostedControlPlane>>,
     pub storage_file_systems: Option<Arc<ScopedFileSystemRuntime<EndpointId>>>,
+    pub storage_databases: Option<Arc<DatabaseRuntime>>,
 }
 
 impl RouterState {
@@ -95,11 +96,17 @@ impl RouterState {
             pairing_acceptance: Arc::new(PairingAcceptanceControllerSlot::new()),
             hosted_control_plane: None,
             storage_file_systems: None,
+            storage_databases: None,
         }
     }
 
     pub fn with_hosted_control_plane(mut self, control_plane: Arc<HostedControlPlane>) -> Self {
         self.hosted_control_plane = Some(control_plane);
+        self
+    }
+
+    pub fn with_storage_databases(mut self, databases: Arc<DatabaseRuntime>) -> Self {
+        self.storage_databases = Some(databases);
         self
     }
 

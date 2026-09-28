@@ -84,12 +84,13 @@ where
     PeerId: Clone + fmt::Debug + Ord + Serialize + DeserializeOwned + Send + Sync + 'static,
     S: StorageNamespace + Send + Sync + 'static,
 {
-    pub async fn open(
+    pub async fn open_resource(
         runtime: &ScopedFileSystemRuntime<PeerId>,
         scope: S,
+        resource_id: file_system::FileSystemId,
     ) -> Result<Self, StorageServiceError> {
         let file_system = runtime
-            .open(&scope)
+            .open_resource(&scope, resource_id)
             .await
             .map_err(StorageServiceError::Scope)?;
         Ok(Self {
@@ -240,7 +241,7 @@ where
     };
     Ok(StorageEntry {
         name: entry.path,
-        hash: entry.meta.pointer.unwrap_or_default(),
+        hash: entry.meta.revision.to_string(),
         size,
         local: entry.meta.local,
     })

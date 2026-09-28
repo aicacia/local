@@ -6,7 +6,6 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::future::Future;
 
 use model::contract::{
     AccessToken, AuthorizationDetail, IdToken, RefreshToken, StandardClaims, TokenResponse,
@@ -43,15 +42,6 @@ use super::{
     validate_authorization_code_grant, validate_authorization_details,
     validate_authorization_request, validate_scopes, verify_code_challenge,
 };
-
-pub trait TokenIssuerAuthorizer: Send + Sync {
-    fn authorize<'a>(
-        &'a self,
-        client: &'a Client,
-        subject: &'a str,
-        authorization_details: &'a [AuthorizationDetail],
-    ) -> impl Future<Output = ErrorResponseResult<()>> + Send + 'a;
-}
 
 pub struct OAuth2Service<A, C, AC, U, G, K> {
     pub application_repo: A,
@@ -389,15 +379,11 @@ where
         })
     }
 
-    pub async fn token_with_authorizer<T>(
+    pub async fn token(
         &self,
         request: TokenRequest,
         client_auth: Option<OAuth2ClientAuth>,
-        authorizer: Option<&T>,
-    ) -> ErrorResponseResult<TokenResponse>
-    where
-        T: TokenIssuerAuthorizer,
-    {
+    ) -> ErrorResponseResult<TokenResponse> {
         match request {
             TokenRequest::Password(request) => {
                 let client = self
@@ -475,7 +461,6 @@ where
                     request.resource.as_deref(),
                     None,
                     None,
-                    authorizer,
                 )
                 .await
             }
@@ -551,7 +536,6 @@ where
                     authorization_code.resource.as_deref(),
                     None,
                     None,
-                    authorizer,
                 )
                 .await
             }
@@ -664,7 +648,6 @@ where
                     refresh_token.resource.as_deref(),
                     refresh_token.authorization_details.as_deref(),
                     None,
-                    authorizer,
                 )
                 .await
             }
@@ -748,7 +731,6 @@ where
                     resource,
                     request.authorization_details.as_deref(),
                     resource,
-                    authorizer,
                 )
                 .await
             }
@@ -937,7 +919,7 @@ where
         })
     }
 
-    async fn issue_tokens_for_client<T>(
+    async fn issue_tokens_for_client(
         &self,
         client: &Client,
         principal: &dyn Principal,
@@ -945,11 +927,7 @@ where
         resource: Option<&str>,
         authorization_details: Option<&[AuthorizationDetail]>,
         audience: Option<&str>,
-        authorizer: Option<&T>,
-    ) -> ErrorResponseResult<TokenResponse>
-    where
-        T: TokenIssuerAuthorizer,
-    {
+    ) -> ErrorResponseResult<TokenResponse> {
         let now = Utc::now();
         let signing_jwk = self.load_signing_jwk(principal.get_key()).await?;
         let scope = if scopes.is_empty() {
@@ -973,12 +951,6 @@ where
             authorization_details: authorization_details
                 .map(<[model::contract::AuthorizationDetail]>::to_vec),
         };
-
-        if let (Some(authorizer), Some(details)) = (authorizer, authorization_details) {
-            authorizer
-                .authorize(client, &access_claims.sub, details)
-                .await?;
-        }
 
         let access_token_value = encode_jwt(&signing_jwk, &access_claims)?;
 

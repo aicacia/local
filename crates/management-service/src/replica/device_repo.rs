@@ -15,8 +15,9 @@ use idp_model::{
 use crate::{DeviceRepo, ManagementError, ManagementResult};
 
 const TABLE: &str = "devices";
-const COLUMNS: [&str; 12] = [
+const COLUMNS: [&str; 13] = [
     "id",
+    "owner_subject",
     "name",
     "public_key",
     "address",
@@ -54,11 +55,17 @@ where
             .execute(vec![Statement::Query(select())])
             .await
             .map_err(db_error)?;
-        results
+        let rows = results
             .pop()
             .ok_or_else(|| ManagementError::InvalidInput("missing device query result".into()))?
             .rows_as::<DeviceRow>()
-            .map_err(row_error)
+            .map_err(row_error)?;
+        if rows.iter().any(|row| row.owner_subject.trim().is_empty()) {
+            return Err(ManagementError::InvalidInput(
+                "device record has no owner".into(),
+            ));
+        }
+        Ok(rows)
     }
 
     async fn record(&self, id: Id) -> ManagementResult<Option<DeviceRow>> {
@@ -101,12 +108,18 @@ where
 {
     async fn create(
         &self,
+        owner_subject: String,
         name: String,
         public_key: String,
         address: String,
         enrollment_code_hash: Vec<u8>,
         enrollment_expires_at: i64,
     ) -> ManagementResult<Device> {
+        if owner_subject.trim().is_empty() {
+            return Err(ManagementError::InvalidInput(
+                "device owner is required".into(),
+            ));
+        }
         let now = now();
         let state = if self.records().await?.is_empty() {
             DeviceState::Approved
@@ -115,6 +128,7 @@ where
         };
         let row = DeviceRow {
             id: Id::now_v7(),
+            owner_subject,
             name,
             public_key,
             address,
@@ -145,9 +159,21 @@ where
         address: String,
         accepting_public_key: String,
     ) -> ManagementResult<Device> {
+        let owner_subject = self
+            .records()
+            .await?
+            .into_iter()
+            .find(|device| {
+                device.public_key == accepting_public_key
+                    && !device.owner_subject.trim().is_empty()
+                    && device.state == DeviceState::Approved
+            })
+            .map(|device| device.owner_subject)
+            .ok_or_else(|| ManagementError::InvalidInput("approving device has no owner".into()))?;
         let now = now();
         let row = DeviceRow {
             id: Id::now_v7(),
+            owner_subject,
             name,
             public_key,
             address,
@@ -225,12 +251,44 @@ where
         rows.into_iter().map(TryInto::try_into).collect()
     }
 
-    async fn list_approved(&self) -> ManagementResult<Vec<TrustedDevice>> {
+    async fn find_approved_by_public_key(
+        &self,
+        public_key: &str,
+    ) -> ManagementResult<Option<Device>> {
+        let mut matching = self
+            .records()
+            .await?
+            .into_iter()
+            .filter(|row| row.public_key == public_key);
+        let Some(row) = matching.next() else {
+            return Ok(None);
+        };
+        if matching.next().is_some() || row.state != DeviceState::Approved {
+            return Ok(None);
+        }
+        self.ensure_clear(row.id).await?;
+        row.try_into().map(Some)
+    }
+
+    async fn list_owned(&self, owner_subject: &str) -> ManagementResult<Vec<Device>> {
         let rows = self.records().await?;
         let mut devices = Vec::new();
         for row in rows
             .into_iter()
-            .filter(|row| row.state == DeviceState::Approved)
+            .filter(|row| row.owner_subject == owner_subject)
+        {
+            self.ensure_clear(row.id).await?;
+            devices.push(row.try_into()?);
+        }
+        Ok(devices)
+    }
+
+    async fn list_approved(&self, owner_subject: &str) -> ManagementResult<Vec<TrustedDevice>> {
+        let rows = self.records().await?;
+        let mut devices = Vec::new();
+        for row in rows
+            .into_iter()
+            .filter(|row| row.state == DeviceState::Approved && row.owner_subject == owner_subject)
         {
             self.ensure_clear(row.id).await?;
             devices.push(TrustedDevice {
@@ -299,12 +357,17 @@ where
         .map(Some)
     }
 
-    async fn rename(&self, device_id: Id, name: String) -> ManagementResult<Option<Device>> {
+    async fn rename(
+        &self,
+        owner_subject: &str,
+        device_id: Id,
+        name: String,
+    ) -> ManagementResult<Option<Device>> {
         let Some(row) = self.record(device_id).await? else {
             return Ok(None);
         };
         self.ensure_clear(device_id).await?;
-        if row.state == DeviceState::Revoked {
+        if row.owner_subject != owner_subject || row.state == DeviceState::Revoked {
             return Ok(None);
         }
         let updated_at = now();
@@ -325,12 +388,20 @@ where
         .map(Some)
     }
 
-    async fn revoke(&self, device_id: Id, protected_public_key: &str) -> ManagementResult<bool> {
+    async fn revoke(
+        &self,
+        owner_subject: &str,
+        device_id: Id,
+        protected_public_key: &str,
+    ) -> ManagementResult<bool> {
         let Some(row) = self.record(device_id).await? else {
             return Ok(false);
         };
         self.ensure_clear(device_id).await?;
-        if row.public_key == protected_public_key || row.state == DeviceState::Revoked {
+        if row.owner_subject != owner_subject
+            || row.public_key == protected_public_key
+            || row.state == DeviceState::Revoked
+        {
             return Ok(false);
         }
         let rows = self.records().await?;
@@ -389,6 +460,7 @@ where
 #[derive(Clone, Debug)]
 struct DeviceRow {
     id: Uuid,
+    owner_subject: String,
     name: String,
     public_key: String,
     address: String,
@@ -419,6 +491,7 @@ impl FromRow for DeviceRow {
         };
         Ok(Self {
             id: db::decode(db::value(row, columns, "id")?, "id")?,
+            owner_subject: db::decode(db::value(row, columns, "owner_subject")?, "owner_subject")?,
             name: db::decode(db::value(row, columns, "name")?, "name")?,
             public_key: db::decode(db::value(row, columns, "public_key")?, "public_key")?,
             address: db::decode(db::value(row, columns, "address")?, "address")?,
@@ -449,6 +522,7 @@ impl TryFrom<DeviceRow> for Device {
     fn try_from(row: DeviceRow) -> ManagementResult<Self> {
         Ok(Self {
             id: row.id,
+            owner_subject: row.owner_subject,
             name: row.name,
             public_key: row.public_key,
             address: row.address,
@@ -464,6 +538,7 @@ impl From<DeviceRow> for Row {
     fn from(row: DeviceRow) -> Self {
         Row::new(vec![
             Value::Uuid(row.id),
+            Value::Text(row.owner_subject),
             Value::Text(row.name),
             Value::Text(row.public_key),
             Value::Text(row.address),
@@ -529,12 +604,338 @@ fn select() -> Query {
     Query::Select(QuerySelect {
         from: from(),
         projection: COLUMNS.into_iter().map(column).collect(),
+        distinct: false,
         predicate: None,
         aggregates: vec![],
+        text_concats: vec![],
         group_by: vec![],
         order_by: vec![],
         limit: None,
         offset: None,
         having: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::Arc,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use db::{AutomergeRowCodec, Engine, InMemoryKernel, NativeEngine, open_native_engine};
+    use idp_model::contract::DeviceState;
+
+    use crate::{DeviceRepo, replica::DbDeviceRepo};
+
+    async fn repo() -> DbDeviceRepo<InMemoryKernel, AutomergeRowCodec> {
+        let engine = Arc::new(Engine::new(InMemoryKernel::new(), AutomergeRowCodec::new()));
+        idp_model::replica::up(&engine)
+            .await
+            .expect("initialize replica schema");
+        DbDeviceRepo::new(engine)
+    }
+
+    #[tokio::test]
+    async fn device_owner_persists_and_pairing_inherits_approved_owner() {
+        let repo = repo().await;
+        let enrolled = repo
+            .create(
+                "subject-a".into(),
+                "primary".into(),
+                "primary-key".into(),
+                "address".into(),
+                Vec::new(),
+                0,
+            )
+            .await
+            .expect("create first device");
+        assert_eq!(enrolled.state, DeviceState::Approved);
+        assert_eq!(enrolled.owner_subject, "subject-a");
+        assert_eq!(repo.list().await.expect("list devices"), [enrolled]);
+
+        let paired = repo
+            .create_pairing(
+                "paired".into(),
+                "paired-key".into(),
+                "address".into(),
+                "primary-key".into(),
+            )
+            .await
+            .expect("create paired device");
+        assert_eq!(paired.owner_subject, "subject-a");
+        let approved = repo
+            .approve_pairing(paired.id)
+            .await
+            .expect("approve pairing")
+            .expect("paired device exists");
+        assert_eq!(approved.owner_subject, "subject-a");
+        assert_eq!(repo.list().await.expect("list devices")[1], approved);
+    }
+
+    #[tokio::test]
+    async fn device_mutations_and_listing_require_owner() {
+        let repo = repo().await;
+        let device = repo
+            .create(
+                "owner".into(),
+                "primary".into(),
+                "primary-key".into(),
+                "address".into(),
+                Vec::new(),
+                0,
+            )
+            .await
+            .expect("create device");
+        assert!(
+            repo.list_owned("other")
+                .await
+                .expect("list other devices")
+                .is_empty()
+        );
+        assert_eq!(
+            repo.list_owned("owner").await.expect("list owned devices"),
+            [device.clone()]
+        );
+        assert!(
+            repo.rename("other", device.id, "changed".into())
+                .await
+                .expect("deny rename")
+                .is_none()
+        );
+        assert!(
+            !repo
+                .revoke("other", device.id, "another-key")
+                .await
+                .expect("deny revoke")
+        );
+        assert_eq!(
+            repo.list_owned("owner").await.expect("reload device"),
+            [device.clone()]
+        );
+        assert!(
+            repo.rename("owner", device.id, "renamed".into())
+                .await
+                .expect("rename owned device")
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn transport_key_resolves_only_to_one_approved_device() {
+        let repo = repo().await;
+        let approved = repo
+            .create(
+                "owner".into(),
+                "approved".into(),
+                "transport-key".into(),
+                "address".into(),
+                Vec::new(),
+                0,
+            )
+            .await
+            .expect("create approved device");
+        assert_eq!(
+            repo.find_approved_by_public_key("transport-key")
+                .await
+                .expect("resolve approved transport key"),
+            Some(approved)
+        );
+        assert!(
+            repo.find_approved_by_public_key("unknown-key")
+                .await
+                .expect("resolve unknown transport key")
+                .is_none()
+        );
+
+        repo.create(
+            "owner".into(),
+            "pending".into(),
+            "pending-key".into(),
+            "address".into(),
+            vec![1],
+            i64::MAX,
+        )
+        .await
+        .expect("create pending device");
+        assert!(
+            repo.find_approved_by_public_key("pending-key")
+                .await
+                .expect("resolve pending transport key")
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn trusted_devices_are_scoped_to_owner_and_approval() {
+        let repo = repo().await;
+        let first = repo
+            .create(
+                "owner-a".into(),
+                "first".into(),
+                "key-a".into(),
+                "addr-a".into(),
+                Vec::new(),
+                0,
+            )
+            .await
+            .expect("create approved device");
+        let second = repo
+            .create(
+                "owner-b".into(),
+                "second".into(),
+                "key-b".into(),
+                "addr-b".into(),
+                vec![1],
+                i64::MAX,
+            )
+            .await
+            .expect("create pending device");
+        assert!(
+            repo.list_approved("owner-b")
+                .await
+                .expect("list pending owner")
+                .is_empty()
+        );
+        repo.approve(second.id, &[1])
+            .await
+            .expect("approve device")
+            .expect("pending device exists");
+        let own = repo.list_approved("owner-a").await.expect("list owner a");
+        assert_eq!(own.len(), 1);
+        assert_eq!(own[0].public_key, first.public_key);
+        let other = repo.list_approved("owner-b").await.expect("list owner b");
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].public_key, second.public_key);
+        repo.revoke("owner-b", second.id, "key-a")
+            .await
+            .expect("revoke device");
+        assert!(
+            repo.list_approved("owner-b")
+                .await
+                .expect("list revoked owner")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn device_owners_survive_database_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "management-device-reopen-{}-{}.redb",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock is after Unix epoch")
+                .as_nanos()
+        ));
+        let enrolled_id;
+        let paired_id;
+        {
+            let engine: Arc<NativeEngine> =
+                Arc::new(open_native_engine(&path).expect("open durable test database"));
+            idp_model::replica::up(&engine)
+                .await
+                .expect("initialize replica schema");
+            let repo = DbDeviceRepo::new(engine);
+            let enrolled = repo
+                .create(
+                    "subject-a".into(),
+                    "primary".into(),
+                    "primary-key".into(),
+                    "address".into(),
+                    Vec::new(),
+                    0,
+                )
+                .await
+                .expect("create enrolled device");
+            let paired = repo
+                .create_pairing(
+                    "paired".into(),
+                    "paired-key".into(),
+                    "address".into(),
+                    "primary-key".into(),
+                )
+                .await
+                .expect("create paired device");
+            repo.approve_pairing(paired.id)
+                .await
+                .expect("approve pairing")
+                .expect("paired device exists");
+            enrolled_id = enrolled.id;
+            paired_id = paired.id;
+        }
+
+        {
+            let engine: Arc<NativeEngine> =
+                Arc::new(open_native_engine(&path).expect("reopen durable test database"));
+            let repo = DbDeviceRepo::new(engine);
+            let devices = repo.list().await.expect("load devices after reopen");
+            let enrolled = devices
+                .iter()
+                .find(|device| device.id == enrolled_id)
+                .expect("enrolled device exists after reopen");
+            let paired = devices
+                .iter()
+                .find(|device| device.id == paired_id)
+                .expect("paired device exists after reopen");
+            assert_eq!(enrolled.owner_subject, "subject-a");
+            assert_eq!(paired.owner_subject, "subject-a");
+            assert_eq!(paired.state, DeviceState::Approved);
+        }
+        std::fs::remove_file(path).expect("remove durable test database");
+    }
+
+    #[tokio::test]
+    async fn device_creation_rejects_empty_owner() {
+        let repo = repo().await;
+        assert!(
+            repo.create(
+                "  ".into(),
+                "ownerless".into(),
+                "ownerless-key".into(),
+                "address".into(),
+                Vec::new(),
+                0,
+            )
+            .await
+            .is_err()
+        );
+        assert!(!repo.has_any().await.expect("check device records"));
+    }
+
+    #[tokio::test]
+    async fn pairing_rejects_pending_approver() {
+        let repo = repo().await;
+        repo.create(
+            "subject-a".into(),
+            "primary".into(),
+            "primary-key".into(),
+            "address".into(),
+            Vec::new(),
+            0,
+        )
+        .await
+        .expect("create first device");
+        repo.create(
+            "subject-b".into(),
+            "pending".into(),
+            "pending-key".into(),
+            "address".into(),
+            Vec::new(),
+            0,
+        )
+        .await
+        .expect("create pending device");
+
+        assert!(
+            repo.create_pairing(
+                "paired".into(),
+                "paired-key".into(),
+                "address".into(),
+                "pending-key".into(),
+            )
+            .await
+            .is_err()
+        );
+    }
 }

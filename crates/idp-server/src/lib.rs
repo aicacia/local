@@ -4,8 +4,12 @@
 mod cli;
 mod config;
 
+#[cfg(feature = "cli")]
+mod database_protocol;
 mod device_identity;
 mod router;
+#[cfg(feature = "cli")]
+mod storage_protocol;
 
 #[cfg(feature = "cli")]
 pub use cli::run;

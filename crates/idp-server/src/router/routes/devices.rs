@@ -28,7 +28,7 @@ pub(crate) async fn trusted_devices(
     }
     let devices = state
         .devices
-        .list_approved()
+        .list_approved(&claims.sub)
         .await
         .map_err(|_| ErrorResponse::new(ErrorCode::ServerError))?;
     Ok(Json(devices))
@@ -43,11 +43,11 @@ pub(crate) async fn trusted_devices(
 )]
 pub(crate) async fn enroll_device(
     State(state): State<RouterState>,
-    StandardAuthorization { .. }: StandardAuthorization,
+    StandardAuthorization { claims, .. }: StandardAuthorization,
     Json(request): Json<DeviceEnrollmentRequest>,
 ) -> Result<Json<DeviceEnrollment>, ErrorResponse> {
     DeviceEnrollmentService::new(state.devices)
-        .enroll(request)
+        .enroll(claims.sub, request)
         .await
         .map(Json)
 }
@@ -96,10 +96,10 @@ pub(crate) async fn set_pairing_acceptance(
 )]
 pub(crate) async fn list_devices(
     State(state): State<RouterState>,
-    StandardAuthorization { .. }: StandardAuthorization,
+    StandardAuthorization { claims, .. }: StandardAuthorization,
 ) -> Result<Json<Vec<DeviceInfo>>, ErrorResponse> {
     DeviceEnrollmentService::new(state.devices)
-        .list()
+        .list(&claims.sub)
         .await
         .map(Json)
 }
@@ -115,11 +115,11 @@ pub(crate) async fn list_devices(
 pub(crate) async fn update_device(
     State(state): State<RouterState>,
     Path(device_id): Path<Id>,
-    StandardAuthorization { .. }: StandardAuthorization,
+    StandardAuthorization { claims, .. }: StandardAuthorization,
     Json(request): Json<UpdateDeviceRequest>,
 ) -> Result<Json<DeviceInfo>, ErrorResponse> {
     DeviceEnrollmentService::new(state.devices)
-        .rename(device_id, request)
+        .rename(&claims.sub, device_id, request)
         .await
         .map(Json)
 }
@@ -134,9 +134,13 @@ pub(crate) async fn update_device(
 pub(crate) async fn revoke_device(
     State(state): State<RouterState>,
     Path(device_id): Path<Id>,
-    StandardAuthorization { .. }: StandardAuthorization,
+    StandardAuthorization { claims, .. }: StandardAuthorization,
 ) -> Result<(), ErrorResponse> {
     DeviceEnrollmentService::new(state.devices)
-        .revoke(device_id, &state.device_identity.endpoint_id().to_string())
+        .revoke(
+            &claims.sub,
+            device_id,
+            &state.device_identity.endpoint_id().to_string(),
+        )
         .await
 }

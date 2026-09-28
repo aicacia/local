@@ -309,8 +309,10 @@ fn select(predicate: Option<QueryExpr>) -> Query {
     Query::Select(QuerySelect {
         from: from(),
         projection: COLUMNS.into_iter().map(column).collect(),
+        distinct: false,
         predicate,
         aggregates: vec![],
+        text_concats: vec![],
         group_by: vec![],
         order_by: vec![],
         limit: None,

@@ -2,7 +2,6 @@ use std::io;
 
 use idp_service::repo::RawKeyringRepo;
 use iroh::{Endpoint, SecretKey, endpoint::presets};
-use iroh_chain::TUNNEL_ALPN;
 
 use crate::DeviceIdentity;
 
@@ -30,7 +29,6 @@ pub async fn open() -> io::Result<DeviceIdentity> {
     };
     let endpoint = Endpoint::builder(presets::N0)
         .secret_key(secret_key.clone())
-        .alpns(vec![TUNNEL_ALPN.to_vec()])
         .bind()
         .await
         .map_err(io::Error::other)?;

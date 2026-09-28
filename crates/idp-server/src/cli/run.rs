@@ -11,6 +11,7 @@ use clap::Parser;
 use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::open_native_engine;
 use env_logger::Env;
+use idp_model::contract::DeviceState;
 use idp_service::{
     oauth2::OAuth2Service,
     replica::{
@@ -19,13 +20,15 @@ use idp_service::{
     },
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
-use iroh::EndpointId;
-use iroh_chain::{DynamicEndpointIdStore, Server, TunnelAuthorizer, VaultId};
-use management_service::{
-    HostedControlPlane, access_token_authorization::HostedAccessTokenAuthorizer,
-    replica::DbDeviceRepo,
+use iroh_chain::{EndpointIdStore, Server};
+use management_server::{
+    RouterState as ManagementRouterState, openapi_router as management_router,
 };
-use storage_service::ScopedFileSystemRuntime;
+use management_service::{
+    DeviceRepo, HostedControlPlane, ManagementService,
+    replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo, DbSelectionPolicyRepo},
+};
+use storage_service::{DatabaseRuntime, ScopedFileSystemRuntime};
 use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
@@ -34,30 +37,6 @@ use crate::{
     AppConfig, RouterState, TimedPairingAcceptanceController, router::openapi_router,
     storage_router,
 };
-
-enum CliTunnelAuthorizer {
-    Hosted(HostedAccessTokenAuthorizer),
-    Deny,
-}
-
-impl TunnelAuthorizer for CliTunnelAuthorizer {
-    async fn authorize(
-        &self,
-        vault_id: VaultId,
-        initiating_id: EndpointId,
-        accepting_id: EndpointId,
-        authorization: &[u8],
-    ) -> bool {
-        match self {
-            Self::Hosted(authorizer) => {
-                authorizer
-                    .authorize(vault_id, initiating_id, accepting_id, authorization)
-                    .await
-            }
-            Self::Deny => false,
-        }
-    }
-}
 
 pub async fn run() -> io::Result<()> {
     match dotenvy::dotenv() {
@@ -109,6 +88,33 @@ pub async fn run() -> io::Result<()> {
         .transpose()
         .map_err(io::Error::other)?
         .map(Arc::new);
+    let management_control_plane = Arc::new(
+        HostedControlPlane::new_with_issuer(&app_config.api_public_uri, &app_config.oauth2.issuer)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
+    );
+    let storage_audience = app_config
+        .storage_audience
+        .as_deref()
+        .unwrap_or(&app_config.api_public_uri);
+    if storage_audience.trim().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "storage_audience must not be empty",
+        ));
+    }
+    let management_state = ManagementRouterState::new(
+        &app_config.api_public_uri,
+        Arc::new(ManagementService::new(
+            DbApplicationRepo::new(Arc::clone(&engine)),
+            DbPermissionRepo::new(Arc::clone(&engine)),
+            DbRoleRepo::new(Arc::clone(&engine)),
+        )),
+        Arc::clone(&oauth2_service),
+        Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine))),
+        management_control_plane,
+        storage_audience,
+    )
+    .with_devices(Arc::clone(&devices));
     let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,
@@ -126,22 +132,41 @@ pub async fn run() -> io::Result<()> {
         .parent()
         .unwrap_or(Path::new("."))
         .to_path_buf();
+    let databases = Arc::new(DatabaseRuntime::new(storage_root.clone()).map_err(io::Error::other)?);
     let file_systems = Arc::new(
         ScopedFileSystemRuntime::new(storage_root, device_identity.endpoint_id())
             .map_err(io::Error::other)?,
     );
-    let router_state = router_state.with_storage_file_systems(Arc::clone(&file_systems));
-    let authorizer = match control_plane {
-        Some(control_plane) => {
-            CliTunnelAuthorizer::Hosted(HostedAccessTokenAuthorizer::new(control_plane))
-        }
-        None => CliTunnelAuthorizer::Deny,
-    };
-    let manager = Server::new(
-        device_identity.endpoint(),
-        DynamicEndpointIdStore::default(),
-        authorizer,
+    let router_state = router_state
+        .with_storage_databases(Arc::clone(&databases))
+        .with_storage_file_systems(Arc::clone(&file_systems));
+    let allowed_peers = EndpointIdStore::default();
+    allowed_peers.replace(
+        devices
+            .list()
+            .await
+            .map_err(io::Error::other)?
+            .into_iter()
+            .filter(|device| device.state == DeviceState::Approved)
+            .filter_map(|device| device.public_key.parse().ok()),
     );
+    let manager = Server::new(device_identity.endpoint(), allowed_peers.clone());
+    let refresh_store = allowed_peers;
+    let refresh_devices = Arc::clone(&devices);
+    let peer_refresh = spawn(async move {
+        loop {
+            sleep(Duration::from_secs(2)).await;
+            match refresh_devices.list().await {
+                Ok(devices) => refresh_store.replace(
+                    devices
+                        .into_iter()
+                        .filter(|device| device.state == DeviceState::Approved)
+                        .filter_map(|device| device.public_key.parse().ok()),
+                ),
+                Err(error) => log::warn!("failed to refresh Iroh allowlist: {error}"),
+            }
+        }
+    });
     router_state
         .pairing_acceptance
         .bind(Arc::new(TimedPairingAcceptanceController::new(
@@ -149,14 +174,42 @@ pub async fn run() -> io::Result<()> {
             Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
         )))
         .map_err(io::Error::other)?;
-    let listener = manager.clone();
-    spawn(async move { listener.listen().await });
+    let policies = Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine)));
+    let database_protocol = crate::database_protocol::DatabaseProtocolHandler::new(
+        Arc::clone(&device_identity),
+        Arc::clone(&devices),
+        Arc::clone(&policies),
+        databases,
+    );
+    let _iroh_router = manager.router(
+        crate::storage_protocol::StorageProtocolHandler::new(
+            Arc::clone(&device_identity),
+            Arc::clone(&devices),
+            Arc::clone(&policies),
+            Arc::clone(&file_systems),
+        ),
+        database_protocol.clone(),
+    );
+    let sync_manager = manager.clone();
+    let database_sync = spawn(async move {
+        loop {
+            database_protocol
+                .synchronize_selected_peers(&sync_manager)
+                .await;
+            sleep(Duration::from_secs(10)).await;
+        }
+    });
     log::info!("Iroh endpoint: {:?}", device_identity.endpoint().addr());
 
     let router = openapi_router(router_state.clone(), app_config.server.prefix())
         .split_for_parts()
         .0
         .merge(storage_router(router_state, file_systems))
+        .merge(
+            management_router(management_state, "/management")
+                .split_for_parts()
+                .0,
+        )
         .layer(CorsLayer::very_permissive().allow_private_network(true))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new().gzip(app_config.server.gzip));
@@ -177,6 +230,8 @@ pub async fn run() -> io::Result<()> {
     };
 
     shutdown_signal(cancellation_token).await;
+    peer_refresh.abort();
+    database_sync.abort();
     let mut command_handle = command_handle;
     select! {
         result = &mut command_handle => match result {

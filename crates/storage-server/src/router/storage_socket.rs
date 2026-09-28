@@ -13,7 +13,7 @@ use axum::{
 use storage_model::{StorageErrorCode, StorageRequest, StorageResponse, StorageSession};
 
 pub struct StorageSocketAccess<S> {
-    pub folder: String,
+    pub read: bool,
     pub write: bool,
     pub session: S,
 }
@@ -24,12 +24,14 @@ pub trait StorageSocketAuthorizer: Send + Sync + 'static {
     fn authorize(
         &self,
         token: String,
+        resource_id: String,
     ) -> impl Future<Output = Result<StorageSocketAccess<Self::Session>, ()>> + Send;
 }
 
 #[derive(serde::Deserialize)]
 struct StorageQuery {
     access_token: String,
+    filesystem_id: String,
 }
 
 pub fn storage_router<A>(authorizer: Arc<A>) -> Router
@@ -49,7 +51,10 @@ async fn upgrade_socket<A>(
 where
     A: StorageSocketAuthorizer,
 {
-    let Ok(access) = authorizer.authorize(query.access_token).await else {
+    let Ok(access) = authorizer
+        .authorize(query.access_token, query.filesystem_id)
+        .await
+    else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
     upgrade.on_upgrade(move |socket| serve_socket(socket, access))
@@ -79,25 +84,15 @@ where
 
 fn allows<S>(access: &StorageSocketAccess<S>, request: &StorageRequest) -> bool {
     match request {
-        StorageRequest::Read { path }
-        | StorageRequest::Entry { path }
-        | StorageRequest::List { path } => in_folder(&access.folder, path),
-        StorageRequest::Write { path, .. }
-        | StorageRequest::Append { path, .. }
-        | StorageRequest::Delete { path }
-        | StorageRequest::CreateDir { path } => access.write && in_folder(&access.folder, path),
-        StorageRequest::Rename { from, to } => {
-            access.write && in_folder(&access.folder, from) && in_folder(&access.folder, to)
-        }
+        StorageRequest::Read { .. }
+        | StorageRequest::Entry { .. }
+        | StorageRequest::List { .. } => access.read,
+        StorageRequest::Write { .. }
+        | StorageRequest::Append { .. }
+        | StorageRequest::Delete { .. }
+        | StorageRequest::CreateDir { .. }
+        | StorageRequest::Rename { .. } => access.write,
     }
-}
-
-fn in_folder(folder: &str, path: &str) -> bool {
-    folder.is_empty()
-        || path == folder
-        || path
-            .strip_prefix(folder)
-            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 async fn send_response(socket: &mut WebSocket, response: StorageResponse) -> Result<(), ()> {
@@ -125,22 +120,16 @@ mod tests {
     }
 
     #[test]
-    fn authorization_is_folder_bounded_and_read_only() {
+    fn authorization_is_resource_wide_and_action_bounded() {
         let access = StorageSocketAccess {
-            folder: "a".into(),
+            read: true,
             write: false,
             session: Session,
         };
         assert!(allows(
             &access,
             &StorageRequest::Read {
-                path: "a/file".into()
-            }
-        ));
-        assert!(!allows(
-            &access,
-            &StorageRequest::Read {
-                path: "ab/file".into()
+                path: "any/file".into()
             }
         ));
         assert!(!allows(
@@ -153,8 +142,8 @@ mod tests {
         assert!(!allows(
             &access,
             &StorageRequest::Rename {
-                from: "a/file".into(),
-                to: "b/file".into()
+                from: "any/file".into(),
+                to: "any/renamed".into()
             }
         ));
     }

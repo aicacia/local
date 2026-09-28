@@ -14,7 +14,7 @@ name = "management_service"
 
 [features]
 default = []
-fs = ["std"]
+
 replica = ["std", "dep:db", "idp-model/replica"]
 
 std = [
@@ -25,8 +25,6 @@ std = [
   "dep:base64",
   "dep:getrandom",
   "dep:iroh",
-  "dep:iroh-chain",
-  "dep:iroh-chain-file-system",
   "dep:reqwest",
   "serde/std",
 ]
@@ -34,13 +32,12 @@ std = [
 [dependencies]
 # Internal
 db = { package = "idp-db", path = "../db", default-features = false, features = [], optional = true }
-file-system = { path = "../../../offs/crates/file-system", default-features = false, features = ["sync"] }
 idp-model = { path = "../idp-model", default-features = false, features = [] }
 idp-service = { path = "../idp-service", default-features = false, features = [] }
-iroh-chain = { path = "../../../offs/crates/iroh-chain", default-features = false, features = [], optional = true }
-iroh-chain-file-system = { path = "../../../offs/crates/iroh-chain-file-system", default-features = false, features = [], optional = true }
+
 model = { path = "../model", default-features = false, features = [] }
 storage-model = { path = "../storage-model", default-features = false, features = [] }
+uuid = { version = "1.23", default-features = false, features = ["v5"] }
 
 # Error Handling
 thiserror = { version = "2.0", default-features = false, features = [] }
@@ -56,6 +53,7 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 base64 = { version = "0.22", default-features = false, features = [], optional = true }
 iroh = { version = "1.1", default-features = false, features = [], optional = true }
 
+
 # Serialization
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
@@ -66,6 +64,6 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 getrandom = { version = "0.3", default-features = false, features = [], optional = true }
 
 [dev-dependencies]
-file-system = { path = "../../../offs/crates/file-system", default-features = false, features = ["in-memory", "sync"] }
 idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
+sync = { path = "../../../ofdb/crates/sync", default-features = false, features = [] }
 tokio = { version = "1.4", default-features = false, features = ["macros", "rt"] }
