@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, sync::Arc};
+use std::{fmt, sync::Arc};
 
 use file_system::{Entry, FileKind, FileSystem};
 use serde::{Serialize, de::DeserializeOwned};
@@ -59,15 +59,10 @@ impl<PeerId> StorageSession for StorageService<PeerId>
 where
     PeerId: Clone + fmt::Debug + Ord + Serialize + DeserializeOwned + Send + Sync + 'static,
 {
-    fn execute_session(
-        &self,
-        request: StorageRequest,
-    ) -> impl Future<Output = StorageResponse> + Send {
-        async move {
-            self.execute(request)
-                .await
-                .unwrap_or_else(StorageServiceError::response)
-        }
+    async fn execute_session(&self, request: StorageRequest) -> StorageResponse {
+        self.execute(request)
+            .await
+            .unwrap_or_else(StorageServiceError::response)
     }
 }
 
@@ -123,15 +118,10 @@ where
     PeerId: Clone + fmt::Debug + Ord + Serialize + DeserializeOwned + Send + Sync + 'static,
     S: StorageNamespace + Send + Sync + 'static,
 {
-    fn execute_session(
-        &self,
-        request: StorageRequest,
-    ) -> impl Future<Output = StorageResponse> + Send {
-        async move {
-            self.execute(request)
-                .await
-                .unwrap_or_else(StorageServiceError::response)
-        }
+    async fn execute_session(&self, request: StorageRequest) -> StorageResponse {
+        self.execute(request)
+            .await
+            .unwrap_or_else(StorageServiceError::response)
     }
 }
 

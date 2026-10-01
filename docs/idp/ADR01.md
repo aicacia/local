@@ -65,21 +65,23 @@ exactly two choices:
    complete baseline and the first approved device through the DB repositories,
    then constructs and starts the router on the next application start.
 2. **Join an existing system.** The user signs in to the existing IdP and
-   authorizes this device through its authenticated setup API. The IdP records
-   the device approval in the replicated DB, then sends the joining device a
-   `ofdb` checkpoint and subsequent missing envelopes. The joining client
-   authenticates through the existing OAuth flow and sends the resulting bearer
-   token in the HTTP `Authorization` header; this is not a separate setup token,
-   authenticated device tunnel, or storage tunnel. Only after the local DB is
-   complete and conflict-free does the joining application construct and start
-   its normal router on the next application start. Setup completion does not
-   hot-swap a running router.
+   authorizes this device through its authenticated setup API. Device-to-control-
+   plane authorization/registration may use HTTPS. The control-plane database is
+   then synchronized directly between devices using `ofdb` sync over an Iroh
+   bidirectional stream. Device-to-device HTTP(S) synchronization is not used.
+   Bootstrap stream admission must be explicitly authorized and bound to the
+   registered Iroh endpoint identity; application-resource selection does not
+   authorize control-plane bootstrap. Only after the local DB is durably complete
+   and conflict-free does the joining application construct and start its normal
+   router on the next application start. Setup completion does not hot-swap a
+   running router.
 
 **Storage authorization is separate from setup synchronization.** A signed-in
-user receives an OAuth access token and exchanges a storage-scoped token for a
-single-use storage session. The storage server uses that session to authorize
-storage access. Device enrollment and IdP DB replication use the authenticated
-IdP setup/sync API; they do not use a filesystem or storage tunnel.
+user receives a storage-audience OAuth access token for Storage API requests.
+That token does not authorize mesh sync. Device enrollment and control-plane
+DB replication use setup authorization and the Iroh stream, not a filesystem
+sync session. This supersedes the earlier checkpoint/envelope and HTTP
+`/setup/sync` proposal above.
 
 Setup credentials are entered by the user during setup; they are not default
 configuration values. A local DB that is empty, incomplete, conflicted, or

@@ -5,15 +5,22 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use btree_redb::{Bytes, RedbByteBTree, table_definition};
+use kv::KvStore;
 use ofdb::Database;
+use redb::Database as RedbDatabase;
 use storage_model::StorageNamespace;
 
 use crate::{DatabaseCatalog, DatabaseId, DatabaseResource};
+
+type DatabaseKey = (String, idp_model::model::Id, DatabaseId);
+type KvStores = BTreeMap<DatabaseKey, Arc<KvStore<RedbByteBTree>>>;
 
 pub struct DatabaseRuntime {
     root: PathBuf,
     catalog: DatabaseCatalog,
     open: Mutex<BTreeMap<(String, idp_model::model::Id, DatabaseId), Arc<Database>>>,
+    kv_open: Mutex<KvStores>,
 }
 
 impl DatabaseRuntime {
@@ -22,6 +29,7 @@ impl DatabaseRuntime {
             catalog: DatabaseCatalog::new(root.clone())?,
             root,
             open: Mutex::new(BTreeMap::new()),
+            kv_open: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -68,9 +76,82 @@ impl DatabaseRuntime {
             .map_err(|_| io::Error::other("database runtime lock poisoned"))?;
         let deleted = self.catalog.delete(scope, id)?;
         if deleted {
-            open.remove(&database_key(scope, id));
+            let key = database_key(scope, id);
+            open.remove(&key);
+            self.kv_open
+                .lock()
+                .map_err(|_| io::Error::other("database KV runtime lock poisoned"))?
+                .remove(&key);
         }
         Ok(deleted)
+    }
+
+    pub fn open_selected<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<Option<Arc<Database>>> {
+        let mut open = self
+            .open
+            .lock()
+            .map_err(|_| io::Error::other("database runtime lock poisoned"))?;
+        if !self.catalog.register_selected(scope, id)? {
+            return Ok(None);
+        }
+        let key = database_key(scope, id);
+        if let Some(database) = open.get(&key) {
+            return Ok(Some(Arc::clone(database)));
+        }
+        let path = database_path(&self.root, scope, id)?;
+        let database = Arc::new(
+            Database::open(path)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?,
+        );
+        open.insert(key, Arc::clone(&database));
+        Ok(Some(database))
+    }
+
+    pub fn open_kv_selected<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<Option<Arc<KvStore<RedbByteBTree>>>> {
+        let mut open = self
+            .kv_open
+            .lock()
+            .map_err(|_| io::Error::other("database KV runtime lock poisoned"))?;
+        if !self.catalog.register_selected(scope, id)? {
+            return Ok(None);
+        }
+        let key = database_key(scope, id);
+        if let Some(store) = open.get(&key) {
+            return Ok(Some(Arc::clone(store)));
+        }
+        let mut path = database_path(&self.root, scope, id)?;
+        path.set_extension("kv.redb");
+        let create = !path.exists();
+        let database = Arc::new(
+            if create {
+                RedbDatabase::create(&path)
+            } else {
+                RedbDatabase::open(&path)
+            }
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?,
+        );
+        if create {
+            let transaction = database
+                .begin_write()
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            transaction
+                .open_table(table_definition::<Bytes, Vec<u8>>("kv"))
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            transaction
+                .commit()
+                .map_err(|error| io::Error::other(error.to_string()))?;
+        }
+        let store = Arc::new(KvStore::new(RedbByteBTree::new(database, "kv")));
+        open.insert(key, Arc::clone(&store));
+        Ok(Some(store))
     }
 
     pub fn open<S: StorageNamespace>(
@@ -133,7 +214,7 @@ fn database_path(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::fs;
 
     use ofdb::SqlTranslator;
     use storage_model::StorageNamespace;
@@ -155,9 +236,115 @@ mod tests {
         }
     }
 
+    #[test]
+    fn selected_resource_provisions_matching_id_without_reviving_tombstones() {
+        let root = std::env::temp_dir().join(format!(
+            "database-runtime-selected-{}-{}",
+            std::process::id(),
+            idp_model::model::Id::now_v7()
+        ));
+        let scope = Scope {
+            subject: "owner",
+            application: idp_model::model::Id::now_v7(),
+        };
+        let id = idp_model::model::Id::now_v7();
+        let runtime = DatabaseRuntime::new(root.clone()).expect("runtime opens");
+        assert!(
+            runtime
+                .open(&scope, id)
+                .expect("unprovisioned resource lookup succeeds")
+                .is_none()
+        );
+        let database = runtime
+            .open_selected(&scope, id)
+            .expect("selected resource opens")
+            .expect("selected resource is provisioned");
+        assert_eq!(
+            runtime
+                .list(&scope)
+                .expect("catalog lists selected resource")[0]
+                .id,
+            id
+        );
+        assert!(runtime.delete(&scope, id).expect("resource tombstones"));
+        assert!(
+            runtime
+                .open_selected(&scope, id)
+                .expect("tombstoned resource lookup succeeds")
+                .is_none()
+        );
+        drop(database);
+        drop(runtime);
+        fs::remove_dir_all(root).expect("test databases are removed");
+    }
+
+    #[tokio::test]
+    async fn kv_sidecar_persists_across_runtime_reopen_and_deleted_resources_stay_tombstoned() {
+        let root = std::env::temp_dir().join(format!(
+            "database-runtime-kv-{}-{}",
+            std::process::id(),
+            idp_model::model::Id::now_v7()
+        ));
+        let scope = Scope {
+            subject: "owner",
+            application: idp_model::model::Id::now_v7(),
+        };
+        let runtime = DatabaseRuntime::new(root.clone()).expect("runtime opens");
+        let (resource, _database) = runtime
+            .create(&scope, Some("with-kv".into()))
+            .expect("database creates");
+        let kv_store = runtime
+            .open_kv_selected(&scope, resource.id)
+            .expect("KV sidecar opens")
+            .expect("created resource remains available");
+        let mut transaction = kv_store.transaction().await.expect("KV transaction opens");
+        transaction
+            .set("key", vec![1, 2, 3], None)
+            .await
+            .expect("KV value writes");
+        transaction.commit().await.expect("KV value commits");
+        drop(kv_store);
+        drop(runtime);
+
+        let runtime = DatabaseRuntime::new(root.clone()).expect("runtime reopens");
+        let kv_store = runtime
+            .open_kv_selected(&scope, resource.id)
+            .expect("persisted KV sidecar opens")
+            .expect("resource remains selected");
+        let transaction = kv_store
+            .transaction()
+            .await
+            .expect("reopened KV transaction opens");
+        assert_eq!(
+            transaction.get("key", 0).await.expect("KV value reads"),
+            Some(vec![1, 2, 3])
+        );
+        transaction
+            .rollback()
+            .await
+            .expect("read transaction rolls back");
+        assert!(
+            runtime
+                .delete(&scope, resource.id)
+                .expect("resource tombstones")
+        );
+        drop(kv_store);
+        drop(runtime);
+
+        let runtime = DatabaseRuntime::new(root.clone()).expect("runtime reopens after deletion");
+        assert!(
+            runtime
+                .open_kv_selected(&scope, resource.id)
+                .expect("tombstoned KV lookup succeeds")
+                .is_none()
+        );
+        drop(runtime);
+        fs::remove_dir_all(root).expect("test databases are removed");
+    }
+
     #[tokio::test]
     async fn resources_open_independent_durable_engines() {
-        let root = PathBuf::from(std::env::temp_dir()).join(format!(
+        let root = std::env::temp_dir().join(format!(
             "database-runtime-{}-{}",
             std::process::id(),
             idp_model::model::Id::now_v7()

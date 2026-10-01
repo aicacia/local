@@ -1,12 +1,14 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fmt::Debug,
-    io,
+    fs, io,
     path::PathBuf,
     sync::{Arc, Mutex as StdMutex},
 };
 
-use file_system::{FileSystem, FileSystemCatalog, FileSystemId, FileSystemResource, Residency};
+use file_system::{
+    CatalogEntry, FileSystem, FileSystemCatalog, FileSystemId, FileSystemResource, Residency,
+};
 
 use serde::{Serialize, de::DeserializeOwned};
 use storage_model::StorageNamespace;
@@ -20,6 +22,8 @@ struct StorageNamespaceId {
 }
 
 pub type ScopedFileSystem<PeerId> = FileSystem<PeerId>;
+type ScopedResources<PeerId> =
+    BTreeMap<(StorageNamespaceId, FileSystemId), Arc<ScopedFileSystem<PeerId>>>;
 
 pub struct ScopedFileSystemRuntime<PeerId>
 where
@@ -29,7 +33,7 @@ where
     local_peer: PeerId,
 
     catalogs: StdMutex<BTreeMap<StorageNamespaceId, Arc<FileSystemCatalog>>>,
-    resources: Mutex<BTreeMap<(StorageNamespaceId, FileSystemId), Arc<ScopedFileSystem<PeerId>>>>,
+    resources: Mutex<ScopedResources<PeerId>>,
 }
 
 impl<PeerId> ScopedFileSystemRuntime<PeerId>
@@ -83,6 +87,84 @@ where
         }
     }
 
+    pub async fn register_selected_resource<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        resource_id: FileSystemId,
+    ) -> Result<(), String> {
+        let id = storage_namespace_id(scope)?;
+        let catalog = self.catalog(&id)?;
+        if let Some(entry) = catalog
+            .snapshot()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .find(|entry| entry.resource.id == resource_id)
+        {
+            return if entry.deleted {
+                Err("selected filesystem has a local deletion tombstone".into())
+            } else {
+                catalog
+                    .mark_projected_selected(resource_id)
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            };
+        }
+        catalog
+            .import_snapshot(&[CatalogEntry {
+                resource: FileSystemResource {
+                    id: resource_id,
+                    name: None,
+                },
+                deleted: false,
+            }])
+            .map_err(|error| error.to_string())?;
+        catalog
+            .mark_projected(resource_id)
+            .map_err(|error| error.to_string())
+    }
+
+    pub async fn remove_unselected_projected_resources(
+        &self,
+        selected: &[(String, idp_model::model::Id, FileSystemId)],
+    ) -> Result<(), String> {
+        let selected = selected
+            .iter()
+            .map(|(owner, application_id, resource_id)| {
+                (
+                    StorageNamespaceId {
+                        user_sub: owner.clone(),
+                        application_id: *application_id,
+                    },
+                    *resource_id,
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        let catalogs = self.catalogs_on_disk()?;
+        let mut resources = self.resources.lock().await;
+        for (namespace, catalog) in catalogs {
+            for resource_id in catalog
+                .projected_selected()
+                .map_err(|error| error.to_string())?
+            {
+                if selected.contains(&(namespace.clone(), resource_id)) {
+                    continue;
+                }
+                let key = (namespace.clone(), resource_id);
+                if resources
+                    .get(&key)
+                    .is_some_and(|filesystem| Arc::strong_count(filesystem) > 1)
+                {
+                    continue;
+                }
+                drop(resources.remove(&key));
+                catalog
+                    .evict_projected_copy(resource_id)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn open_resource<S: StorageNamespace>(
         &self,
         scope: &S,
@@ -104,6 +186,52 @@ where
             .map_err(|error| error.to_string())?;
         resources.insert((id, resource_id), Arc::clone(&file_system));
         Ok(file_system)
+    }
+
+    fn catalogs_on_disk(
+        &self,
+    ) -> Result<Vec<(StorageNamespaceId, Arc<FileSystemCatalog>)>, String> {
+        let root = self.root.join("filesystems");
+        let subjects = match fs::read_dir(root) {
+            Ok(subjects) => subjects,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.to_string()),
+        };
+        let mut catalogs = Vec::new();
+        for subject in subjects {
+            let subject = subject.map_err(|error| error.to_string())?;
+            if !subject
+                .file_type()
+                .map_err(|error| error.to_string())?
+                .is_dir()
+            {
+                continue;
+            }
+            let Some(user_sub) = subject.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            for application in fs::read_dir(subject.path()).map_err(|error| error.to_string())? {
+                let application = application.map_err(|error| error.to_string())?;
+                if !application
+                    .file_type()
+                    .map_err(|error| error.to_string())?
+                    .is_dir()
+                {
+                    continue;
+                }
+                let Ok(application_id) = application.file_name().to_string_lossy().parse() else {
+                    continue;
+                };
+                let namespace = StorageNamespaceId {
+                    user_sub: user_sub.clone(),
+                    application_id,
+                };
+                if application.path().join("filesystem-catalog.redb").is_file() {
+                    catalogs.push((namespace.clone(), self.catalog(&namespace)?));
+                }
+            }
+        }
+        Ok(catalogs)
     }
 
     fn catalog(&self, id: &StorageNamespaceId) -> Result<Arc<FileSystemCatalog>, String> {
@@ -164,6 +292,25 @@ fn namespace_root(root: &std::path::Path, id: &StorageNamespaceId) -> PathBuf {
         .join(id.application_id.to_string())
 }
 
+fn storage_namespace_id(scope: &impl StorageNamespace) -> Result<StorageNamespaceId, String> {
+    let user_sub = scope.user_sub();
+    if user_sub.is_empty()
+        || matches!(user_sub, "." | "..")
+        || !user_sub
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("invalid user subject".to_owned());
+    }
+    if scope.application_id().is_nil() {
+        return Err("invalid application id".to_owned());
+    }
+    Ok(StorageNamespaceId {
+        user_sub: user_sub.to_owned(),
+        application_id: scope.application_id(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
@@ -196,6 +343,152 @@ mod tests {
             };
             assert!(storage_namespace_id(&namespace).is_err());
         }
+    }
+
+    #[tokio::test]
+    async fn registers_selected_resource_without_overriding_a_tombstone() {
+        let root = env::temp_dir().join(format!(
+            "selected-filesystem-runtime-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let namespace = Namespace {
+            user_sub: "user",
+            application_id: idp_model::model::Id::now_v7(),
+        };
+        let runtime = ScopedFileSystemRuntime::new(root.clone(), 1_u8).expect("runtime opens");
+        let selected_id = file_system::FileSystemId::new();
+        runtime
+            .register_selected_resource(&namespace, selected_id)
+            .await
+            .expect("selected resource is registered");
+        assert!(
+            runtime
+                .contains(
+                    &namespace,
+                    &ResourceIdentity {
+                        kind: ResourceKind::FileSystem,
+                        id: selected_id.as_uuid().to_string(),
+                    },
+                )
+                .expect("selected resource is in the namespace catalog")
+        );
+        runtime
+            .open_resource(&namespace, selected_id)
+            .await
+            .expect("selected filesystem opens");
+        runtime
+            .delete_resource(&namespace, selected_id)
+            .await
+            .expect("selected filesystem tombstones");
+        assert!(
+            runtime
+                .register_selected_resource(&namespace, selected_id)
+                .await
+                .is_err(),
+            "a selected-resource projection cannot revive a local tombstone"
+        );
+        drop(runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn deselection_evicts_projected_copy_after_open_handles_drop() {
+        let root = env::temp_dir().join(format!(
+            "deselected-filesystem-runtime-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let namespace = Namespace {
+            user_sub: "user",
+            application_id: idp_model::model::Id::now_v7(),
+        };
+        let runtime = ScopedFileSystemRuntime::new(root.clone(), 1_u8).expect("runtime opens");
+        let projected_id = file_system::FileSystemId::new();
+        runtime
+            .register_selected_resource(&namespace, projected_id)
+            .await
+            .expect("selected resource is registered");
+        let projected = runtime
+            .open_resource(&namespace, projected_id)
+            .await
+            .expect("projected filesystem opens");
+        projected
+            .write("cached.txt", b"local copy")
+            .await
+            .expect("write projected content");
+        let projected_root = root
+            .join("filesystems")
+            .join(namespace.user_sub)
+            .join(namespace.application_id.to_string())
+            .join("filesystems")
+            .join(projected_id.as_uuid().to_string());
+        assert!(projected_root.exists());
+
+        runtime
+            .remove_unselected_projected_resources(&[])
+            .await
+            .expect("deselection cleanup succeeds");
+        assert!(
+            projected_root.exists(),
+            "active handles defer physical cleanup"
+        );
+        drop(projected);
+
+        runtime
+            .remove_unselected_projected_resources(&[])
+            .await
+            .expect("retry cleanup after handle release");
+        assert!(!projected_root.exists());
+        assert_eq!(
+            runtime
+                .list_resources(&namespace)
+                .await
+                .expect("projection identity remains in catalog")
+                .len(),
+            1
+        );
+        assert!(
+            runtime
+                .open_resource(&namespace, projected_id)
+                .await
+                .expect("resource can be opened after eviction")
+                .entry("cached.txt")
+                .await
+                .is_err()
+        );
+        runtime
+            .register_selected_resource(&namespace, projected_id)
+            .await
+            .expect("reselection restores projected status");
+
+        let local = runtime
+            .create_resource(&namespace, Some("local".into()))
+            .await
+            .expect("create local resource");
+        let local_fs = runtime
+            .open_resource(&namespace, local.id)
+            .await
+            .expect("local resource opens");
+        local_fs
+            .write("local.txt", b"keep")
+            .await
+            .expect("write owner content");
+        let local_root = root
+            .join("filesystems")
+            .join(namespace.user_sub)
+            .join(namespace.application_id.to_string())
+            .join("filesystems")
+            .join(local.id.as_uuid().to_string());
+        runtime
+            .remove_unselected_projected_resources(&[])
+            .await
+            .expect("unselected local resources remain untouched");
+        assert!(local_root.exists());
+
+        drop(local_fs);
+        drop(runtime);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
@@ -287,23 +580,4 @@ mod tests {
         );
         let _ = fs::remove_dir_all(root);
     }
-}
-
-fn storage_namespace_id(scope: &impl StorageNamespace) -> Result<StorageNamespaceId, String> {
-    let user_sub = scope.user_sub();
-    if user_sub.is_empty()
-        || matches!(user_sub, "." | "..")
-        || !user_sub
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    {
-        return Err("invalid user subject".to_owned());
-    }
-    if scope.application_id().is_nil() {
-        return Err("invalid application id".to_owned());
-    }
-    Ok(StorageNamespaceId {
-        user_sub: user_sub.to_owned(),
-        application_id: scope.application_id(),
-    })
 }

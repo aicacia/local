@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct SetupJoinRequest {
+pub struct SetupBootstrapRequest {
     pub device_name: String,
-    pub idp_url: String,
+    pub endpoint_id: String,
+    pub endpoint_addr: String,
 }

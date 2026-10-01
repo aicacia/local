@@ -48,9 +48,15 @@ export type StorageResponse = {
     type: "error";
     code: "invalidRequest" | "operationFailed";
 };
+export type FileSystemResource = {
+    id: string;
+    name: string | null;
+};
 type FetchFunction = (input: URL | RequestInfo, init?: RequestInit) => Promise<Response>;
 export type StorageClientOptions = {
     baseUrl: URL | string;
+    audience: string;
+    clientId: string;
     bearerToken: () => string | Promise<string>;
     fetch?: FetchFunction;
 };
@@ -64,7 +70,11 @@ export declare class StorageSocket {
 export declare class StorageClient {
     private readonly options;
     constructor(options: StorageClientOptions);
-    openSocket(): Promise<StorageSocket>;
+    listFileSystems(): Promise<FileSystemResource[]>;
+    createFileSystem(name?: string): Promise<FileSystemResource>;
+    openSocket(filesystemId: string): Promise<StorageSocket>;
+    private exchangeToken;
+    private request;
 }
 export {};
 //# sourceMappingURL=index.d.ts.map

@@ -225,6 +225,7 @@ fn resolution_insert(audit: &ResolutionAudit) -> String {
 mod tests {
     use db::{AutomergeRowCodec, Engine, InMemoryKernel};
     use futures::executor::block_on;
+    use ofdb::{apply_sync_state_batch_for, export_sync_state_for};
 
     use super::{
         SecurityRow, SecurityTable, allows_authentication, allows_authorization,
@@ -301,8 +302,7 @@ mod tests {
             let destination = Engine::new(InMemoryKernel::new(), AutomergeRowCodec::new());
             up(&source).await.unwrap();
             seed(&source).await;
-            destination
-                .import_checkpoint(source.export_checkpoint().await.unwrap())
+            apply_sync_state_batch_for(&destination, export_sync_state_for(&source).await.unwrap())
                 .await
                 .unwrap();
 
@@ -426,10 +426,9 @@ mod tests {
         source: &Engine<InMemoryKernel, AutomergeRowCodec>,
         destination: &Engine<InMemoryKernel, AutomergeRowCodec>,
     ) {
-        let frontier = destination.frontier().await.unwrap();
-        for envelope in source.missing_envelopes(&frontier).await.unwrap() {
-            destination.import_envelope(envelope).await.unwrap();
-        }
+        apply_sync_state_batch_for(destination, export_sync_state_for(source).await.unwrap())
+            .await
+            .unwrap();
     }
 
     async fn update(

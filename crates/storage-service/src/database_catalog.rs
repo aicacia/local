@@ -83,6 +83,32 @@ impl DatabaseCatalog {
             .collect())
     }
 
+    pub fn register_selected<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<bool> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| io::Error::other("database catalog lock poisoned"))?;
+        let path = catalog_path(&self.root, scope)?;
+        let mut catalog = read_catalog(&path)?;
+        if let Some(record) = catalog.records.get(&id) {
+            return Ok(!record.deleted);
+        }
+        let resource = DatabaseResource { id, name: None };
+        catalog.records.insert(
+            id,
+            CatalogRecord {
+                resource,
+                deleted: false,
+            },
+        );
+        write_catalog(&path, &catalog)?;
+        Ok(true)
+    }
+
     pub fn get<S: StorageNamespace>(
         &self,
         scope: &S,
@@ -198,7 +224,7 @@ fn write_catalog(path: &Path, catalog: &Catalog) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::fs;
 
     use storage_model::{ResourceCatalog, ResourceIdentity, ResourceKind, StorageNamespace};
 
@@ -222,7 +248,7 @@ mod tests {
 
     #[test]
     fn resources_are_isolated_persistent_and_tombstoned() {
-        let root = PathBuf::from(std::env::temp_dir()).join(format!(
+        let root = std::env::temp_dir().join(format!(
             "database-catalog-{}-{}",
             std::process::id(),
             idp_model::model::Id::now_v7()

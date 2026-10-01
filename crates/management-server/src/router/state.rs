@@ -6,6 +6,7 @@ use idp_service::{
         DbApplicationRepo, DbClientRepo, DbKeyRepo, DbOAuth2AuthorizationCodeRepo,
         DbOAuth2UserConsentRepo, DbUserRepo,
     },
+    repo::PrivateKeyKeyringRepo,
 };
 use management_service::{
     HostedControlPlane, ManagementService,
@@ -26,8 +27,15 @@ type DbDevice = DbDeviceRepo<RedbKernel, AutomergeRowCodec>;
 
 pub(crate) type ManagementRouterService = ManagementService<DbApplication, DbPermission, DbRole>;
 
-type LocalOAuth2Service =
-    OAuth2Service<DbApplication, DbClient, DbAuthorizationCode, DbUser, DbUserConsent, DbKey>;
+type LocalOAuth2Service = OAuth2Service<
+    DbApplication,
+    DbClient,
+    DbAuthorizationCode,
+    DbUser,
+    DbUserConsent,
+    DbKey,
+    PrivateKeyKeyringRepo,
+>;
 
 #[derive(Clone)]
 pub struct RouterState {

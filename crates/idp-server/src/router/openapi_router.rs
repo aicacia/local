@@ -33,6 +33,7 @@ use super::routes::oauth2::register::{
 use super::routes::oauth2::revoke::{__path_revoke, revoke};
 use super::routes::oauth2::sessions::{__path_sessions_logout, sessions_logout};
 use super::routes::oauth2::token::{__path_token, token};
+use super::routes::setup::{__path_register_bootstrap, register_bootstrap};
 
 use super::routes::userinfo::{__path_userinfo, userinfo};
 use super::routes::version::{__path_version, version};
@@ -50,7 +51,8 @@ use super::routes::well_known::{
         super::storage::create_file_system,
         super::storage::list_file_systems,
         super::storage::get_file_system,
-        super::storage::delete_file_system
+        super::storage::delete_file_system,
+        super::routes::setup::register_bootstrap
     ),
     components(schemas(super::storage::FileSystemResourceResponse)),
     info(title = "OAuth Server", version = env!("CARGO_PKG_VERSION")),
@@ -65,6 +67,7 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
     let routes = || {
         OpenApiRouter::new()
             .routes(routes!(health))
+            .routes(routes!(register_bootstrap))
             .routes(routes!(device))
             .routes(routes!(sign_device_message))
             .routes(routes!(revoke_self))
@@ -147,13 +150,14 @@ mod tests {
     use super::ApiDoc;
 
     #[test]
-    fn documents_storage_resource_routes() {
+    fn documents_storage_and_setup_routes() {
         let document = ApiDoc::openapi();
         for path in [
             "/storage/databases",
             "/storage/databases/{database_id}",
             "/storage/filesystems",
             "/storage/filesystems/{filesystem_id}",
+            "/setup/bootstrap",
         ] {
             assert!(document.paths.paths.contains_key(path), "missing {path}");
         }

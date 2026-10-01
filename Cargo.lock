@@ -3126,6 +3126,7 @@ dependencies = [
  "include_dir",
  "key",
  "model",
+ "ofdb",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -3156,6 +3157,7 @@ dependencies = [
  "iroh-chain",
  "key",
  "keyring-core",
+ "kv-sync",
  "log",
  "management-server",
  "management-service",
@@ -3168,6 +3170,7 @@ dependencies = [
  "storage-model",
  "storage-server",
  "storage-service",
+ "sync",
  "tokio",
  "tokio-util",
  "tower",
@@ -3846,6 +3849,7 @@ dependencies = [
  "management-server",
  "management-service",
  "model",
+ "ofdb",
  "rcgen",
  "reqwest 0.12.28",
  "rustls",
@@ -3994,7 +3998,6 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "getrandom 0.3.4",
  "idp-db",
  "idp-model",
  "idp-service",
@@ -6700,9 +6703,13 @@ dependencies = [
 name = "storage-service"
 version = "0.1.0"
 dependencies = [
+ "btree-redb",
  "file-system",
  "idp-model",
+ "kv",
+ "kv-sync",
  "ofdb",
+ "redb",
  "serde",
  "serde_json",
  "storage-model",

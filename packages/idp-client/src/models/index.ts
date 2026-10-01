@@ -41,7 +41,7 @@ export * from "./PairingAcceptance.js";
 export * from "./ResponseMode.js";
 export * from "./ResponseType.js";
 export * from "./SignDeviceMessage.js";
-export * from "./StorageSession.js";
+
 export * from "./SubjectTokenType.js";
 export * from "./TokenEndpointAuthMethod.js";
 export * from "./TokenResponse.js";

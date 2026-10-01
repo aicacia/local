@@ -1,3 +1,5 @@
+use alloc::{string::String, vec::Vec};
+
 use chrono::{DateTime, Utc};
 use idp_model::{
     contract::CodeChallengeMethod,

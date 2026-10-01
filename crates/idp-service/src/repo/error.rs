@@ -1,3 +1,7 @@
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use core::error::Error;
 
 use idp_model::contract::{ErrorCode, ErrorResponse};

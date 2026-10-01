@@ -200,8 +200,6 @@ importers:
         specifier: ^1.0.0
         version: 1.1.0(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0)(yaml@2.9.0))
 
-  crates/iroh-client-wasm: {}
-
   crates/tauri-plugin-fetch-api:
     dependencies:
       '@tauri-apps/api':
@@ -251,58 +249,6 @@ importers:
       rolldown:
         specifier: ^1.1.5
         version: 1.2.1
-      shx:
-        specifier: ^0.4.0
-        version: 0.4.0
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@26.1.2)(typescript@5.9.3)
-      tslib:
-        specifier: ^2.8.1
-        version: 2.8.1
-      typedoc:
-        specifier: ^0.28.17
-        version: 0.28.20(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.10
-        version: 4.1.10(@types/node@26.1.2)(@vitest/coverage-v8@4.1.10)(vite@8.2.0(@types/node@26.1.2)(jiti@2.7.0)(yaml@2.9.0))
-
-  packages/iroh-client:
-    dependencies:
-      '@aicacia/iroh-client-wasm':
-        specifier: workspace:*
-        version: link:../../crates/iroh-client-wasm
-      eventemitter3:
-        specifier: ^5.0.4
-        version: 5.0.4
-    devDependencies:
-      '@biomejs/biome':
-        specifier: ^2.5.3
-        version: 2.5.6
-      '@types/benchmark':
-        specifier: ^2.1.5
-        version: 2.1.5
-      '@vitest/coverage-v8':
-        specifier: ^4.1.10
-        version: 4.1.10(vitest@4.1.10)
-      benchmark:
-        specifier: ^2.1.4
-        version: 2.1.4
-      globals:
-        specifier: ^17.7.0
-        version: 17.8.0
-      husky:
-        specifier: ^9.1.7
-        version: 9.1.7
-      rolldown:
-        specifier: ^1.1.5
-        version: 1.2.1
-      rolldown-plugin-wasm:
-        specifier: ^0.3.2
-        version: 0.3.2(rolldown@1.2.1)
       shx:
         specifier: ^0.4.0
         version: 0.4.0
@@ -2438,12 +2384,6 @@ packages:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
     engines: {iojs: '>=1.0.0', node: '>=0.10.0'}
 
-  rolldown-plugin-wasm@0.3.2:
-    resolution: {integrity: sha512-WYjcRNvX8i3PoAPIbmENebUhn1b3nbkorLSGMBGBP5mPaSE5Jh5JWuVhRm3Nl5n6VL23OtWh3TOm0wwMYYV+8Q==}
-    engines: {node: ^22.18.0 || >=24.0.0}
-    peerDependencies:
-      rolldown: ^1.0.0
-
   rolldown@1.2.1:
     resolution: {integrity: sha512-4FKJhg8d3OiyQOA6Q1Q0hoFFpW9/OoX+VsHzpECsdsIZoOArrAK90gl59YK/Z+gnDel45bgJZK03ozH/9bCqEw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -4521,10 +4461,6 @@ snapshots:
       supports-preserve-symlinks-flag: 1.0.0
 
   reusify@1.1.0: {}
-
-  rolldown-plugin-wasm@0.3.2(rolldown@1.2.1):
-    dependencies:
-      rolldown: 1.2.1
 
   rolldown@1.2.1:
     dependencies:

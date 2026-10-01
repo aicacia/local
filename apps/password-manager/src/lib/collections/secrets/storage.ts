@@ -1,6 +1,6 @@
 import * as v from "valibot";
 import type { StorageResponse, StorageSocket } from "$lib/common/storageSocket";
-import { SecretSchema, type Secret } from "$lib/models/secret";
+import { type Secret, SecretSchema } from "$lib/models/secret";
 
 const DIRECTORY = "secrets";
 const EXTENSION = ".json";
@@ -9,6 +9,10 @@ const decoder = new TextDecoder();
 
 export class SecretStorage {
     constructor(private readonly socket: StorageSocket) {}
+
+    close(): void {
+        this.socket.close();
+    }
 
     async list(): Promise<Secret[]> {
         const response = await this.socket.request({

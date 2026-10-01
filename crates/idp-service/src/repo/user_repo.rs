@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use idp_model::model::{Id, User, UserEmail, UserPassword, UserPhoneNumber};
 
 use crate::repo::RepoResult;

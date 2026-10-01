@@ -6,6 +6,7 @@ use idp_service::{
         DbApplicationRepo, DbClientRepo, DbKeyRepo, DbOAuth2AuthorizationCodeRepo,
         DbOAuth2UserConsentRepo, DbUserRepo,
     },
+    repo::PrivateKeyKeyringRepo,
 };
 use iroh::{Endpoint, EndpointId, SecretKey};
 use management_service::{HostedControlPlane, replica::DbDeviceRepo};
@@ -13,18 +14,19 @@ use ofdb::{AutomergeRowCodec, RedbKernel};
 use storage_service::{DatabaseRuntime, ScopedFileSystemRuntime};
 
 use super::PairingAcceptanceControllerSlot;
+use crate::bootstrap::BootstrapRegistry;
 
-type NativeOAuth2Service = OAuth2Service<
+pub(super) type NativeOAuth2Service = OAuth2Service<
     DbApplicationRepo<RedbKernel, AutomergeRowCodec>,
     DbClientRepo<RedbKernel, AutomergeRowCodec>,
     DbOAuth2AuthorizationCodeRepo<RedbKernel, AutomergeRowCodec>,
     DbUserRepo<RedbKernel, AutomergeRowCodec>,
     DbOAuth2UserConsentRepo<RedbKernel, AutomergeRowCodec>,
     DbKeyRepo<RedbKernel, AutomergeRowCodec>,
+    PrivateKeyKeyringRepo,
 >;
 
 pub type NativeDeviceRepo = DbDeviceRepo<RedbKernel, AutomergeRowCodec>;
-pub type NativeOAuth2ServiceRef = NativeOAuth2Service;
 
 #[derive(Clone)]
 pub struct DeviceIdentity {
@@ -75,6 +77,7 @@ pub struct RouterState {
     pub hosted_control_plane: Option<Arc<HostedControlPlane>>,
     pub storage_file_systems: Option<Arc<ScopedFileSystemRuntime<EndpointId>>>,
     pub storage_databases: Option<Arc<DatabaseRuntime>>,
+    pub bootstrap_grants: Arc<BootstrapRegistry>,
 }
 
 impl RouterState {
@@ -97,6 +100,7 @@ impl RouterState {
             hosted_control_plane: None,
             storage_file_systems: None,
             storage_databases: None,
+            bootstrap_grants: Arc::new(BootstrapRegistry::default()),
         }
     }
 

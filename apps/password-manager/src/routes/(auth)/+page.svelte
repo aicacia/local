@@ -2,12 +2,16 @@
 import { onMount } from "svelte";
 import { SecretStorage } from "$lib/collections/secrets/storage";
 import {
+    createFileSystem,
+    type FileSystemResource,
+    listFileSystems,
     openStorageSocket,
-    type StorageSocket,
 } from "$lib/common/storageSocket";
 import type { Secret } from "$lib/models/secret";
 
 let secrets = $state<Secret[]>([]);
+let fileSystems = $state<FileSystemResource[]>([]);
+let selectedFileSystemId = $state("");
 let loading = $state(true);
 let error = $state<string | null>(null);
 let editing = $state<Secret | null>(null);
@@ -16,7 +20,7 @@ let secret = $state("");
 let uri = $state("");
 let notes = $state("");
 let favorite = $state(false);
-let storage: SecretStorage | null = null;
+let storage = $state.raw<SecretStorage | null>(null);
 let sortedSecrets = $derived(
     [...secrets].sort(
         (left, right) =>
@@ -26,12 +30,10 @@ let sortedSecrets = $derived(
 );
 
 onMount(() => {
-    let socket: StorageSocket | null = null;
-    void (async () => {
-        socket = await openStorageSocket();
-        storage = new SecretStorage(socket);
-        secrets = await storage.list();
-    })()
+    void listFileSystems()
+        .then((resources) => {
+            fileSystems = resources;
+        })
         .catch((cause: unknown) => {
             error = message(cause);
         })
@@ -39,8 +41,42 @@ onMount(() => {
             loading = false;
         });
 
-    return () => socket?.close();
+    return () => storage?.close();
 });
+
+async function selectFileSystem(): Promise<void> {
+    storage?.close();
+    storage = null;
+    secrets = [];
+    if (!selectedFileSystemId) {
+        return;
+    }
+    loading = true;
+    error = null;
+    try {
+        const socket = await openStorageSocket(selectedFileSystemId);
+        storage = new SecretStorage(socket);
+        secrets = await storage.list();
+    } catch (cause) {
+        error = message(cause);
+    } finally {
+        loading = false;
+    }
+}
+
+async function newFileSystem(): Promise<void> {
+    loading = true;
+    error = null;
+    try {
+        const resource = await createFileSystem();
+        fileSystems = [...fileSystems, resource];
+        selectedFileSystemId = resource.id;
+        await selectFileSystem();
+    } catch (cause) {
+        error = message(cause);
+        loading = false;
+    }
+}
 
 function newSecret(): void {
     editing = null;
@@ -122,13 +158,37 @@ function message(cause: unknown): string {
 			<h1>Password Manager</h1>
 			<p class="text-gray-600 dark:text-gray-400">Your records are stored in your LIDP application scope.</p>
 		</div>
-		<button class="btn primary" type="button" onclick={newSecret}>New secret</button>
+		<button class="btn primary" type="button" disabled={!storage} onclick={newSecret}>New secret</button>
 	</header>
+
+        <section class="card flex flex-wrap items-end gap-3">
+            <label class="flex min-w-64 flex-col gap-2" for="filesystem">
+                Filesystem
+                <select
+                    id="filesystem"
+                    bind:value={selectedFileSystemId}
+                    disabled={loading}
+                    onchange={() => void selectFileSystem()}
+                >
+                    <option value="">Select a filesystem</option>
+                    {#each fileSystems as fileSystem (fileSystem.id)}
+                        <option value={fileSystem.id}>{fileSystem.name ?? fileSystem.id}</option>
+                    {/each}
+                </select>
+            </label>
+            <button class="btn secondary" type="button" disabled={loading || !selectedFileSystemId} onclick={() => void selectFileSystem()}>
+                Open filesystem
+            </button>
+            <button class="btn secondary" type="button" disabled={loading} onclick={() => void newFileSystem()}>
+                Create filesystem
+            </button>
+        </section>
 
 	{#if error}
 		<p class="rounded-lg bg-red-700 px-3 py-2 text-white" role="alert">{error}</p>
 	{/if}
 
+        {#if storage}
 	<div class="grid gap-6 md:grid-cols-[minmax(16rem,1fr)_minmax(20rem,2fr)]">
 		<section class="card">
 			<h2>Secrets</h2>
@@ -178,5 +238,8 @@ function message(cause: unknown): string {
 				<button class="btn secondary" type="button" onclick={newSecret}>Clear</button>
 			</div>
 		</form>
-	</div>
+		</div>
+        {:else}
+            <p>Select or create a filesystem to manage secrets.</p>
+        {/if}
 </div>

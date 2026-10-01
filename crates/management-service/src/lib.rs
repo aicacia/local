@@ -16,8 +16,6 @@ mod permission_repo;
 
 mod role_repo;
 mod service;
-#[cfg(feature = "std")]
-mod storage_session;
 
 #[cfg(feature = "std")]
 pub use device_enrollment::DeviceEnrollmentService;
@@ -29,5 +27,3 @@ pub use permission_repo::PermissionRepo;
 
 pub use role_repo::RoleRepo;
 pub use service::{MANAGEMENT_APPLICATION_URI, ManagementService};
-#[cfg(feature = "std")]
-pub use storage_session::{StorageScope, StorageSessionService};

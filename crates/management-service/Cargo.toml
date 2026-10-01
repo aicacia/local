@@ -23,7 +23,7 @@ std = [
   "model/std",
   "storage-model/std",
   "dep:base64",
-  "dep:getrandom",
+
   "dep:iroh",
   "dep:reqwest",
   "serde/std",
@@ -61,7 +61,7 @@ serde = { version = "1.0", default-features = false, features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 # Random
-getrandom = { version = "0.3", default-features = false, features = [], optional = true }
+
 
 [dev-dependencies]
 idp-model = { path = "../idp-model", default-features = false, features = ["std"] }

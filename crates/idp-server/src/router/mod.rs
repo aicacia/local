@@ -3,6 +3,7 @@ mod openapi;
 mod openapi_router;
 mod pairing_acceptance;
 mod routes;
+
 mod state;
 mod storage;
 
@@ -11,5 +12,8 @@ pub use openapi_router::openapi_router;
 pub use pairing_acceptance::{
     PairingAcceptanceController, PairingAcceptanceControllerSlot, TimedPairingAcceptanceController,
 };
+
+#[cfg(feature = "cli")]
+pub use state::NativeDeviceRepo;
 pub use state::{DeviceIdentity, RouterState};
 pub use storage::storage_router;

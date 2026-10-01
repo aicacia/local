@@ -1,3 +1,5 @@
+use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
+
 use super::{
     RepoResult,
     private_key_keyring_repo::{create_key_entry, init_credential_store},

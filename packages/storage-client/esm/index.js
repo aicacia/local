@@ -33,26 +33,76 @@ export class StorageClient {
     constructor(options) {
         this.options = options;
     }
-    async openSocket() {
-        const baseUrl = parseUrl(this.options.baseUrl);
-        const token = await this.options.bearerToken();
-        if (!token) {
-            throw new Error("Missing LIDP bearer token");
-        }
-        const response = await (this.options.fetch ?? fetch)(new URL("/storage/sessions", baseUrl), { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    async listFileSystems() {
+        const token = await this.exchangeToken(["read"]);
+        const response = await this.request("/storage/filesystems", token);
         if (!response.ok) {
-            throw new Error(`Storage session request failed: ${response.status}`);
+            throw new Error(`Filesystem list failed: ${response.status}`);
         }
-        const session = parseSession(await response.json());
-        const socket = new WebSocket(webSocketUrl(baseUrl));
+        return (await response.json());
+    }
+    async createFileSystem(name) {
+        const token = await this.exchangeToken(["write"]);
+        const response = await this.request("/storage/filesystems", token, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name ?? null }),
+        });
+        if (!response.ok) {
+            throw new Error(`Filesystem creation failed: ${response.status}`);
+        }
+        return (await response.json());
+    }
+    async openSocket(filesystemId) {
+        if (!filesystemId) {
+            throw new Error("Select a filesystem before opening storage");
+        }
+        const baseUrl = parseUrl(this.options.baseUrl);
+        const token = await this.exchangeToken(["read", "write"]);
+        const url = new URL("/storage", baseUrl);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        url.searchParams.set("access_token", token);
+        url.searchParams.set("filesystem_id", filesystemId);
+        const socket = new WebSocket(url.href);
         await opened(socket);
-        const authenticated = receive(socket);
-        socket.send(JSON.stringify({ type: "authenticate", token: session.token }));
-        if ((await authenticated).type !== "authenticated") {
-            socket.close();
-            throw new Error("Storage socket authentication failed");
-        }
         return new StorageSocket(socket);
+    }
+    async exchangeToken(actions) {
+        const subjectToken = await this.options.bearerToken();
+        if (!subjectToken) {
+            throw new Error("Missing OIDC access token");
+        }
+        const body = new URLSearchParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+            subject_token: subjectToken,
+            subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
+            audience: this.options.audience,
+            client_id: this.options.clientId,
+            authorization_details: JSON.stringify([
+                { type: "storage", actions },
+            ]),
+        });
+        const response = await (this.options.fetch ?? fetch)(new URL("/oauth2/token", parseUrl(this.options.baseUrl)), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body,
+        });
+        if (!response.ok) {
+            throw new Error(`Storage token exchange failed: ${response.status}`);
+        }
+        const result = (await response.json());
+        if (!result.access_token) {
+            throw new Error("Storage token exchange returned no access token");
+        }
+        return result.access_token;
+    }
+    request(path, token, init = {}) {
+        return (this.options.fetch ?? fetch)(new URL(path, parseUrl(this.options.baseUrl)), {
+            ...init,
+            headers: { ...init.headers, Authorization: `Bearer ${token}` },
+        });
     }
 }
 function parseUrl(value) {
@@ -61,20 +111,6 @@ function parseUrl(value) {
         throw new Error("LIDP API URL must use HTTP or HTTPS");
     }
     return url;
-}
-function parseSession(value) {
-    if (!value ||
-        typeof value !== "object" ||
-        typeof value.token !== "string" ||
-        typeof value.expiresAt !== "number") {
-        throw new Error("Invalid storage session response");
-    }
-    return value;
-}
-function webSocketUrl(baseUrl) {
-    const url = new URL("/storage", baseUrl);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    return url.href;
 }
 function opened(socket) {
     if (socket.readyState === WebSocket.OPEN) {

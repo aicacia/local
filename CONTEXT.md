@@ -54,7 +54,7 @@ Private or derived key material is local secret state. It must not enter filesys
 
 ## Principal
 
-A Principal is the entity represented by a signing key when the IdP issues or verifies a signed credential. Tunnel grants require a user principal.
+A Principal is the entity represented by a signing key when the IdP issues or verifies a signed credential. Device endpoint identity authenticates transport; it does not represent a user or grant access to resources.
 
 ## Role and Permission
 
@@ -134,7 +134,7 @@ Residency is a device-local choice per filesystem path: Full or Passthrough. Ful
 
 ## File System
 
-The File System is a local-first replicated storage engine for paths, metadata, permissions, and file content. It is separate from application databases and IdP/management records.
+The File System is a local-first replicated storage engine for paths, metadata, and file content. It has no file permission bits, groups, or cross-user grants and is separate from application databases and IdP/management records.
 
 ## File Entry
 

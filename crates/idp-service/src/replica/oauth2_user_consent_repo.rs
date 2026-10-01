@@ -115,10 +115,18 @@ where
                 false,
             ),
         };
+        let updated_at = if existing && now.timestamp() <= consent.updated_at.timestamp() {
+            consent.updated_at + chrono::Duration::seconds(1)
+        } else {
+            now
+        };
         let statement = if existing {
             Query::Update(QueryUpdate {
                 from: from(),
-                assignments: vec![assignment("updated_at", Value::Integer(now.timestamp()))],
+                assignments: vec![assignment(
+                    "updated_at",
+                    Value::Integer(updated_at.timestamp()),
+                )],
                 predicate: Some(equals("id", Value::Uuid(consent.id))),
                 returning: None,
             })
@@ -135,7 +143,7 @@ where
             .map_err(db_error)?;
         self.ensure_clear(consent.id).await?;
         Ok(OAuth2UserConsent {
-            updated_at: now,
+            updated_at,
             ..consent
         })
     }
@@ -337,13 +345,12 @@ mod tests {
             .upsert_user_consent(user_id, "client", "https://app.example/callback", "openid")
             .await
             .unwrap();
-        assert_eq!(
-            repo.upsert_user_consent(user_id, "client", "https://app.example/callback", "openid")
-                .await
-                .unwrap()
-                .id,
-            consent.id
-        );
+        let updated = repo
+            .upsert_user_consent(user_id, "client", "https://app.example/callback", "openid")
+            .await
+            .unwrap();
+        assert_eq!(updated.id, consent.id);
+        assert!(updated.updated_at > consent.updated_at);
         assert_eq!(
             repo.list_user_consents(user_id, 0, 1).await.unwrap()[0].id,
             consent.id

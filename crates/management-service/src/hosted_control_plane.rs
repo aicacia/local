@@ -3,9 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use idp_service::oauth2::{decode_jwt, verify_jwt};
 
 use idp_model::{
-    contract::{
-        DeviceInfo, DeviceSelfRevocationRequest, DeviceState, Jwks, StorageSession, TrustedDevice,
-    },
+    contract::{DeviceInfo, DeviceSelfRevocationRequest, DeviceState, Jwks, TrustedDevice},
     model::Id,
 };
 use model::contract::{
@@ -14,8 +12,6 @@ use model::contract::{
 use reqwest::{Client, Url, redirect::Policy};
 use serde::Deserialize;
 use storage_model::ResourceKind;
-
-use crate::StorageScope;
 
 #[derive(Clone)]
 pub struct HostedControlPlane {
@@ -56,19 +52,6 @@ impl HostedControlPlane {
                 .redirect(Policy::none())
                 .build()
                 .map_err(|error| error.to_string())?,
-        })
-    }
-
-    pub async fn storage_scope(&self, token: &str) -> Result<StorageScope, String> {
-        let claims = self.verify_access_token(token).await?;
-        let session: StorageSession = self.post("storage/sessions", token, &()).await?;
-        let trusted_devices = self.trusted_devices(token).await?;
-        Ok(StorageScope {
-            user_sub: claims.sub,
-            application_id: session.application_id,
-            principal_key_id: idp_model::model::Id::nil(),
-            trusted_devices,
-            access_token: token.to_owned(),
         })
     }
 
@@ -198,25 +181,6 @@ impl HostedControlPlane {
             request = request.bearer_auth(token);
         }
         request
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .json()
-            .await
-            .map_err(|error| error.to_string())
-    }
-
-    async fn post<T, B>(&self, path: &str, token: &str, body: &B) -> Result<T, String>
-    where
-        T: serde::de::DeserializeOwned,
-        B: serde::Serialize + ?Sized,
-    {
-        self.client
-            .post(self.url(path)?)
-            .bearer_auth(token)
-            .json(body)
             .send()
             .await
             .map_err(|error| error.to_string())?

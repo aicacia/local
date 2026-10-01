@@ -1,3 +1,5 @@
+use alloc::{string::String, vec, vec::Vec};
+
 use base64::Engine;
 
 use crate::PasswordConfig;

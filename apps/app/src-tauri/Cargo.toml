@@ -21,7 +21,7 @@ base64 = { version = "0.22", default-features = false, features = [] }
 serde_json = "1.0"
 yaml_serde = "0.10"
 serde = { version = "1.0", features = ["derive"] }
-uuid = { version = "1.16", default-features = false, features = ["std"] }
+uuid = { version = "1.16", default-features = false, features = ["std", "v4"] }
 futures-core = { version = "0.3", default-features = false, features = [] }
 log = "0.4"
 axum = { version = "0.8", default-features = false, features = ["ws"] }
@@ -36,6 +36,7 @@ tokio = { version = "1.52", default-features = false, features = [
   "rt-multi-thread",
   "sync",
   "time",
+  "io-util",
 ] }
 getrandom = { version = "0.3", default-features = false, features = [] }
 reqwest = { version = "0.12", default-features = false, features = [
@@ -52,6 +53,12 @@ tower-http = { version = "0.7", default-features = false, features = ["cors"] }
 
 db = { package = "idp-db", path = "../../../crates/db", default-features = false, features = [
   "native",
+] }
+ofdb = { path = "../../../../ofdb", default-features = false, features = [
+  "automerge",
+  "iroh",
+  "redb",
+  "sync",
 ] }
 management-server = { path = "../../../crates/management-server", default-features = false, features = [
 ] }

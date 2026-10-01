@@ -9,8 +9,12 @@ repository.workspace = true
 
 [dependencies]
 # Internal
+btree-redb = { path = "../../../ofdb/crates/btree-redb", default-features = false, features = [] }
 file-system = { path = "../../../offs/crates/file-system", default-features = false, features = [] }
+kv = { path = "../../../ofdb/crates/kv", default-features = false, features = [] }
+kv-sync = { path = "../../../ofdb/crates/kv-sync", default-features = false, features = [] }
 ofdb = { path = "../../../ofdb", default-features = false, features = ["automerge", "iroh", "redb", "sql", "sync"] }
+redb = { version = "4.3", default-features = false, features = ["uuid"] }
 idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
 

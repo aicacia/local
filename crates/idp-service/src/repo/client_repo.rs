@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use idp_model::{contract::ClientRegistration, model::Client};
 
 use crate::repo::RepoResult;

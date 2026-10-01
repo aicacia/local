@@ -64,6 +64,7 @@ impl OAuth2Config {
                 "address".to_string(),
                 "phone".to_string(),
                 "offline_access".to_string(),
+                "storage".to_string(),
             ],
             response_types_supported: vec![ResponseType::Code],
             response_modes_supported: vec![ResponseMode::Query, ResponseMode::FormPost],
@@ -71,6 +72,7 @@ impl OAuth2Config {
                 GrantType::AuthorizationCode,
                 GrantType::ClientCredentials,
                 GrantType::RefreshToken,
+                GrantType::TokenExchange,
             ],
             token_endpoint_auth_methods_supported: vec![
                 TokenEndpointAuthMethod::ClientSecretBasic,

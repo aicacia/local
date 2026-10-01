@@ -695,7 +695,7 @@ mod tests {
         );
         assert_eq!(
             repo.list_owned("owner").await.expect("list owned devices"),
-            [device.clone()]
+            std::slice::from_ref(&device)
         );
         assert!(
             repo.rename("other", device.id, "changed".into())
@@ -711,7 +711,7 @@ mod tests {
         );
         assert_eq!(
             repo.list_owned("owner").await.expect("reload device"),
-            [device.clone()]
+            std::slice::from_ref(&device)
         );
         assert!(
             repo.rename("owner", device.id, "renamed".into())

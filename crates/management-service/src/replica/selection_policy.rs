@@ -319,12 +319,11 @@ where
             }))])
             .await
             .map_err(db_error)?;
-        Ok(results
+        Ok(!results
             .pop()
             .ok_or_else(|| invalid("missing resource selection query result"))?
             .rows
-            .len()
-            > 0)
+            .is_empty())
     }
 
     async fn raw_record(&self, device_id: Uuid) -> ManagementResult<Option<SelectionPolicy>> {
@@ -733,7 +732,7 @@ fn invalid(message: impl Into<String>) -> ManagementError {
 }
 
 fn db_error(error: db::EngineError) -> ManagementError {
-    invalid(&error.to_string())
+    invalid(error.to_string())
 }
 
 fn key(id: Uuid) -> Row {
@@ -819,7 +818,7 @@ mod tests {
 
     use db::{NativeEngine, Value, open_native_engine};
     use idp_model::contract::DeviceState;
-    use sync::{apply_sync_state_for, export_sync_state_for};
+    use sync::{apply_sync_state_batch_for, export_sync_state_for};
 
     use crate::{DeviceRepo, replica::DbDeviceRepo};
 
@@ -829,14 +828,14 @@ mod tests {
         source: &db::Engine<db::InMemoryKernel, db::AutomergeRowCodec>,
         destination: &db::Engine<db::InMemoryKernel, db::AutomergeRowCodec>,
     ) {
-        for unit in export_sync_state_for(source)
-            .await
-            .expect("export replica state")
-        {
-            apply_sync_state_for(destination, unit)
+        apply_sync_state_batch_for(
+            destination,
+            export_sync_state_for(source)
                 .await
-                .expect("apply replica state");
-        }
+                .expect("export replica state"),
+        )
+        .await
+        .expect("apply replica state");
     }
 
     #[tokio::test]
@@ -1009,9 +1008,6 @@ mod tests {
         idp_model::replica::up(&source)
             .await
             .expect("initialize source replica");
-        idp_model::replica::up(&destination)
-            .await
-            .expect("initialize destination replica");
 
         let devices = DbDeviceRepo::new(Arc::clone(&source));
         let policies = DbSelectionPolicyRepo::new(Arc::clone(&source));
@@ -1081,6 +1077,21 @@ mod tests {
             .revoke("owner", remote.id, "local-key")
             .await
             .expect("revoke remote device");
+        assert!(
+            destination_policies
+                .peers_selected_for_sync(
+                    &destination_devices,
+                    "local-key",
+                    "remote-key",
+                    "owner",
+                    application_id,
+                    "database",
+                    resource_id,
+                )
+                .await
+                .expect("stale replica remains temporarily permissive"),
+            "a peer may sync only while its local policy has not converged"
+        );
         sync_replica(&source, &destination).await;
         assert!(
             !destination_policies

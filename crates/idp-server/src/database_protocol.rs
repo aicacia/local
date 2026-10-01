@@ -5,7 +5,7 @@ use iroh::{
     endpoint::Connection,
     protocol::{AcceptError, ProtocolHandler},
 };
-use iroh_chain::{DATABASE_ALPN, Server};
+use iroh_chain::{DATA_ALPN, Server};
 use management_service::{
     DeviceRepo,
     replica::{DbDeviceRepo, DbSelectionPolicyRepo, SelectedResource},
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use storage_model::StorageNamespace;
 use storage_service::{DatabaseId, DatabaseRuntime};
 
-use crate::DeviceIdentity;
+use crate::{DeviceIdentity, data_protocol::DATABASE_STREAM_KIND};
 
 type Devices = DbDeviceRepo<RedbKernel, AutomergeRowCodec>;
 type SelectionPolicies = DbSelectionPolicyRepo<RedbKernel, AutomergeRowCodec>;
@@ -114,10 +114,13 @@ impl DatabaseProtocolHandler {
             ));
         }
         let connection = manager
-            .connect_direct_with_alpn(peer, DATABASE_ALPN)
+            .connect_direct_with_alpn(peer, DATA_ALPN)
             .await
             .map_err(io::Error::other)?;
         let (mut send, mut recv) = connection.open_bi().await.map_err(io::Error::other)?;
+        send.write_all(&[DATABASE_STREAM_KIND])
+            .await
+            .map_err(io::Error::other)?;
         write_frame(
             &mut send,
             &serde_json::to_vec(&resource).map_err(io::Error::other)?,
@@ -145,6 +148,13 @@ impl DatabaseProtocolHandler {
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, "database resource not found")
             })?;
+        let kv_store = self
+            .databases
+            .open_kv_selected(&namespace, database_id)
+            .map_err(io::Error::other)?
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "database KV store not found")
+            })?;
         let handler = self.clone();
         let resource_for_guard = resource.clone();
         let authorize: FrameAuthorizer = Arc::new(move || {
@@ -170,6 +180,16 @@ impl DatabaseProtocolHandler {
             )
             .await
             .map_err(io::Error::other)?;
+        kv_sync::synchronize(
+            &kv_store,
+            &mut KvAuthorizedTransport {
+                transport: &mut transport,
+            },
+            kv_sync::SyncRole::Initiator,
+            kv_sync::Config::default(),
+        )
+        .await
+        .map_err(|error| io::Error::other(format!("database KV sync failed: {error:?}")))?;
         Ok(())
     }
 
@@ -192,13 +212,6 @@ impl DatabaseProtocolHandler {
             owner_subject: resource.owner_subject.clone(),
             application_id,
         };
-        if !self
-            .databases
-            .get(&namespace, database_id)
-            .is_ok_and(|resource| resource.is_some())
-        {
-            return false;
-        }
         self.policies
             .peers_selected_for_sync(
                 &self.devices,
@@ -222,75 +235,116 @@ impl core::fmt::Debug for DatabaseProtocolHandler {
     }
 }
 
-impl ProtocolHandler for DatabaseProtocolHandler {
-    async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
+impl DatabaseProtocolHandler {
+    pub(crate) async fn accept_stream(
+        &self,
+        connection: Connection,
+        mut send: iroh::endpoint::SendStream,
+        mut recv: iroh::endpoint::RecvStream,
+    ) {
         let remote_public_key = connection.remote_id().to_string();
         let local_public_key = self.identity.endpoint_id().to_string();
-        loop {
-            let (send, mut recv) = connection.accept_bi().await?;
-            let resource = match read_descriptor(&mut recv).await {
-                Ok(resource) => resource,
-                Err(error) => {
-                    log::warn!("rejected database sync handshake: {error}");
-                    continue;
-                }
+        let resource = match read_descriptor(&mut recv).await {
+            Ok(resource) => resource,
+            Err(error) => {
+                log::warn!("rejected database sync handshake: {error}");
+                return;
+            }
+        };
+        if !self
+            .authorize(&resource, &local_public_key, &remote_public_key)
+            .await
+        {
+            log::warn!("rejected unauthorized database sync stream");
+            return;
+        }
+        let (Ok(application_id), Ok(database_id)) = (
+            resource.application_id.parse(),
+            resource.database_id.parse::<DatabaseId>(),
+        ) else {
+            return;
+        };
+        let namespace = Namespace {
+            owner_subject: resource.owner_subject.clone(),
+            application_id,
+        };
+        let Some(database) = self
+            .databases
+            .open_selected(&namespace, database_id)
+            .ok()
+            .flatten()
+        else {
+            return;
+        };
+        let Some(kv_store) = self
+            .databases
+            .open_kv_selected(&namespace, database_id)
+            .ok()
+            .flatten()
+        else {
+            return;
+        };
+        if let Err(error) = write_frame(&mut send, b"OK").await {
+            log::warn!("failed to acknowledge database sync stream: {error}");
+            return;
+        }
+        let handler = self.clone();
+        tokio::spawn(async move {
+            let resource_for_guard = resource.clone();
+            let authorize: FrameAuthorizer = Arc::new(move || {
+                let handler = handler.clone();
+                let resource = resource_for_guard.clone();
+                let local_public_key = local_public_key.clone();
+                let remote_public_key = remote_public_key.clone();
+                Box::pin(async move {
+                    handler
+                        .authorize(&resource, &local_public_key, &remote_public_key)
+                        .await
+                })
+            });
+            let mut transport = AuthorizedTransport {
+                transport: IrohTransport::new(send, recv),
+                authorize,
             };
-            if !self
-                .authorize(&resource, &local_public_key, &remote_public_key)
+            if let Err(error) = database
+                .synchronize(
+                    &mut transport,
+                    &SessionConfig::default(),
+                    SyncRole::Responder,
+                )
                 .await
             {
-                log::warn!("rejected unauthorized database sync stream");
+                log::warn!("database sync session ended: {error}");
+                return;
+            }
+            if let Err(error) = kv_sync::synchronize(
+                &kv_store,
+                &mut KvAuthorizedTransport {
+                    transport: &mut transport,
+                },
+                kv_sync::SyncRole::Responder,
+                kv_sync::Config::default(),
+            )
+            .await
+            {
+                log::warn!("database KV sync session ended: {error:?}");
+            }
+        });
+    }
+}
+
+impl ProtocolHandler for DatabaseProtocolHandler {
+    async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
+        loop {
+            let (send, mut recv) = connection.accept_bi().await?;
+            let mut kind = [0; 1];
+            if recv.read_exact(&mut kind).await.is_err() {
                 continue;
             }
-            let (Ok(application_id), Ok(database_id)) = (
-                resource.application_id.parse(),
-                resource.database_id.parse::<DatabaseId>(),
-            ) else {
-                continue;
-            };
-            let namespace = Namespace {
-                owner_subject: resource.owner_subject.clone(),
-                application_id,
-            };
-            let Some(database) = self.databases.open(&namespace, database_id).ok().flatten() else {
-                continue;
-            };
-            let mut send = send;
-            if let Err(error) = write_frame(&mut send, b"OK").await {
-                log::warn!("failed to acknowledge database sync stream: {error}");
+            if kind[0] != DATABASE_STREAM_KIND {
                 continue;
             }
-            let handler = self.clone();
-            let local_public_key = local_public_key.clone();
-            let remote_public_key = remote_public_key.clone();
-            tokio::spawn(async move {
-                let resource_for_guard = resource.clone();
-                let authorize: FrameAuthorizer = Arc::new(move || {
-                    let handler = handler.clone();
-                    let resource = resource_for_guard.clone();
-                    let local_public_key = local_public_key.clone();
-                    let remote_public_key = remote_public_key.clone();
-                    Box::pin(async move {
-                        handler
-                            .authorize(&resource, &local_public_key, &remote_public_key)
-                            .await
-                    })
-                });
-                let mut transport = AuthorizedTransport {
-                    transport: IrohTransport::new(send, recv),
-                    authorize,
-                };
-                if let Err(error) = database
-                    .synchronize(
-                        &mut transport,
-                        &SessionConfig::default(),
-                        SyncRole::Responder,
-                    )
-                    .await
-                {
-                    log::warn!("database sync session ended: {error}");
-                }
-            });
+            self.accept_stream(connection.clone(), send, recv).await;
         }
     }
 }
@@ -306,6 +360,22 @@ fn descriptor(resource: &SelectedResource) -> DatabaseResourceDescriptor {
 struct AuthorizedTransport {
     transport: IrohTransport,
     authorize: FrameAuthorizer,
+}
+
+struct KvAuthorizedTransport<'a> {
+    transport: &'a mut AuthorizedTransport,
+}
+
+impl kv_sync::SyncTransport for KvAuthorizedTransport<'_> {
+    type Error = io::Error;
+
+    async fn receive(&mut self) -> Result<Vec<u8>, Self::Error> {
+        self.transport.receive().await
+    }
+
+    async fn send(&mut self, frame: Vec<u8>) -> Result<(), Self::Error> {
+        self.transport.send(frame).await
+    }
 }
 
 impl SyncTransport for AuthorizedTransport {
@@ -389,5 +459,496 @@ impl StorageNamespace for Namespace {
     }
     fn application_id(&self) -> idp_model::model::Id {
         self.application_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, sync::Arc, time::Duration};
+
+    use db::open_native_engine;
+    use iroh::{Endpoint, address_lookup::MemoryLookup, endpoint::presets};
+    use iroh_chain::{DATA_ALPN, EndpointIdStore, Server};
+    use management_service::{
+        DeviceRepo,
+        replica::{DbDeviceRepo, DbSelectionPolicyRepo, SelectionPolicy},
+    };
+    use ofdb::SqlTranslator;
+    use ofdb_sync::{apply_sync_state_batch_for, export_sync_state_for};
+    use storage_service::DatabaseRuntime;
+
+    use super::{DatabaseProtocolHandler, DatabaseResourceDescriptor, DeviceIdentity};
+
+    async fn replicate_management_state(source: &db::NativeEngine, destination: &db::NativeEngine) {
+        let state = export_sync_state_for(source)
+            .await
+            .expect("export management replica state");
+        apply_sync_state_batch_for(destination, state)
+            .await
+            .expect("apply management replica state");
+    }
+
+    async fn send_raw_descriptor(
+        server: &Server,
+        peer: iroh::EndpointId,
+        length: u32,
+        body: &[u8],
+    ) {
+        let connection = server
+            .connect_direct_with_alpn(peer, DATA_ALPN)
+            .await
+            .expect("connect for raw handshake test");
+        let (mut send, _receive) = connection.open_bi().await.expect("open raw test stream");
+        send.write_all(&[super::DATABASE_STREAM_KIND])
+            .await
+            .expect("write database stream kind");
+        send.write_all(&length.to_be_bytes())
+            .await
+            .expect("write raw test length");
+        send.write_all(body).await.expect("write raw test body");
+        send.finish().expect("finish raw test stream");
+        drop(connection);
+    }
+
+    async fn interrupt_sync_after_ack(
+        server: &Server,
+        peer: iroh::EndpointId,
+        descriptor: &DatabaseResourceDescriptor,
+    ) {
+        let connection = server
+            .connect_direct_with_alpn(peer, DATA_ALPN)
+            .await
+            .expect("connect for interrupted sync test");
+        let (mut send, mut receive) = connection
+            .open_bi()
+            .await
+            .expect("open interrupted sync stream");
+        send.write_all(&[super::DATABASE_STREAM_KIND])
+            .await
+            .expect("write database stream kind");
+        let descriptor = serde_json::to_vec(descriptor).expect("serialize resource descriptor");
+        super::write_frame(&mut send, &descriptor)
+            .await
+            .expect("send authorized resource descriptor");
+        assert_eq!(
+            super::read_frame(&mut receive, super::MAX_HANDSHAKE_BYTES)
+                .await
+                .expect("read handshake acknowledgement"),
+            b"OK"
+        );
+        send.write_all(&[0, 0])
+            .await
+            .expect("send partial sync frame length");
+        send.finish().expect("interrupt sync stream");
+        drop(connection);
+    }
+
+    #[tokio::test]
+    async fn selected_database_sync_provisions_receiver_and_rejects_wrong_namespace() {
+        tokio::time::timeout(Duration::from_secs(240), async {
+            let root = std::env::temp_dir().join(format!(
+                "database-protocol-{}-{}",
+                std::process::id(),
+                idp_model::model::Id::now_v7()
+            ));
+            fs::create_dir_all(&root).expect("create test root");
+            let engine = Arc::new(
+                open_native_engine(root.join("management.redb")).expect("open management database"),
+            );
+            idp_model::replica::up(&engine)
+                .await
+                .expect("initialize management schema");
+            let devices = Arc::new(DbDeviceRepo::new(Arc::clone(&engine)));
+            let policies = Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine)));
+
+            let lookup = MemoryLookup::new();
+            let secret_key_a = iroh::SecretKey::generate();
+            let secret_key_b = iroh::SecretKey::generate();
+            let endpoint_a = Endpoint::builder(presets::Minimal)
+                .secret_key(secret_key_a.clone())
+                .address_lookup(lookup.clone())
+                .bind()
+                .await
+                .expect("bind first endpoint");
+            let endpoint_b = Endpoint::builder(presets::Minimal)
+                .secret_key(secret_key_b.clone())
+                .address_lookup(lookup.clone())
+                .bind()
+                .await
+                .expect("bind second endpoint");
+            lookup.add_endpoint_info(endpoint_a.addr());
+            lookup.add_endpoint_info(endpoint_b.addr());
+            let id_a = endpoint_a.id();
+            let id_b = endpoint_b.id();
+            let device_a = devices
+                .create(
+                    "owner".into(),
+                    "first".into(),
+                    id_a.to_string(),
+                    "first-address".into(),
+                    vec![],
+                    0,
+                )
+                .await
+                .expect("create first approved device");
+            let pending_b = devices
+                .create_pairing(
+                    "second".into(),
+                    id_b.to_string(),
+                    "second-address".into(),
+                    id_a.to_string(),
+                )
+                .await
+                .expect("create paired device");
+            devices
+                .approve_pairing(pending_b.id)
+                .await
+                .expect("approve paired device")
+                .expect("paired device exists");
+            let application_id = idp_model::model::Id::now_v7();
+            let database_root = root.join("databases");
+            let source_runtime = Arc::new(
+                DatabaseRuntime::new(database_root.join("source")).expect("create source runtime"),
+            );
+            let receiver_runtime = Arc::new(
+                DatabaseRuntime::new(database_root.join("receiver"))
+                    .expect("create receiver runtime"),
+            );
+            let scope = super::Namespace {
+                owner_subject: "owner".into(),
+                application_id,
+            };
+            let (resource, source_db) = source_runtime
+                .create(&scope, Some("replicated".into()))
+                .expect("create source database");
+            source_db
+                .translate_and_execute("CREATE TABLE records (id UUID PRIMARY KEY)", &SqlTranslator)
+                .await
+                .expect("create source schema");
+            source_db
+                .translate_and_execute(
+                    "INSERT INTO records VALUES (CAST('018f0f8e-7b6d-7c4a-8f12-123456789abc' AS UUID))",
+                    &SqlTranslator,
+                )
+                .await
+                .expect("insert source row");
+            let source_kv = source_runtime
+                .open_kv_selected(&scope, resource.id)
+                .expect("source KV store opens")
+                .expect("source KV store is available");
+            let mut source_kv_transaction = source_kv
+                .transaction()
+                .await
+                .expect("source KV transaction starts");
+            source_kv_transaction
+                .set("replicated-key", vec![7, 8, 9], None)
+                .await
+                .expect("write source KV value");
+            source_kv_transaction
+                .commit()
+                .await
+                .expect("commit source KV value");
+            for device in [&device_a, &pending_b] {
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: Some(application_id),
+                        selected_kind: Some("database".into()),
+                        selected_id: Some(resource.id),
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("select database on device");
+            }
+            let receiver_engine = Arc::new(
+                open_native_engine(root.join("receiver-management.redb"))
+                    .expect("open receiver management database"),
+            );
+            replicate_management_state(&engine, &receiver_engine).await;
+            let receiver_devices = Arc::new(DbDeviceRepo::new(Arc::clone(&receiver_engine)));
+            let receiver_policies = Arc::new(DbSelectionPolicyRepo::new(Arc::clone(
+                &receiver_engine,
+            )));
+
+            let peers_a = EndpointIdStore::new();
+            peers_a.replace([id_b]);
+            let peers_b = EndpointIdStore::new();
+            peers_b.replace([id_a]);
+            let server_a = Server::new(endpoint_a.clone(), peers_a);
+            let server_b = Server::new(endpoint_b.clone(), peers_b);
+            let handler_a = DatabaseProtocolHandler::new(
+                Arc::new(DeviceIdentity::new(endpoint_a, secret_key_a)),
+                Arc::clone(&devices),
+                Arc::clone(&policies),
+                source_runtime,
+            );
+            let handler_b = DatabaseProtocolHandler::new(
+                Arc::new(DeviceIdentity::new(endpoint_b, secret_key_b)),
+                Arc::clone(&receiver_devices),
+                Arc::clone(&receiver_policies),
+                Arc::clone(&receiver_runtime),
+            );
+            let router_a = server_a.router(handler_a.clone());
+            let router_b = server_b.router(handler_b.clone());
+            send_raw_descriptor(
+                &server_a,
+                id_b,
+                (super::MAX_HANDSHAKE_BYTES + 1) as u32,
+                &[],
+            )
+            .await;
+            send_raw_descriptor(&server_a, id_b, 1, b"{").await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert!(
+                receiver_runtime
+                    .get(&scope, resource.id)
+                    .expect("invalid handshakes do not error catalog lookup")
+                    .is_none(),
+                "invalid handshakes must not provision or apply a database"
+            );
+
+            for device in [&device_a, &pending_b] {
+                policies
+                    .set_admin_allowed_prevalidated(device.id, "owner", false)
+                    .await
+                    .expect("restrict selected resource by admin policy");
+            }
+            replicate_management_state(&engine, &receiver_engine).await;
+            let admin_restricted = serde_json::to_vec(&DatabaseResourceDescriptor {
+                owner_subject: "owner".into(),
+                application_id: application_id.to_string(),
+                database_id: resource.id.to_string(),
+            })
+            .expect("serialize admin-restricted descriptor");
+            send_raw_descriptor(
+                &server_a,
+                id_b,
+                admin_restricted.len() as u32,
+                &admin_restricted,
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert!(
+                receiver_runtime
+                    .get(&scope, resource.id)
+                    .expect("admin denial does not error catalog lookup")
+                    .is_none(),
+                "admin-restricted resources must not be provisioned"
+            );
+
+            for device in [&device_a, &pending_b] {
+                policies
+                    .set_admin_allowed_prevalidated(device.id, "owner", true)
+                    .await
+                    .expect("restore administrator selection permission");
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: Some(application_id),
+                        selected_kind: Some("filesystem".into()),
+                        selected_id: Some(resource.id),
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("select a different resource kind");
+            }
+            replicate_management_state(&engine, &receiver_engine).await;
+            let wrong_kind = serde_json::to_vec(&DatabaseResourceDescriptor {
+                owner_subject: "owner".into(),
+                application_id: application_id.to_string(),
+                database_id: resource.id.to_string(),
+            })
+            .expect("serialize wrong-kind descriptor");
+            send_raw_descriptor(&server_a, id_b, wrong_kind.len() as u32, &wrong_kind).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            assert!(
+                receiver_runtime
+                    .get(&scope, resource.id)
+                    .expect("wrong-kind denial does not error catalog lookup")
+                    .is_none(),
+                "a filesystem selection must not provision a database"
+            );
+
+            for device in [&device_a, &pending_b] {
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: Some(application_id),
+                        selected_kind: Some("database".into()),
+                        selected_id: Some(resource.id),
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("restore database selection for sync tests");
+            }
+            replicate_management_state(&engine, &receiver_engine).await;
+
+            let wrong_namespace = DatabaseResourceDescriptor {
+                owner_subject: "other-owner".into(),
+                application_id: application_id.to_string(),
+                database_id: resource.id.to_string(),
+            };
+            assert_eq!(
+                handler_a
+                    .synchronize_peer(&server_a, id_b, wrong_namespace)
+                    .await
+                    .expect_err("wrong namespace is denied")
+                    .kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            assert_eq!(
+                handler_a
+                    .synchronize_peer(
+                        &server_a,
+                        id_b,
+                        DatabaseResourceDescriptor {
+                            owner_subject: "owner".into(),
+                            application_id: application_id.to_string(),
+                            database_id: idp_model::model::Id::now_v7().to_string(),
+                        },
+                    )
+                    .await
+                    .expect_err("unselected database ID is denied")
+                    .kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+            interrupt_sync_after_ack(
+                &server_a,
+                id_b,
+                &DatabaseResourceDescriptor {
+                    owner_subject: "owner".into(),
+                    application_id: application_id.to_string(),
+                    database_id: resource.id.to_string(),
+                },
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let interrupted_db = receiver_runtime
+                .open(&scope, resource.id)
+                .expect("database opened by authorized handshake")
+                .expect("authorized resource is provisioned");
+            assert!(
+                interrupted_db.table_schema("records").await.is_err(),
+                "an incomplete frame must not apply database state"
+            );
+            handler_a
+                .synchronize_peer(
+                    &server_a,
+                    id_b,
+                    DatabaseResourceDescriptor {
+                        owner_subject: "owner".into(),
+                        application_id: application_id.to_string(),
+                        database_id: resource.id.to_string(),
+                    },
+                )
+                .await
+                .expect("selected database sync succeeds");
+            handler_a
+                .synchronize_peer(
+                    &server_a,
+                    id_b,
+                    DatabaseResourceDescriptor {
+                        owner_subject: "owner".into(),
+                        application_id: application_id.to_string(),
+                        database_id: resource.id.to_string(),
+                    },
+                )
+                .await
+                .expect("reconnect and repair are idempotent");
+            let receiver_db = receiver_runtime
+                .open(&scope, resource.id)
+                .expect("receiver database opens")
+                .expect("authorized sync provisions matching ID");
+            assert_eq!(
+                receiver_db
+                    .table_schema("records")
+                    .await
+                    .expect("replicated schema exists")
+                    .name,
+                "records"
+            );
+            let rows = receiver_db
+                .translate_and_execute("SELECT * FROM records", &SqlTranslator)
+                .await
+                .expect("replicated rows are readable");
+            assert_eq!(rows[0].rows.len(), 1);
+            let receiver_kv = receiver_runtime
+                .open_kv_selected(&scope, resource.id)
+                .expect("receiver KV store opens")
+                .expect("authorized sync provisions receiver KV store");
+            let receiver_kv_transaction = receiver_kv
+                .transaction()
+                .await
+                .expect("receiver KV transaction starts");
+            assert_eq!(
+                receiver_kv_transaction
+                    .get("replicated-key", 0)
+                    .await
+                    .expect("read replicated KV value"),
+                Some(vec![7, 8, 9])
+            );
+            receiver_kv_transaction
+                .rollback()
+                .await
+                .expect("rollback receiver KV read transaction");
+            for device in [&device_a, &pending_b] {
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: None,
+                        selected_kind: None,
+                        selected_id: None,
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("deselect after policy convergence");
+            }
+            let revoked_resource = DatabaseResourceDescriptor {
+                owner_subject: "owner".into(),
+                application_id: application_id.to_string(),
+                database_id: resource.id.to_string(),
+            };
+            assert!(
+                handler_b
+                    .authorize(&revoked_resource, &id_b.to_string(), &id_a.to_string())
+                    .await,
+                "receiver's stale local policy permits sync before revocation converges"
+            );
+            replicate_management_state(&engine, &receiver_engine).await;
+            assert!(
+                !handler_b
+                    .authorize(&revoked_resource, &id_b.to_string(), &id_a.to_string())
+                    .await,
+                "receiver denies sync after revocation converges"
+            );
+            assert_eq!(
+                handler_a
+                    .synchronize_peer(&server_a, id_b, revoked_resource)
+                    .await
+                    .expect_err("converged revocation blocks a new sync")
+                    .kind(),
+                std::io::ErrorKind::PermissionDenied
+            );
+
+            server_a.close().await;
+            server_b.close().await;
+            drop((router_a, router_b));
+            drop((
+                receiver_db,
+                interrupted_db,
+                source_db,
+                handler_a,
+                receiver_runtime,
+                server_a,
+                server_b,
+            ));
+            fs::remove_dir_all(root).expect("remove test root");
+        })
+        .await
+        .expect("Iroh database sync test completes");
     }
 }

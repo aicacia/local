@@ -1,3 +1,5 @@
+use alloc::{format, string::String};
+
 use chrono::{DateTime, Utc};
 use idp_model::{
     contract::EntityType,
@@ -5,9 +7,21 @@ use idp_model::{
 };
 use key::DerivedKey;
 
-use crate::repo::{KeyRepo, PrivateKeyKeyringRepo, PrivateKeyRepo, RepoResult};
+#[cfg(feature = "std")]
+use crate::repo::PrivateKeyKeyringRepo;
+#[cfg(not(feature = "std"))]
+type DefaultPrivateKeyRepo = ();
+use crate::repo::{KeyRepo, PrivateKeyRepo, RepoResult};
 
+#[cfg(feature = "std")]
 pub struct KeyService<R, P = PrivateKeyKeyringRepo> {
+    key_repo: R,
+    private_key_repo: P,
+    namespace: String,
+}
+
+#[cfg(not(feature = "std"))]
+pub struct KeyService<R, P = DefaultPrivateKeyRepo> {
     key_repo: R,
     private_key_repo: P,
     namespace: String,

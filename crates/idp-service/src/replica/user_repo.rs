@@ -688,8 +688,8 @@ impl From<EmailRow> for Row {
             Value::Uuid(row.id),
             Value::Uuid(row.user_id),
             Value::Text(row.email),
-            Value::Integer(row.verified as i64),
-            Value::Integer(row.primary as i64),
+            Value::Integer(row.verified),
+            Value::Integer(row.primary),
             Value::Integer(row.created_at),
             Value::Integer(row.updated_at),
         ])

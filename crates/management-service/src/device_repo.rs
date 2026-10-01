@@ -1,3 +1,5 @@
+use alloc::{string::String, vec::Vec};
+
 use idp_model::{contract::TrustedDevice, model::Device};
 
 use crate::ManagementResult;

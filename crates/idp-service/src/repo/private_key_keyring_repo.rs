@@ -1,9 +1,11 @@
+use alloc::{
+    format,
+    string::{String, ToString},
+    sync::Arc,
+};
 use std::{
     collections::HashMap,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use key::{DerivationPath, DerivedKey};

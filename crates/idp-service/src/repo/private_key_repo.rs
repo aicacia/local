@@ -1,3 +1,5 @@
+use alloc::string::ToString;
+
 use key::{DerivationPath, DerivedKey, MasterKey};
 
 use crate::repo::{RepoError, RepoResult};

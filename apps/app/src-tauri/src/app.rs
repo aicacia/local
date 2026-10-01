@@ -22,8 +22,8 @@ use idp_service::{
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
 use management_service::{
-    DeviceRepo, ManagementService,
-    replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo},
+    DeviceRepo, HostedControlPlane, ManagementService,
+    replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo, DbSelectionPolicyRepo},
 };
 use tauri::{AppHandle, Manager, Wry, async_runtime::Mutex};
 use tokio::{net::TcpListener, time::timeout};
@@ -33,10 +33,7 @@ use crate::localhost_server::{
     LocalhostServer, localhost_server_base_url, reserve_localhost_listener,
     start_unified_localhost_server,
 };
-use crate::{
-    hosted_control_plane::HostedControlPlane, local_api, scoped_transport::AppFileSystemRuntime,
-    setup, setup::SetupState,
-};
+use crate::{local_api, scoped_transport::AppFileSystemRuntime, setup, setup::SetupState};
 
 #[derive(Clone, Default)]
 pub struct LocalhostServerState {
@@ -101,14 +98,24 @@ pub fn init_router(
         DbPermissionRepo::new(database.clone()),
         DbRoleRepo::new(database.clone()),
     ));
-    let management_router = management_server::openapi_router(
-        management_server::RouterState::new(
-            &app_config.api_public_uri,
-            management_service,
-            oauth2_service,
-        ),
-        "/idp-management",
+    let management_control_plane = Arc::new(
+        HostedControlPlane::new_with_issuer(&app_config.api_public_uri, &app_config.oauth2.issuer)
+            .map_err(io::Error::other)?,
     );
+    let storage_audience = app_config
+        .storage_audience
+        .as_deref()
+        .unwrap_or(&app_config.api_public_uri);
+    let management_state = management_server::RouterState::new(
+        &app_config.api_public_uri,
+        management_service,
+        oauth2_service,
+        Arc::new(DbSelectionPolicyRepo::new(database.clone())),
+        management_control_plane,
+        storage_audience,
+    )
+    .with_devices(Arc::new(DbDeviceRepo::new(database.clone())));
+    let management_router = management_server::openapi_router(management_state, "/idp-management");
 
     let storage_router = storage_router(router_state.as_ref().clone(), file_systems);
     Ok((
@@ -131,9 +138,16 @@ pub async fn init_database(
         open_native_engine(PathBuf::from(&app_config.data_dir).join("lidp.redb"))
             .map_err(io::Error::other)?,
     );
-    idp_model::replica::up(&database)
+    if !database
+        .table_names()
         .await
-        .map_err(io::Error::other)?;
+        .map_err(io::Error::other)?
+        .is_empty()
+    {
+        idp_model::replica::up(&database)
+            .await
+            .map_err(io::Error::other)?;
+    }
 
     app_handle.manage(database.clone());
 

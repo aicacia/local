@@ -22,10 +22,7 @@ mod device_state;
 mod entity_type;
 mod error_code;
 mod error_response;
-mod global_identity_bootstrap_grant;
-mod global_identity_join;
-mod global_identity_manifest;
-mod global_identity_record;
+
 mod grant_type;
 mod id_token_claims;
 mod introspection_request;
@@ -45,6 +42,8 @@ mod refresh_token_grant_request;
 mod response_mode;
 mod response_type;
 mod revocation_request;
+mod setup_bootstrap_registration;
+mod setup_bootstrap_request;
 mod setup_join_request;
 mod setup_join_status;
 mod setup_new_request;
@@ -52,7 +51,7 @@ mod setup_residency;
 mod setup_stage;
 mod setup_status;
 mod sex;
-mod storage_session;
+
 mod subject_token_type;
 mod token_endpoint_auth_method;
 mod token_exchange;
@@ -90,12 +89,7 @@ pub use device_state::DeviceState;
 pub use entity_type::EntityType;
 pub use error_code::ErrorCode;
 pub use error_response::{ErrorResponse, ErrorResponseResult};
-pub use global_identity_bootstrap_grant::GlobalIdentityBootstrapGrant;
-pub use global_identity_join::{GlobalIdentityJoinOffer, GlobalIdentityJoinReply};
-pub use global_identity_manifest::{
-    GLOBAL_IDENTITY_MANIFEST_VERSION, GlobalIdentityManifest, GlobalIdentityRecord,
-};
-pub use global_identity_record::{GlobalIdentityRow, GlobalIdentityTable, GlobalIdentityValue};
+
 pub use grant_type::GrantType;
 pub use id_token_claims::IdTokenClaims;
 pub use introspection_request::IntrospectionRequest;
@@ -115,6 +109,8 @@ pub use refresh_token_grant_request::RefreshTokenGrantRequest;
 pub use response_mode::ResponseMode;
 pub use response_type::ResponseType;
 pub use revocation_request::RevocationRequest;
+pub use setup_bootstrap_registration::SetupBootstrapRegistration;
+pub use setup_bootstrap_request::SetupBootstrapRequest;
 pub use setup_join_request::SetupJoinRequest;
 pub use setup_join_status::{SetupJoinState, SetupJoinStatus};
 pub use setup_new_request::SetupNewRequest;
@@ -123,7 +119,6 @@ pub use setup_stage::SetupStage;
 pub use setup_status::SetupStatus;
 pub use sex::Sex;
 
-pub use storage_session::StorageSession;
 pub use subject_token_type::SubjectTokenType;
 pub use token_endpoint_auth_method::TokenEndpointAuthMethod;
 pub use token_exchange::TokenExchange;

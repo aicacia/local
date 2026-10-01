@@ -487,7 +487,7 @@ mod tests {
 
     use crate::{
         DeviceIdentity,
-        router::state::{NativeDeviceRepo, NativeOAuth2ServiceRef, RouterState},
+        router::state::{NativeDeviceRepo, NativeOAuth2Service, RouterState},
     };
 
     use super::*;
@@ -528,9 +528,15 @@ mod tests {
         }
     }
 
+    type NativeManagementService = ManagementService<
+        DbApplicationRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>,
+        DbPermissionRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>,
+        DbRoleRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>,
+    >;
+
     struct Fixture {
         router: Router,
-        oauth2: Arc<NativeOAuth2ServiceRef>,
+        oauth2: Arc<NativeOAuth2Service>,
         key_service: Arc<
             KeyService<DbKeyRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>, PrivateKeyKeyringRepo>,
         >,
@@ -538,13 +544,9 @@ mod tests {
         second_user_id: idp_model::model::Id,
         devices: Arc<NativeDeviceRepo>,
         selection_policies: Arc<DbSelectionPolicyRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>>,
-        management: Arc<
-            ManagementService<
-                DbApplicationRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>,
-                DbPermissionRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>,
-                DbRoleRepo<ofdb::RedbKernel, ofdb::AutomergeRowCodec>,
-            >,
-        >,
+        management: Arc<NativeManagementService>,
+        storage_state: RouterState,
+        file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>,
         temp_dir: PathBuf,
         _endpoint: Endpoint,
         _server: Option<tokio::task::JoinHandle<()>>,
@@ -634,9 +636,14 @@ mod tests {
                 client_type: ClientType::Public,
                 profile: ClientProfile::Web,
                 redirect_uris: Vec::new(),
-                allowed_grant_types: vec![GrantType::AuthorizationCode],
+                allowed_grant_types: vec![
+                    GrantType::AuthorizationCode,
+                    GrantType::ClientCredentials,
+                    GrantType::Password,
+                    GrantType::TokenExchange,
+                ],
                 response_types: vec![ResponseType::Code],
-                allowed_scopes: vec!["openid".into()],
+                allowed_scopes: vec!["openid".into(), "storage".into()],
                 token_endpoint_auth_method: TokenEndpointAuthMethod::None,
                 software_statement: None,
                 software_id: None,
@@ -735,7 +742,18 @@ mod tests {
             ))
             .with_storage_file_systems(Arc::clone(&file_systems));
 
-            let mut router = storage_router(state.clone(), file_systems);
+            let mut router = storage_router(state.clone(), Arc::clone(&file_systems)).merge(
+                Router::new()
+                    .route(
+                        "/oauth2/token",
+                        axum::routing::post(crate::router::routes::oauth2::token::token),
+                    )
+                    .route(
+                        "/setup/bootstrap",
+                        axum::routing::post(crate::router::routes::setup::register_bootstrap),
+                    )
+                    .with_state(state.clone()),
+            );
             if mount_management {
                 router = router.merge(
                     Router::new()
@@ -747,7 +765,7 @@ mod tests {
                             "/devices",
                             get(crate::router::routes::devices::list_devices),
                         )
-                        .with_state(state),
+                        .with_state(state.clone()),
                 );
             }
             if let Some(management_state) = management_state {
@@ -774,6 +792,8 @@ mod tests {
                 devices,
                 selection_policies,
                 management,
+                storage_state: state,
+                file_systems,
                 temp_dir,
                 _endpoint: endpoint,
                 _server: server,
@@ -785,6 +805,17 @@ mod tests {
             client_id: &str,
             subject: idp_model::model::Id,
             actions: Vec<StorageAuthorizationAction>,
+        ) -> String {
+            self.token_with_scopes(client_id, subject, actions, vec!["storage".into()])
+                .await
+        }
+
+        async fn token_with_scopes(
+            &self,
+            client_id: &str,
+            subject: idp_model::model::Id,
+            actions: Vec<StorageAuthorizationAction>,
+            scopes: Vec<String>,
         ) -> String {
             let key = self
                 .key_service
@@ -821,7 +852,7 @@ mod tests {
                 authorization_details: Some(vec![AuthorizationDetail::Storage(
                     StorageAuthorizationDetail { actions },
                 )]),
-                scope: vec!["storage".into()],
+                scope: scopes,
             };
             encode_jwt(&jwk, &claims).expect("sign real IdP JWT")
         }
@@ -1427,6 +1458,240 @@ mod tests {
         assert_eq!(policy.selected_id, None);
         fixture._endpoint.close().await;
         std::fs::remove_dir_all(fixture.temp_dir).expect("remove fixture directory");
+    }
+
+    #[tokio::test]
+    async fn setup_scoped_token_registers_bootstrap_for_its_endpoint() {
+        let fixture = Fixture::new().await;
+        fixture
+            .devices
+            .create(
+                fixture.user_id.to_string(),
+                "control-plane device".into(),
+                fixture._endpoint.id().to_string(),
+                "control-plane-address".into(),
+                Vec::new(),
+                0,
+            )
+            .await
+            .expect("create approved first device");
+        let endpoint = Endpoint::builder(presets::Minimal)
+            .bind()
+            .await
+            .expect("bind joining endpoint");
+        let token = fixture
+            .token_with_scopes(
+                "storage-client",
+                fixture.user_id,
+                vec![StorageAuthorizationAction::Read],
+                vec!["setup".into()],
+            )
+            .await;
+        let body = serde_json::json!({
+            "deviceName": "joining device",
+            "endpointId": endpoint.id().to_string(),
+            "endpointAddr": serde_json::to_string(&endpoint.addr()).expect("serialize address"),
+        });
+        let response = fixture
+            .request(
+                http::Method::POST,
+                "/setup/bootstrap",
+                &token,
+                Some(&body.to_string()),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let registration: idp_model::contract::SetupBootstrapRegistration = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("read bootstrap registration"),
+        )
+        .expect("decode bootstrap registration");
+        assert_eq!(registration.endpoint_id, fixture._endpoint.id().to_string());
+        let registered = fixture
+            .devices
+            .list()
+            .await
+            .expect("list registered devices")
+            .into_iter()
+            .find(|device| device.public_key == endpoint.id().to_string())
+            .expect("bootstrap registers the endpoint");
+        assert_eq!(registered.owner_subject, fixture.user_id.to_string());
+        assert_eq!(registered.state, idp_model::contract::DeviceState::Pending);
+        assert!(!registration.grant.is_empty());
+        endpoint.close().await;
+    }
+
+    #[tokio::test]
+    async fn bootstrap_registration_rejects_storage_only_access_tokens() {
+        let fixture = Fixture::new().await;
+        let token = fixture
+            .token(
+                "storage-client",
+                fixture.user_id,
+                vec![StorageAuthorizationAction::Read],
+            )
+            .await;
+        let response = fixture
+            .request(
+                http::Method::POST,
+                "/setup/bootstrap",
+                &token,
+                Some(r#"{"deviceName":"joining","endpointId":"invalid","endpointAddr":""}"#),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn oauth_client_credentials_grant_reports_unimplemented_support() {
+        let fixture = Fixture::new().await;
+        let authorization = "Basic c3RvcmFnZS1jbGllbnQ6";
+        let response = fixture
+            .router
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/oauth2/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .header(http::header::AUTHORIZATION, authorization)
+                    .body(axum::body::Body::from(
+                        "grant_type=client_credentials&client_id=storage-client&client_secret=",
+                    ))
+                    .expect("build client credentials request"),
+            )
+            .await
+            .expect("route client credentials grant");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response_body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read client credentials response");
+        let body: serde_json::Value =
+            serde_json::from_slice(&response_body).expect("decode error response");
+        assert_eq!(body["error"], "unsupported_grant_type");
+    }
+
+    #[tokio::test]
+    async fn oauth_password_grant_issues_tokens() {
+        let fixture = Fixture::new().await;
+        let response = fixture
+            .router
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/oauth2/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(axum::body::Body::from(
+                        "grant_type=password&client_id=storage-client&username=Storage+test+user&password=test-password&scope=openid+storage",
+                    ))
+                    .expect("build password grant request"),
+            )
+            .await
+            .expect("route password grant");
+        assert_eq!(response.status(), StatusCode::OK);
+        let response_body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read password grant response");
+        let token: serde_json::Value =
+            serde_json::from_slice(&response_body).expect("decode token response");
+        assert!(token["access_token"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn oauth_authorization_code_grant_rejects_unknown_code() {
+        let fixture = Fixture::new().await;
+        let response = fixture
+            .router
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/oauth2/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(axum::body::Body::from(
+                        "grant_type=authorization_code&client_id=storage-client&code=missing&code_verifier=&redirect_uri=https%3A%2F%2Fstorage.example%2Fcallback",
+                    ))
+                    .expect("build authorization code request"),
+            )
+            .await
+            .expect("route authorization code grant");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn oauth_token_exchange_authorizes_filesystem_crud() {
+        let fixture = Fixture::new().await;
+        let subject_token = fixture
+            .token("storage-client", fixture.user_id, Vec::new())
+            .await;
+        let details = "%5B%7B%22type%22%3A%22storage%22%2C%22actions%22%3A%5B%22read%22%2C%22write%22%5D%7D%5D";
+        let body = format!(
+            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token={subject_token}&subject_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&audience=https%3A%2F%2Fstorage.example&scope=storage&authorization_details={details}"
+        );
+        let response = fixture
+            .router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/oauth2/token")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(axum::body::Body::from(body))
+                    .expect("build token exchange request"),
+            )
+            .await
+            .expect("route token exchange");
+        assert_eq!(response.status(), StatusCode::OK);
+        let response_body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read token exchange response");
+        let token: serde_json::Value =
+            serde_json::from_slice(&response_body).expect("decode token response");
+        let access_token = token["access_token"]
+            .as_str()
+            .expect("exchange returns access token");
+
+        let created = fixture
+            .request(
+                http::Method::POST,
+                "/storage/filesystems",
+                access_token,
+                Some(r#"{"name":"Password Manager"}"#),
+            )
+            .await;
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let resource: serde_json::Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), usize::MAX)
+                .await
+                .expect("read filesystem response"),
+        )
+        .expect("decode filesystem resource");
+        let filesystem_id = resource["id"]
+            .as_str()
+            .expect("filesystem ID is returned")
+            .to_owned();
+        let authorizer = ScopedFileSystemSocketAuthorizer {
+            state: fixture.storage_state.clone(),
+            file_systems: Arc::clone(&fixture.file_systems),
+        };
+        let access = storage_server::StorageSocketAuthorizer::authorize(
+            &authorizer,
+            access_token.to_owned(),
+            filesystem_id,
+        )
+        .await
+        .expect("exchanged token authorizes the selected filesystem socket");
+        assert!(access.read && access.write);
+        let response = storage_model::StorageSession::execute_session(
+            &access.session,
+            storage_model::StorageRequest::List {
+                path: String::new(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            response,
+            storage_model::StorageResponse::Listed { .. }
+        ));
     }
 
     #[tokio::test]

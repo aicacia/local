@@ -7,21 +7,22 @@ use axum::{
     routing::{get, post},
 };
 use bootstrap_service::bootstrap::{BootstrapConfig, BootstrapInput, BootstrapService};
-use db::{
-    EnvelopeOutcome, NativeEngine, frontier_bytes, import_checkpoint_bytes, import_envelope_bytes,
-};
+use db::NativeEngine;
 use idp_model::contract::{
-    DeviceState, SetupJoinRequest, SetupNewRequest, SetupStage, SetupStatus,
+    DeviceState, SetupBootstrapRegistration, SetupBootstrapRequest, SetupJoinRequest,
+    SetupNewRequest, SetupStage, SetupStatus,
 };
 use idp_server::{AppConfig, DeviceIdentity};
 use idp_service::{
     replica::{DbApplicationRepo, DbClientRepo, DbKeyRepo, DbUserRepo},
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
+use iroh::EndpointAddr;
 use management_service::{
     DeviceRepo,
     replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo},
 };
+use ofdb::{IrohTransport, SessionConfig, SyncRole};
 
 #[derive(Clone)]
 pub struct SetupState {
@@ -39,6 +40,17 @@ pub fn router(state: SetupState) -> Router {
 }
 
 async fn status(State(state): State<SetupState>) -> Result<Json<SetupStatus>, StatusCode> {
+    if state
+        .database
+        .table_names()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .is_empty()
+    {
+        return Ok(Json(SetupStatus {
+            stage: SetupStage::Installation,
+        }));
+    }
     let devices = DbDeviceRepo::new(state.database);
     let devices = devices
         .list()
@@ -61,6 +73,15 @@ async fn create_system(
     State(state): State<SetupState>,
     Json(request): Json<SetupNewRequest>,
 ) -> Result<StatusCode, StatusCode> {
+    if request.device_name.trim().is_empty()
+        || request.admin_username.trim().is_empty()
+        || request.admin_password.is_empty()
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    idp_model::replica::up(&state.database)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let database = state.database.clone();
     let devices = DbDeviceRepo::new(database.clone());
     if devices
@@ -69,13 +90,6 @@ async fn create_system(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     {
         return Err(StatusCode::CONFLICT);
-    }
-
-    if request.device_name.trim().is_empty()
-        || request.admin_username.trim().is_empty()
-        || request.admin_password.is_empty()
-    {
-        return Err(StatusCode::BAD_REQUEST);
     }
 
     let key_service = Arc::new(KeyService::new(
@@ -118,6 +132,8 @@ async fn create_system(
     Ok(StatusCode::NO_CONTENT)
 }
 
+const BOOTSTRAP_ALPN: &[u8] = b"idp-bootstrap/1";
+
 async fn join_system(
     State(state): State<SetupState>,
     headers: HeaderMap,
@@ -131,59 +147,80 @@ async fn join_system(
         .and_then(|value| value.to_str().ok())
         .filter(|value| value.starts_with("Bearer "))
         .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let address = state
+    let endpoint_id = state.device_identity.endpoint_id();
+    let endpoint_addr = state
         .device_identity
         .endpoint_address()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let client = reqwest::Client::new();
     let base_url = request.idp_url.trim_end_matches('/');
-    let device_response = client
-        .post(format!("{base_url}/setup/devices"))
+    let registration = client
+        .post(format!("{base_url}/setup/bootstrap"))
         .header("authorization", authorization)
-        .json(&serde_json::json!({
-            "deviceName": request.device_name,
-            "publicKey": state.device_identity.endpoint_id().to_string(),
-            "address": address,
-        }))
+        .json(&SetupBootstrapRequest {
+            device_name: request.device_name,
+            endpoint_id: endpoint_id.to_string(),
+            endpoint_addr,
+        })
         .send()
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    if !device_response.status().is_success() {
-        return Err(match device_response.status().as_u16() {
+    if !registration.status().is_success() {
+        return Err(match registration.status().as_u16() {
             401 | 403 => StatusCode::UNAUTHORIZED,
             409 => StatusCode::CONFLICT,
             _ => StatusCode::BAD_GATEWAY,
         });
     }
-    let device: idp_model::contract::SetupDeviceAuthorizationResponse = device_response
+    let registration: SetupBootstrapRegistration = registration
         .json()
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-
-    let sync_response = client
-        .post(format!("{base_url}/setup/sync"))
-        .header("authorization", authorization)
-        .json(&idp_model::contract::SetupSyncRequest {
-            device_id: device.device_id,
-            frontier: None,
-        })
-        .send()
-        .await
+    let remote_id = registration
+        .endpoint_id
+        .parse::<iroh::EndpointId>()
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    if !sync_response.status().is_success() {
+    let remote_addr = serde_json::from_str::<EndpointAddr>(&registration.endpoint_addr)
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    if remote_addr.id != remote_id {
         return Err(StatusCode::BAD_GATEWAY);
     }
-    let sync: idp_model::contract::SetupSyncResponse = sync_response
-        .json()
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let checkpoint = sync.checkpoint.ok_or(StatusCode::BAD_GATEWAY)?;
-    import_checkpoint_bytes(&state.database, &checkpoint)
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
 
-    let local_public_key = state.device_identity.endpoint_id().to_string();
+    let endpoint = state.device_identity.endpoint();
+    endpoint.set_alpns(vec![BOOTSTRAP_ALPN.to_vec()]);
+    let connection = endpoint
+        .connect(remote_addr, BOOTSTRAP_ALPN)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let grant = registration.grant.as_bytes();
+    let length = u16::try_from(grant.len()).map_err(|_| StatusCode::BAD_GATEWAY)?;
+    send.write_all(&length.to_be_bytes())
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    send.write_all(grant)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let mut acknowledgement = [0; 2];
+    recv.read_exact(&mut acknowledgement)
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    if &acknowledgement != b"OK" {
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let mut transport = IrohTransport::new(send, recv);
+    ofdb::synchronize(
+        &state.database,
+        &mut transport,
+        &SessionConfig::default(),
+        SyncRole::Initiator,
+    )
+    .await
+    .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
     let devices = DbDeviceRepo::new(state.database.clone());
     let approved = devices
         .list()
@@ -191,61 +228,14 @@ async fn join_system(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter()
         .any(|device| {
-            device.public_key == local_public_key && device.state == DeviceState::Approved
+            device.public_key == endpoint_id.to_string() && device.state == DeviceState::Approved
         });
     if !approved {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    let incremental_response = client
-        .post(format!("{base_url}/setup/sync"))
-        .header("authorization", authorization)
-        .json(&idp_model::contract::SetupSyncRequest {
-            device_id: device.device_id,
-            frontier: Some(sync.frontier),
-        })
-        .send()
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    if !incremental_response.status().is_success() {
         return Err(StatusCode::BAD_GATEWAY);
     }
-    let incremental: idp_model::contract::SetupSyncResponse = incremental_response
-        .json()
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    for envelope in incremental.envelopes {
-        if matches!(
-            import_envelope_bytes(&state.database, envelope)
-                .await
-                .map_err(|_| StatusCode::BAD_GATEWAY)?,
-            EnvelopeOutcome::Quarantined { .. }
-        ) {
-            return Err(StatusCode::BAD_GATEWAY);
-        }
-    }
-
-    let local_frontier = frontier_bytes(&state.database)
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
-    if !frontier_is_complete(&local_frontier, &incremental.frontier) {
-        return Err(StatusCode::BAD_GATEWAY);
-    }
-
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn frontier_is_complete(local: &[u8], remote: &[u8]) -> bool {
-    local == remote
-}
-
 #[cfg(test)]
-mod tests {
-    use super::frontier_is_complete;
-
-    #[test]
-    fn join_requires_the_local_frontier_to_match_the_server() {
-        assert!(frontier_is_complete(b"frontier", b"frontier"));
-        assert!(!frontier_is_complete(b"local", b"remote"));
-    }
-}
+#[path = "setup_tests.rs"]
+mod setup_tests;

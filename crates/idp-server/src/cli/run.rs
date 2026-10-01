@@ -20,7 +20,7 @@ use idp_service::{
     },
     repo::{KeyService, PrivateKeyKeyringRepo},
 };
-use iroh_chain::{EndpointIdStore, Server};
+use iroh_chain::EndpointIdStore;
 use management_server::{
     RouterState as ManagementRouterState, openapi_router as management_router,
 };
@@ -70,7 +70,19 @@ pub async fn run() -> io::Result<()> {
         app_config.key_namespace.clone(),
     ));
     let devices = Arc::new(DbDeviceRepo::new(Arc::clone(&engine)));
-    let device_identity = Arc::new(crate::open_device_identity().await?);
+    let allowed_peers = EndpointIdStore::default();
+    allowed_peers.replace(
+        devices
+            .list()
+            .await
+            .map_err(io::Error::other)?
+            .into_iter()
+            .filter(|device| device.state == DeviceState::Approved)
+            .filter_map(|device| device.public_key.parse().ok()),
+    );
+    let (device_identity, manager) =
+        crate::open_device_identity_with_allowlist(allowed_peers.clone()).await?;
+    let device_identity = Arc::new(device_identity);
     let oauth2_service = Arc::new(OAuth2Service::new(
         DbApplicationRepo::new(Arc::clone(&engine)),
         DbClientRepo::new(Arc::clone(&engine), Arc::clone(&key_service)),
@@ -140,17 +152,9 @@ pub async fn run() -> io::Result<()> {
     let router_state = router_state
         .with_storage_databases(Arc::clone(&databases))
         .with_storage_file_systems(Arc::clone(&file_systems));
-    let allowed_peers = EndpointIdStore::default();
-    allowed_peers.replace(
-        devices
-            .list()
-            .await
-            .map_err(io::Error::other)?
-            .into_iter()
-            .filter(|device| device.state == DeviceState::Approved)
-            .filter_map(|device| device.public_key.parse().ok()),
-    );
-    let manager = Server::new(device_identity.endpoint(), allowed_peers.clone());
+    router_state
+        .bootstrap_grants
+        .set_admission_server(manager.clone(), crate::bootstrap::BOOTSTRAP_ALPN);
     let refresh_store = allowed_peers;
     let refresh_devices = Arc::clone(&devices);
     let peer_refresh = spawn(async move {
@@ -181,15 +185,36 @@ pub async fn run() -> io::Result<()> {
         Arc::clone(&policies),
         databases,
     );
-    let _iroh_router = manager.router(
-        crate::storage_protocol::StorageProtocolHandler::new(
-            Arc::clone(&device_identity),
-            Arc::clone(&devices),
-            Arc::clone(&policies),
-            Arc::clone(&file_systems),
-        ),
-        database_protocol.clone(),
+    let storage_protocol = crate::storage_protocol::StorageProtocolHandler::new(
+        Arc::clone(&device_identity),
+        Arc::clone(&devices),
+        Arc::clone(&policies),
+        Arc::clone(&file_systems),
     );
+    let bootstrap_protocol = crate::bootstrap::BootstrapProtocolHandler::new(
+        Arc::clone(&engine),
+        Arc::clone(&router_state.bootstrap_grants),
+        Arc::clone(&router_state.devices),
+    );
+    let data_protocol = crate::data_protocol::DataProtocolHandler::new(
+        database_protocol.clone(),
+        storage_protocol.clone(),
+    );
+    let _iroh_router = manager.router_with_protocol(
+        data_protocol,
+        crate::bootstrap::BOOTSTRAP_ALPN,
+        bootstrap_protocol,
+    );
+    let filesystem_sync_manager = manager.clone();
+    let filesystem_protocol = storage_protocol.clone();
+    let filesystem_sync = spawn(async move {
+        loop {
+            filesystem_protocol
+                .synchronize_selected_peers(&filesystem_sync_manager)
+                .await;
+            sleep(Duration::from_secs(10)).await;
+        }
+    });
     let sync_manager = manager.clone();
     let database_sync = spawn(async move {
         loop {
@@ -231,6 +256,7 @@ pub async fn run() -> io::Result<()> {
 
     shutdown_signal(cancellation_token).await;
     peer_refresh.abort();
+    filesystem_sync.abort();
     database_sync.abort();
     let mut command_handle = command_handle;
     select! {

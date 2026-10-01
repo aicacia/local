@@ -120,11 +120,7 @@ import {
   SignDeviceMessageFromJSON,
   SignDeviceMessageToJSON,
 } from "../models/SignDeviceMessage.js";
-import {
-  type StorageSession,
-  StorageSessionFromJSON,
-  StorageSessionToJSON,
-} from "../models/StorageSession.js";
+
 import {
   type SubjectTokenType,
   SubjectTokenTypeFromJSON,
@@ -577,29 +573,6 @@ export interface DefaultApiInterface {
     requestParameters: AuthorizeQueryRequest,
     initOverrides?: RequestInit | runtime.InitOverrideFunction,
   ): Promise<void>;
-
-  /**
-   * Creates request options for createStorageSession without sending the request
-   * @throws {RequiredError}
-   * @memberof DefaultApiInterface
-   */
-  createStorageSessionRequestOpts(): Promise<runtime.RequestOpts>;
-
-  /**
-   *
-   * @param {*} [options] Override http request option.
-   * @throws {RequiredError}
-   * @memberof DefaultApiInterface
-   */
-  createStorageSessionRaw(
-    initOverrides?: RequestInit | runtime.InitOverrideFunction,
-  ): Promise<runtime.ApiResponse<StorageSession>>;
-
-  /**
-   */
-  createStorageSession(
-    initOverrides?: RequestInit | runtime.InitOverrideFunction,
-  ): Promise<StorageSession>;
 
   /**
    * Creates request options for deleteRegister without sending the request
@@ -1769,55 +1742,6 @@ export class DefaultApi extends runtime.BaseAPI implements DefaultApiInterface {
     initOverrides?: RequestInit | runtime.InitOverrideFunction,
   ): Promise<void> {
     await this.authorizeQueryRaw(requestParameters, initOverrides);
-  }
-
-  /**
-   * Creates request options for createStorageSession without sending the request
-   */
-  async createStorageSessionRequestOpts(): Promise<runtime.RequestOpts> {
-    const queryParameters: any = {};
-
-    const headerParameters: runtime.HTTPHeaders = {};
-
-    if (this.configuration && this.configuration.accessToken) {
-      const token = this.configuration.accessToken;
-      const tokenString = await token("authorization", []);
-
-      if (tokenString) {
-        headerParameters["Authorization"] = `Bearer ${tokenString}`;
-      }
-    }
-
-    let urlPath = `/storage/sessions`;
-
-    return {
-      path: urlPath,
-      method: "POST",
-      headers: headerParameters,
-      query: queryParameters,
-    };
-  }
-
-  /**
-   */
-  async createStorageSessionRaw(
-    initOverrides?: RequestInit | runtime.InitOverrideFunction,
-  ): Promise<runtime.ApiResponse<StorageSession>> {
-    const requestOptions = await this.createStorageSessionRequestOpts();
-    const response = await this.request(requestOptions, initOverrides);
-
-    return new runtime.JSONApiResponse(response, (jsonValue) =>
-      StorageSessionFromJSON(jsonValue),
-    );
-  }
-
-  /**
-   */
-  async createStorageSession(
-    initOverrides?: RequestInit | runtime.InitOverrideFunction,
-  ): Promise<StorageSession> {
-    const response = await this.createStorageSessionRaw(initOverrides);
-    return await response.value();
   }
 
   /**

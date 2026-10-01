@@ -31,7 +31,11 @@ const oidcClient = $derived.by(
                     profile: "web_application",
                     clientType: "public",
                     tokenEndpointAuthMethod: "none",
-                    grantTypes: ["authorization_code", "refresh_token"],
+                    grantTypes: [
+                        "authorization_code",
+                        "refresh_token",
+                        "urn:ietf:params:oauth:grant-type:token-exchange",
+                    ],
                     responseTypes: ["code"],
                     accessTokenExpiry: 3600,
                     refreshTokenExpiry: 604800,
