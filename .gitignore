@@ -4,5 +4,4 @@
 !/.env.example
 /vaults
 
-/config/**/*.db
-/config/**/*.key
+/config/**/*.redb
