@@ -30,6 +30,12 @@ pub(crate) struct DatabaseResourceDescriptor {
     pub(crate) database_id: String,
 }
 
+#[derive(Deserialize, Serialize)]
+struct DatabaseSyncHandshake {
+    resource: DatabaseResourceDescriptor,
+    deleted: bool,
+}
+
 #[derive(Clone)]
 pub(crate) struct DatabaseProtocolHandler {
     identity: Arc<DeviceIdentity>,
@@ -117,21 +123,6 @@ impl DatabaseProtocolHandler {
             .connect_direct_with_alpn(peer, DATA_ALPN)
             .await
             .map_err(io::Error::other)?;
-        let (mut send, mut recv) = connection.open_bi().await.map_err(io::Error::other)?;
-        send.write_all(&[DATABASE_STREAM_KIND])
-            .await
-            .map_err(io::Error::other)?;
-        write_frame(
-            &mut send,
-            &serde_json::to_vec(&resource).map_err(io::Error::other)?,
-        )
-        .await?;
-        if read_frame(&mut recv, MAX_HANDSHAKE_BYTES).await? != b"OK" {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid database sync acknowledgement",
-            ));
-        }
         let database_id = resource
             .database_id
             .parse::<DatabaseId>()
@@ -141,6 +132,29 @@ impl DatabaseProtocolHandler {
             owner_subject: resource.owner_subject.clone(),
             application_id,
         };
+        let deleted = self.databases.is_tombstoned(&namespace, database_id)?;
+        let (mut send, mut recv) = connection.open_bi().await.map_err(io::Error::other)?;
+        send.write_all(&[DATABASE_STREAM_KIND])
+            .await
+            .map_err(io::Error::other)?;
+        write_frame(
+            &mut send,
+            &serde_json::to_vec(&DatabaseSyncHandshake {
+                resource: resource.clone(),
+                deleted,
+            })
+            .map_err(io::Error::other)?,
+        )
+        .await?;
+        if read_frame(&mut recv, MAX_HANDSHAKE_BYTES).await? != b"OK" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid database sync acknowledgement",
+            ));
+        }
+        if deleted {
+            return Ok(());
+        }
         let database = self
             .databases
             .open(&namespace, database_id)
@@ -244,30 +258,40 @@ impl DatabaseProtocolHandler {
     ) {
         let remote_public_key = connection.remote_id().to_string();
         let local_public_key = self.identity.endpoint_id().to_string();
-        let resource = match read_descriptor(&mut recv).await {
-            Ok(resource) => resource,
+        let handshake = match read_handshake(&mut recv).await {
+            Ok(handshake) => handshake,
             Err(error) => {
                 log::warn!("rejected database sync handshake: {error}");
                 return;
             }
         };
         if !self
-            .authorize(&resource, &local_public_key, &remote_public_key)
+            .authorize(&handshake.resource, &local_public_key, &remote_public_key)
             .await
         {
             log::warn!("rejected unauthorized database sync stream");
             return;
         }
         let (Ok(application_id), Ok(database_id)) = (
-            resource.application_id.parse(),
-            resource.database_id.parse::<DatabaseId>(),
+            handshake.resource.application_id.parse(),
+            handshake.resource.database_id.parse::<DatabaseId>(),
         ) else {
             return;
         };
         let namespace = Namespace {
-            owner_subject: resource.owner_subject.clone(),
+            owner_subject: handshake.resource.owner_subject.clone(),
             application_id,
         };
+        if handshake.deleted {
+            if let Err(error) = self.databases.apply_tombstone(&namespace, database_id) {
+                log::warn!("failed to apply database tombstone: {error}");
+                return;
+            }
+            if let Err(error) = write_frame(&mut send, b"OK").await {
+                log::warn!("failed to acknowledge database tombstone: {error}");
+            }
+            return;
+        }
         let Some(database) = self
             .databases
             .open_selected(&namespace, database_id)
@@ -290,7 +314,7 @@ impl DatabaseProtocolHandler {
         }
         let handler = self.clone();
         tokio::spawn(async move {
-            let resource_for_guard = resource.clone();
+            let resource_for_guard = handshake.resource.clone();
             let authorize: FrameAuthorizer = Arc::new(move || {
                 let handler = handler.clone();
                 let resource = resource_for_guard.clone();
@@ -409,9 +433,9 @@ impl SyncTransport for AuthorizedTransport {
     }
 }
 
-async fn read_descriptor(
+async fn read_handshake(
     recv: &mut iroh::endpoint::RecvStream,
-) -> io::Result<DatabaseResourceDescriptor> {
+) -> io::Result<DatabaseSyncHandshake> {
     let frame = read_frame(recv, MAX_HANDSHAKE_BYTES).await?;
     serde_json::from_slice(&frame).map_err(io::Error::other)
 }
@@ -526,8 +550,12 @@ mod tests {
         send.write_all(&[super::DATABASE_STREAM_KIND])
             .await
             .expect("write database stream kind");
-        let descriptor = serde_json::to_vec(descriptor).expect("serialize resource descriptor");
-        super::write_frame(&mut send, &descriptor)
+        let handshake = serde_json::to_vec(&super::DatabaseSyncHandshake {
+            resource: descriptor.clone(),
+            deleted: false,
+        })
+        .expect("serialize resource descriptor");
+        super::write_frame(&mut send, &handshake)
             .await
             .expect("send authorized resource descriptor");
         assert_eq!(
@@ -621,6 +649,16 @@ mod tests {
             let (resource, source_db) = source_runtime
                 .create(&scope, Some("replicated".into()))
                 .expect("create source database");
+            let (second_resource, second_source_db) = source_runtime
+                .create(&scope, Some("replicated".into()))
+                .expect("create second source database with duplicate name");
+            second_source_db
+                .translate_and_execute(
+                    "CREATE TABLE second_records (id UUID PRIMARY KEY)",
+                    &SqlTranslator,
+                )
+                .await
+                .expect("create second database schema");
             source_db
                 .translate_and_execute("CREATE TABLE records (id UUID PRIMARY KEY)", &SqlTranslator)
                 .await
@@ -681,7 +719,7 @@ mod tests {
                 Arc::new(DeviceIdentity::new(endpoint_a, secret_key_a)),
                 Arc::clone(&devices),
                 Arc::clone(&policies),
-                source_runtime,
+                Arc::clone(&source_runtime),
             );
             let handler_b = DatabaseProtocolHandler::new(
                 Arc::new(DeviceIdentity::new(endpoint_b, secret_key_b)),
@@ -782,7 +820,18 @@ mod tests {
                         admin_allowed: true,
                     })
                     .await
-                    .expect("restore database selection for sync tests");
+                    .expect("restore first database selection for sync tests");
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: Some(application_id),
+                        selected_kind: Some("database".into()),
+                        selected_id: Some(second_resource.id),
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("select second database independently");
             }
             replicate_management_state(&engine, &receiver_engine).await;
 
@@ -875,6 +924,36 @@ mod tests {
                 .await
                 .expect("replicated rows are readable");
             assert_eq!(rows[0].rows.len(), 1);
+            handler_a
+                .synchronize_peer(
+                    &server_a,
+                    id_b,
+                    DatabaseResourceDescriptor {
+                        owner_subject: "owner".into(),
+                        application_id: application_id.to_string(),
+                        database_id: second_resource.id.to_string(),
+                    },
+                )
+                .await
+                .expect("second selected database syncs independently");
+            let receiver_second_db = receiver_runtime
+                .open(&scope, second_resource.id)
+                .expect("second receiver database opens")
+                .expect("second selected database provisions its matching ID");
+            assert_eq!(
+                receiver_second_db
+                    .table_schema("second_records")
+                    .await
+                    .expect("second database schema replicates")
+                    .name,
+                "second_records"
+            );
+            assert!(
+                receiver_runtime
+                    .get(&scope, resource.id)
+                    .expect("first database remains independently addressable")
+                    .is_some()
+            );
             let receiver_kv = receiver_runtime
                 .open_kv_selected(&scope, resource.id)
                 .expect("receiver KV store opens")
@@ -894,6 +973,49 @@ mod tests {
                 .rollback()
                 .await
                 .expect("rollback receiver KV read transaction");
+            assert!(
+                source_runtime
+                    .delete(&scope, resource.id)
+                    .expect("owner tombstones source database")
+            );
+            handler_a
+                .synchronize_peer(
+                    &server_a,
+                    id_b,
+                    DatabaseResourceDescriptor {
+                        owner_subject: "owner".into(),
+                        application_id: application_id.to_string(),
+                        database_id: resource.id.to_string(),
+                    },
+                )
+                .await
+                .expect("selected database tombstone replicates");
+            assert!(
+                receiver_runtime
+                    .get(&scope, resource.id)
+                    .expect("receiver tombstone lookup succeeds")
+                    .is_none()
+            );
+            assert!(
+                receiver_runtime
+                    .open_selected(&scope, resource.id)
+                    .expect("receiver rejects tombstoned resource")
+                    .is_none()
+            );
+            let restarted_receiver = DatabaseRuntime::new(database_root.join("receiver"))
+                .expect("reopen receiver runtime after deletion");
+            assert!(
+                restarted_receiver
+                    .open_selected(&scope, resource.id)
+                    .expect("restart preserves receiver tombstone")
+                    .is_none()
+            );
+            assert!(
+                receiver_runtime
+                    .get(&scope, second_resource.id)
+                    .expect("other database remains available")
+                    .is_some()
+            );
             for device in [&device_a, &pending_b] {
                 policies
                     .set_prevalidated(SelectionPolicy {

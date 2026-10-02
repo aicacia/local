@@ -144,6 +144,49 @@ impl DatabaseCatalog {
         write_catalog(&path, &catalog)?;
         Ok(true)
     }
+
+    pub fn apply_tombstone<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<()> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| io::Error::other("database catalog lock poisoned"))?;
+        let path = catalog_path(&self.root, scope)?;
+        let mut catalog = read_catalog(&path)?;
+        if catalog
+            .records
+            .get(&id)
+            .is_some_and(|record| record.deleted)
+        {
+            return Ok(());
+        }
+        let record = catalog.records.entry(id).or_insert_with(|| CatalogRecord {
+            resource: DatabaseResource { id, name: None },
+            deleted: true,
+        });
+        record.deleted = true;
+        write_catalog(&path, &catalog)?;
+        Ok(())
+    }
+
+    pub fn is_tombstoned<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<bool> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| io::Error::other("database catalog lock poisoned"))?;
+        let catalog = read_catalog(&catalog_path(&self.root, scope)?)?;
+        Ok(catalog
+            .records
+            .get(&id)
+            .is_some_and(|record| record.deleted))
+    }
 }
 
 impl ResourceCatalog for DatabaseCatalog {
@@ -339,6 +382,44 @@ mod tests {
         assert_eq!(
             catalog.list(&scope).expect("live list succeeds"),
             vec![second]
+        );
+        drop(catalog);
+        fs::remove_dir_all(root).expect("test catalog is removed");
+    }
+
+    #[test]
+    fn imported_tombstone_blocks_late_resource_provisioning_after_restart() {
+        let root = std::env::temp_dir().join(format!(
+            "database-catalog-imported-tombstone-{}-{}",
+            std::process::id(),
+            idp_model::model::Id::now_v7()
+        ));
+        let scope = Scope {
+            subject: "subject-a",
+            application: idp_model::model::Id::now_v7(),
+        };
+        let id = idp_model::model::Id::now_v7();
+        let catalog = DatabaseCatalog::new(root.clone()).expect("catalog root is created");
+        catalog
+            .apply_tombstone(&scope, id)
+            .expect("unknown resource tombstone imports");
+        assert!(
+            !catalog
+                .register_selected(&scope, id)
+                .expect("late selected-resource projection is rejected")
+        );
+        drop(catalog);
+
+        let catalog = DatabaseCatalog::new(root.clone()).expect("catalog reopens");
+        assert!(
+            catalog
+                .is_tombstoned(&scope, id)
+                .expect("imported tombstone survives restart")
+        );
+        assert!(
+            !catalog
+                .register_selected(&scope, id)
+                .expect("reselection cannot revive imported tombstone")
         );
         drop(catalog);
         fs::remove_dir_all(root).expect("test catalog is removed");

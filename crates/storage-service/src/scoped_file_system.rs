@@ -87,6 +87,33 @@ where
         }
     }
 
+    pub async fn apply_deletion_tombstone<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        resource_id: FileSystemId,
+    ) -> Result<(), String> {
+        let id = storage_namespace_id(scope)?;
+        self.catalog(&id)?
+            .apply_tombstone(resource_id)
+            .map_err(|error| error.to_string())?;
+        self.resources.lock().await.remove(&(id, resource_id));
+        Ok(())
+    }
+
+    pub async fn is_tombstoned<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        resource_id: FileSystemId,
+    ) -> Result<bool, String> {
+        let id = storage_namespace_id(scope)?;
+        Ok(self
+            .catalog(&id)?
+            .snapshot()
+            .map_err(|error| error.to_string())?
+            .iter()
+            .any(|entry| entry.resource.id == resource_id && entry.deleted))
+    }
+
     pub async fn register_selected_resource<S: StorageNamespace>(
         &self,
         scope: &S,
@@ -387,6 +414,50 @@ mod tests {
                 .await
                 .is_err(),
             "a selected-resource projection cannot revive a local tombstone"
+        );
+        drop(runtime);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn imported_deletion_tombstone_survives_runtime_restart() {
+        let root = env::temp_dir().join(format!(
+            "filesystem-tombstone-runtime-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let namespace = Namespace {
+            user_sub: "user",
+            application_id: idp_model::model::Id::now_v7(),
+        };
+        let resource_id = file_system::FileSystemId::new();
+        {
+            let runtime = ScopedFileSystemRuntime::new(root.clone(), 1_u8).expect("runtime opens");
+            runtime
+                .register_selected_resource(&namespace, resource_id)
+                .await
+                .expect("resource projection registers");
+            runtime
+                .apply_deletion_tombstone(&namespace, resource_id)
+                .await
+                .expect("remote deletion tombstone applies");
+        }
+        let runtime = ScopedFileSystemRuntime::new(root.clone(), 1_u8).expect("runtime reopens");
+        assert!(
+            runtime
+                .list_resources(&namespace)
+                .await
+                .expect("catalog lists resources")
+                .iter()
+                .all(|resource| resource.id != resource_id),
+            "deleted filesystem stays absent after restart"
+        );
+        assert!(
+            runtime
+                .register_selected_resource(&namespace, resource_id)
+                .await
+                .is_err(),
+            "selection cannot revive a replicated tombstone"
         );
         drop(runtime);
         let _ = fs::remove_dir_all(root);

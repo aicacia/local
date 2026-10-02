@@ -304,13 +304,66 @@ mod tests {
         );
         assert!(matches!(
             service
+                .execute(StorageRequest::Append {
+                    path: "notes/today.txt".into(),
+                    content: b"!".to_vec()
+                })
+                .await,
+            Ok(StorageResponse::Appended { .. })
+        ));
+        assert_eq!(
+            service
+                .execute(StorageRequest::Read {
+                    path: "notes/today.txt".into()
+                })
+                .await
+                .expect("read appended file"),
+            StorageResponse::Read {
+                content: b"hello!".to_vec()
+            }
+        );
+        assert!(matches!(
+            service
+                .execute(StorageRequest::CreateDir {
+                    path: "notes/sub".into()
+                })
+                .await,
+            Ok(StorageResponse::DirectoryCreated { .. })
+        ));
+        assert!(matches!(
+            service
+                .execute(StorageRequest::Entry {
+                    path: "notes/sub".into()
+                })
+                .await,
+            Ok(StorageResponse::Entry { entry }) if entry.size == 0
+        ));
+        assert!(matches!(
+            service
+                .execute(StorageRequest::Rename {
+                    from: "notes/today.txt".into(),
+                    to: "notes/renamed.txt".into()
+                })
+                .await,
+            Ok(StorageResponse::Renamed)
+        ));
+        assert!(matches!(
+            service
                 .execute(StorageRequest::List {
                     path: "notes".into()
                 })
                 .await,
-            Ok(StorageResponse::Listed { .. })
+            Ok(StorageResponse::Listed { entries }) if entries.len() == 2
         ));
-        assert!(service.stream("notes/today.txt", 1).await.is_ok());
+        assert!(service.stream("notes/renamed.txt", 1).await.is_ok());
+        assert!(matches!(
+            service
+                .execute(StorageRequest::Delete {
+                    path: "notes/renamed.txt".into()
+                })
+                .await,
+            Ok(StorageResponse::Deleted)
+        ));
         let _ = fs::remove_dir_all(root);
     }
 

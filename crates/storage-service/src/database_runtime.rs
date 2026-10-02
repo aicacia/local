@@ -76,14 +76,45 @@ impl DatabaseRuntime {
             .map_err(|_| io::Error::other("database runtime lock poisoned"))?;
         let deleted = self.catalog.delete(scope, id)?;
         if deleted {
-            let key = database_key(scope, id);
-            open.remove(&key);
-            self.kv_open
-                .lock()
-                .map_err(|_| io::Error::other("database KV runtime lock poisoned"))?
-                .remove(&key);
+            self.evict(scope, id, &mut open)?;
         }
         Ok(deleted)
+    }
+
+    pub fn apply_tombstone<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<()> {
+        let mut open = self
+            .open
+            .lock()
+            .map_err(|_| io::Error::other("database runtime lock poisoned"))?;
+        self.catalog.apply_tombstone(scope, id)?;
+        self.evict(scope, id, &mut open)
+    }
+
+    pub fn is_tombstoned<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+    ) -> io::Result<bool> {
+        self.catalog.is_tombstoned(scope, id)
+    }
+
+    fn evict<S: StorageNamespace>(
+        &self,
+        scope: &S,
+        id: DatabaseId,
+        open: &mut BTreeMap<DatabaseKey, Arc<Database>>,
+    ) -> io::Result<()> {
+        let key = database_key(scope, id);
+        open.remove(&key);
+        self.kv_open
+            .lock()
+            .map_err(|_| io::Error::other("database KV runtime lock poisoned"))?
+            .remove(&key);
+        Ok(())
     }
 
     pub fn open_selected<S: StorageNamespace>(

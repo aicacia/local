@@ -127,16 +127,28 @@ impl StorageProtocolHandler {
             owner_subject: resource.owner_subject.clone(),
             application_id,
         };
-        let file_system = self
+        let deleted = self
             .file_systems
-            .open_resource(&namespace, filesystem_id)
+            .is_tombstoned(&namespace, filesystem_id)
             .await
             .map_err(std::io::Error::other)?;
         let connection = manager.connect_direct_with_alpn(peer, DATA_ALPN).await?;
         let handler = self.clone();
         let local_public_key = self.identity.endpoint_id().to_string();
         let remote_public_key = peer.to_string();
-        let transport =
+        let transport = if deleted {
+            IrohFileTransport::open_tombstone_authorized(&connection, resource, move |resource| {
+                let handler = handler.clone();
+                let local_public_key = local_public_key.clone();
+                let remote_public_key = remote_public_key.clone();
+                async move {
+                    handler
+                        .authorize(&resource, &local_public_key, &remote_public_key)
+                        .await
+                }
+            })
+            .await?
+        } else {
             IrohFileTransport::open_authorized(&connection, resource, move |resource| {
                 let handler = handler.clone();
                 let local_public_key = local_public_key.clone();
@@ -147,7 +159,17 @@ impl StorageProtocolHandler {
                         .await
                 }
             })
-            .await?;
+            .await?
+        };
+        if deleted {
+            transport.close();
+            return Ok(());
+        }
+        let file_system = self
+            .file_systems
+            .open_resource(&namespace, filesystem_id)
+            .await
+            .map_err(std::io::Error::other)?;
         file_system.sync_peer(transport).await?;
         Ok(())
     }
@@ -171,29 +193,30 @@ impl StorageProtocolHandler {
         let remote_public_key = connection.remote_id().to_string();
         let local_public_key = self.identity.endpoint_id().to_string();
         let handler = self.clone();
-        let (transport, resource) = match IrohFileTransport::accept_authorized_after_marker(
-            &connection,
-            send,
-            recv,
-            move |resource| {
-                let handler = handler.clone();
-                let local_public_key = local_public_key.clone();
-                let remote_public_key = remote_public_key.clone();
-                async move {
-                    handler
-                        .authorize(&resource, &local_public_key, &remote_public_key)
-                        .await
+        let (transport, resource, deleted) =
+            match IrohFileTransport::accept_authorized_after_marker(
+                &connection,
+                send,
+                recv,
+                move |resource| {
+                    let handler = handler.clone();
+                    let local_public_key = local_public_key.clone();
+                    let remote_public_key = remote_public_key.clone();
+                    async move {
+                        handler
+                            .authorize(&resource, &local_public_key, &remote_public_key)
+                            .await
+                    }
+                },
+            )
+            .await
+            {
+                Ok(accepted) => accepted,
+                Err(error) => {
+                    log::warn!("rejected filesystem sync stream: {error}");
+                    return;
                 }
-            },
-        )
-        .await
-        {
-            Ok(accepted) => accepted,
-            Err(error) => {
-                log::warn!("rejected filesystem sync stream: {error}");
-                return;
-            }
-        };
+            };
 
         let Ok(application_id) = resource.application_id.parse() else {
             return;
@@ -205,6 +228,25 @@ impl StorageProtocolHandler {
             owner_subject: resource.owner_subject,
             application_id,
         };
+        if deleted {
+            if let Err(error) = self
+                .file_systems
+                .apply_deletion_tombstone(&namespace, filesystem_id)
+                .await
+            {
+                log::warn!("failed to apply filesystem deletion tombstone: {error}");
+            }
+            transport.close();
+            return;
+        }
+        if let Err(error) = self
+            .file_systems
+            .register_selected_resource(&namespace, filesystem_id)
+            .await
+        {
+            log::warn!("failed to register selected filesystem: {error}");
+            return;
+        }
         let file_system = match self
             .file_systems
             .open_resource(&namespace, filesystem_id)
@@ -283,10 +325,7 @@ impl StorageProtocolHandler {
         if !authorized {
             return false;
         }
-        self.file_systems
-            .register_selected_resource(&namespace, filesystem_id)
-            .await
-            .is_ok()
+        authorized
     }
 }
 
@@ -307,7 +346,11 @@ impl StorageNamespace for Namespace {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, sync::Arc, time::Duration};
+    use std::{
+        fs,
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     use db::open_native_engine;
 
@@ -317,7 +360,7 @@ mod tests {
         DeviceRepo,
         replica::{DbDeviceRepo, DbSelectionPolicyRepo, SelectionPolicy},
     };
-    use ofdb::{AutomergeRowCodec, RedbKernel};
+    use ofdb::{AutomergeRowCodec, RedbKernel, SqlTranslator};
     use storage_service::{DatabaseRuntime, ScopedFileSystemRuntime};
 
     use super::{DeviceIdentity, Namespace, StorageProtocolHandler};
@@ -347,7 +390,7 @@ mod tests {
 
     #[tokio::test]
     async fn selected_filesystem_sync_provisions_only_policy_authorized_resource() {
-        tokio::time::timeout(Duration::from_secs(180), async {
+        tokio::time::timeout(Duration::from_secs(300), async {
             let root = std::env::temp_dir().join(format!(
                 "storage-protocol-{}-{}",
                 std::process::id(),
@@ -421,6 +464,21 @@ mod tests {
                 ScopedFileSystemRuntime::new(root.join("receiver"), id_b)
                     .expect("create receiver filesystem runtime"),
             );
+            let source_databases = Arc::new(
+                DatabaseRuntime::new(root.join("source-databases"))
+                    .expect("create source database runtime"),
+            );
+            let receiver_databases = Arc::new(
+                DatabaseRuntime::new(root.join("receiver-databases"))
+                    .expect("create receiver database runtime"),
+            );
+            let (database_resource, source_database) = source_databases
+                .create(&namespace, Some("shared".into()))
+                .expect("create database in the filesystem namespace");
+            source_database
+                .translate_and_execute("CREATE TABLE records (id UUID PRIMARY KEY)", &SqlTranslator)
+                .await
+                .expect("create database schema");
             let resource = source_runtime
                 .create_resource(&namespace, Some("shared".into()))
                 .await
@@ -433,6 +491,18 @@ mod tests {
                 .write("selected.txt", b"selected bytes")
                 .await
                 .expect("write selected content");
+            let second_resource = source_runtime
+                .create_resource(&namespace, Some("shared".into()))
+                .await
+                .expect("create second source filesystem with duplicate name");
+            let second_source_fs = source_runtime
+                .open_resource(&namespace, second_resource.id)
+                .await
+                .expect("open second source filesystem");
+            second_source_fs
+                .write("second.txt", b"second resource bytes")
+                .await
+                .expect("write second resource content");
             for device in [&device_a, &device_b] {
                 policies
                     .set_prevalidated(SelectionPolicy {
@@ -486,6 +556,14 @@ mod tests {
                 kind: "filesystem".into(),
                 resource_id: resource.id.as_uuid(),
             });
+            let second_descriptor =
+                super::descriptor(&management_service::replica::SelectedResource {
+                    device_id: device_a.id,
+                    owner_subject: "owner".into(),
+                    application_id,
+                    kind: "filesystem".into(),
+                    resource_id: second_resource.id.as_uuid(),
+                });
             assert!(
                 !handler_a
                     .authorize(&descriptor, &id_a.to_string(), &id_b.to_string())
@@ -503,32 +581,126 @@ mod tests {
                         admin_allowed: true,
                     })
                     .await
-                    .expect("select filesystem for the remaining checks");
+                    .expect("select first filesystem for the remaining checks");
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: Some(application_id),
+                        selected_kind: Some("filesystem".into()),
+                        selected_id: Some(second_resource.id.as_uuid()),
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("select second filesystem independently");
+                policies
+                    .set_prevalidated(SelectionPolicy {
+                        device_id: device.id,
+                        owner_subject: "owner".into(),
+                        application_id: Some(application_id),
+                        selected_kind: Some("database".into()),
+                        selected_id: Some(database_resource.id),
+                        admin_allowed: true,
+                    })
+                    .await
+                    .expect("select database in the same namespace");
             }
+            assert!(
+                handler_a
+                    .authorize(&second_descriptor, &id_a.to_string(), &id_b.to_string())
+                    .await,
+                "a second selected filesystem has independent authorization"
+            );
+            let database_handler_a = DatabaseProtocolHandler::new(
+                Arc::clone(&identity_a),
+                Arc::clone(&devices),
+                Arc::clone(&policies),
+                Arc::clone(&source_databases),
+            );
+            let database_handler_b = DatabaseProtocolHandler::new(
+                Arc::clone(&identity_b),
+                Arc::clone(&devices),
+                Arc::clone(&policies),
+                Arc::clone(&receiver_databases),
+            );
+            let no_peer_server = Server::new(identity_a.endpoint().clone(), EndpointIdStore::new());
+            database_handler_a
+                .synchronize_selected_peers(&no_peer_server)
+                .await;
+            handler_a.synchronize_selected_peers(&no_peer_server).await;
             let router_a = server_a.router(DataProtocolHandler::new(
-                DatabaseProtocolHandler::new(
-                    Arc::clone(&identity_a),
-                    Arc::clone(&devices),
-                    Arc::clone(&policies),
-                    Arc::new(
-                        DatabaseRuntime::new(root.join("source-databases"))
-                            .expect("create source database runtime"),
-                    ),
-                ),
+                database_handler_a.clone(),
                 handler_a.clone(),
             ));
-            let router_b = server_b.router(DataProtocolHandler::new(
-                DatabaseProtocolHandler::new(
-                    Arc::clone(&identity_b),
-                    Arc::clone(&devices),
-                    Arc::clone(&policies),
-                    Arc::new(
-                        DatabaseRuntime::new(root.join("receiver-databases"))
-                            .expect("create receiver database runtime"),
-                    ),
-                ),
-                handler_b,
-            ));
+            let router_b = server_b.router(DataProtocolHandler::new(database_handler_b, handler_b));
+            let database_descriptor = crate::database_protocol::DatabaseResourceDescriptor {
+                owner_subject: "owner".into(),
+                application_id: application_id.to_string(),
+                database_id: database_resource.id.to_string(),
+            };
+            assert_eq!(
+                database_handler_a
+                    .synchronize_peer(
+                        &server_a,
+                        id_b,
+                        crate::database_protocol::DatabaseResourceDescriptor {
+                            database_id: resource.id.as_uuid().to_string(),
+                            ..database_descriptor.clone()
+                        },
+                    )
+                    .await
+                    .expect_err("filesystem ID cannot authorize database sync")
+                    .kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "cross-kind selection is denied in the shared namespace"
+            );
+            for wrong_namespace in [
+                crate::database_protocol::DatabaseResourceDescriptor {
+                    owner_subject: "other-owner".into(),
+                    ..database_descriptor.clone()
+                },
+                crate::database_protocol::DatabaseResourceDescriptor {
+                    application_id: idp_model::model::Id::now_v7().to_string(),
+                    ..database_descriptor.clone()
+                },
+            ] {
+                assert_eq!(
+                    database_handler_a
+                        .synchronize_peer(&server_a, id_b, wrong_namespace)
+                        .await
+                        .expect_err("database access outside the selected namespace is denied")
+                        .kind(),
+                    std::io::ErrorKind::PermissionDenied
+                );
+            }
+            assert!(
+                !handler_a
+                    .authorize(
+                        &super::IrohResourceDescriptor {
+                            filesystem_id: database_resource.id.to_string(),
+                            ..descriptor.clone()
+                        },
+                        &id_a.to_string(),
+                        &id_b.to_string(),
+                    )
+                    .await,
+                "database ID cannot authorize filesystem sync in the shared namespace"
+            );
+            database_handler_a
+                .synchronize_peer(&server_a, id_b, database_descriptor)
+                .await
+                .expect("database syncs beside filesystems in the same namespace");
+            assert_eq!(
+                receiver_databases
+                    .open_selected(&namespace, database_resource.id)
+                    .expect("open matching selected database")
+                    .expect("database provisions on the receiver")
+                    .table_schema("records")
+                    .await
+                    .expect("database schema synchronizes")
+                    .name,
+                "records"
+            );
             send_raw_filesystem_frame(
                 &server_a,
                 id_b,
@@ -604,6 +776,12 @@ mod tests {
                     .await,
                 "a current matching selection permits a fresh authorized session"
             );
+            assert!(
+                handler_a
+                    .authorize(&second_descriptor, &id_a.to_string(), &id_b.to_string())
+                    .await,
+                "selecting another filesystem does not deselect the first"
+            );
             let outbound_handler = handler_a.clone();
             let outbound_manager = server_a.clone();
             let outbound_descriptor = descriptor.clone();
@@ -633,18 +811,79 @@ mod tests {
             .await
             .expect("authorized filesystem metadata replicates");
 
-            for device in [&device_a, &device_b] {
-                policies
-                    .set_prevalidated(SelectionPolicy {
-                        device_id: device.id,
-                        owner_subject: "owner".into(),
-                        application_id: None,
-                        selected_kind: None,
-                        selected_id: None,
-                        admin_allowed: true,
-                    })
+            let second_sync_handler = handler_a.clone();
+            let second_sync_manager = server_a.clone();
+            let second_sync_descriptor = second_descriptor.clone();
+            let second_sync = tokio::spawn(async move {
+                second_sync_handler
+                    .synchronize_peer(&second_sync_manager, id_b, second_sync_descriptor)
                     .await
-                    .expect("deselect after replication");
+            });
+            tokio::time::timeout(Duration::from_secs(60), async {
+                loop {
+                    if receiver_runtime
+                        .list_resources(&namespace)
+                        .await
+                        .expect("list independently synchronized filesystems")
+                        .iter()
+                        .any(|item| item.id == second_resource.id)
+                    {
+                        let filesystem = receiver_runtime
+                            .open_resource(&namespace, second_resource.id)
+                            .await
+                            .expect("open second projected filesystem");
+                        if filesystem.entry("second.txt").await.is_ok() {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("second selected filesystem synchronizes independently");
+
+            for device in [&device_a, &device_b] {
+                assert!(
+                    policies
+                        .deselect_resource_owned(
+                            device.id,
+                            "owner",
+                            application_id,
+                            "filesystem",
+                            resource.id.as_uuid(),
+                        )
+                        .await
+                        .expect("deselect only first filesystem"),
+                    "first filesystem selection exists"
+                );
+            }
+            assert!(
+                !handler_a
+                    .authorize(&descriptor, &id_a.to_string(), &id_b.to_string())
+                    .await,
+                "deselecting one filesystem blocks its sync"
+            );
+            assert!(
+                handler_a
+                    .authorize(&second_descriptor, &id_a.to_string(), &id_b.to_string())
+                    .await,
+                "deselecting one filesystem preserves the other selection"
+            );
+
+            for device in [&device_a, &device_b] {
+                assert!(
+                    policies
+                        .deselect_resource_owned(
+                            device.id,
+                            "owner",
+                            application_id,
+                            "filesystem",
+                            second_resource.id.as_uuid(),
+                        )
+                        .await
+                        .expect("deselect second filesystem after replication"),
+                    "second filesystem selection exists"
+                );
             }
             assert!(
                 !handler_a
@@ -660,6 +899,10 @@ mod tests {
                 .await
                 .expect("sync stops after policy revocation")
                 .expect("sync task joins");
+            let _second_sync_result = tokio::time::timeout(Duration::from_secs(5), second_sync)
+                .await
+                .expect("second sync stops after policy revocation")
+                .expect("second sync task joins");
             let receiver_fs = receiver_runtime
                 .open_resource(&namespace, resource.id)
                 .await
@@ -738,6 +981,33 @@ mod tests {
             reconnect.abort();
             let _ = reconnect.await;
 
+            source_runtime
+                .delete_resource(&namespace, resource.id)
+                .await
+                .expect("owner deletes first filesystem");
+            handler_a
+                .synchronize_peer(&server_a, id_b, descriptor.clone())
+                .await
+                .expect("replicate filesystem deletion tombstone");
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    let resources = receiver_runtime
+                        .list_resources(&namespace)
+                        .await
+                        .expect("receiver catalog remains readable");
+                    assert!(
+                        resources.iter().any(|item| item.id == second_resource.id),
+                        "deleting one filesystem preserves the other"
+                    );
+                    if resources.iter().all(|item| item.id != resource.id) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("filesystem tombstone reaches selected receiver");
+
             server_a.close().await;
             server_b.close().await;
             drop((router_a, router_b));
@@ -745,9 +1015,47 @@ mod tests {
                 source_runtime,
                 receiver_runtime,
                 source_fs,
+                receiver_fs,
+                second_source_fs,
+                handler_a,
                 server_a,
                 server_b,
             ));
+            let reopen_started = Instant::now();
+            let restarted_receiver = loop {
+                match ScopedFileSystemRuntime::new(root.join("receiver"), id_b) {
+                    Ok(runtime) => break runtime,
+                    Err(error)
+                        if error.to_string().contains("Database already open")
+                            && reopen_started.elapsed() < Duration::from_secs(5) =>
+                    {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    Err(error) => panic!("reopen receiver filesystem runtime: {error}"),
+                }
+            };
+            let resources = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match restarted_receiver.list_resources(&namespace).await {
+                        Ok(resources) => break resources,
+                        Err(error) if error.contains("Database already open") => {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                        Err(error) => panic!("read receiver filesystem catalog: {error}"),
+                    }
+                }
+            })
+            .await
+            .expect("receiver filesystem catalog lock is released after stream shutdown");
+            assert!(
+                resources.iter().all(|item| item.id != resource.id),
+                "replicated deletion tombstone survives receiver restart"
+            );
+            assert!(
+                resources.iter().any(|item| item.id == second_resource.id),
+                "another filesystem remains available after receiver restart"
+            );
+            drop(restarted_receiver);
             fs::remove_dir_all(root).expect("remove test root");
         })
         .await

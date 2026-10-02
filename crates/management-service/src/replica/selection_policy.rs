@@ -505,8 +505,15 @@ where
                 return Err(invalid("administrator has restricted selection"));
             }
         }
-        let query = if old.is_some() {
-            Query::Update(QueryUpdate {
+        let selection_unchanged = old.as_ref().is_some_and(|old| {
+            old.application_id == policy.application_id
+                && old.selected_kind == policy.selected_kind
+                && old.selected_id == policy.selected_id
+        });
+        let query = if selection_unchanged {
+            None
+        } else if old.is_some() {
+            Some(Query::Update(QueryUpdate {
                 from: from(),
                 assignments: vec![
                     assignment(
@@ -527,9 +534,9 @@ where
                 ],
                 predicate: Some(equals("device_id", Value::Uuid(policy.device_id))),
                 returning: None,
-            })
+            }))
         } else {
-            Query::Insert(QueryInsert {
+            Some(Query::Insert(QueryInsert {
                 table: TABLE.into(),
                 row: Row::new(vec![
                     Value::Uuid(policy.device_id),
@@ -543,12 +550,14 @@ where
                     Value::Bool(policy.admin_allowed),
                 ]),
                 returning: None,
-            })
+            }))
         };
-        self.engine
-            .execute(vec![Statement::Query(query)])
-            .await
-            .map_err(db_error)?;
+        if let Some(query) = query {
+            self.engine
+                .execute(vec![Statement::Query(query)])
+                .await
+                .map_err(db_error)?;
+        }
         self.clear(policy.device_id).await?;
         if policy.selected_id.is_none() {
             self.engine
