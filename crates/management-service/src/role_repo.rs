@@ -62,10 +62,10 @@ pub trait RoleRepo {
         user_id: Id,
     ) -> impl Future<Output = ManagementResult<Vec<Permission>>>;
 
-    fn has_user_client_permission(
+    fn has_user_application_permission(
         &self,
         user_id: Id,
-        application_uri: &str,
+        application_id: Id,
         permission_name: &str,
     ) -> impl Future<Output = ManagementResult<bool>>;
 }

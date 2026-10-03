@@ -16,7 +16,8 @@ name = "api"
 default = []
 
 [dependencies]
-# web
+
+# Web
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 utoipa = { version = "5.5", default-features = false, features = ["macros"] }
 

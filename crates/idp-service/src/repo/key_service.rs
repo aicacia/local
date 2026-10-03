@@ -5,7 +5,7 @@ use idp_model::{
     contract::EntityType,
     model::{Id, Key},
 };
-use key::DerivedKey;
+use key::{DerivationPath, DerivedKey};
 
 #[cfg(feature = "std")]
 use crate::repo::PrivateKeyKeyringRepo;
@@ -76,6 +76,40 @@ where
             .ensure_derivation_path(&scoped_namespace, key.derivation_path()?)?;
 
         Ok((key, private_key))
+    }
+
+    pub async fn delete_entity_key_material(
+        &self,
+        entity_type: EntityType,
+        entity_id: Id,
+    ) -> RepoResult<()> {
+        let namespace = self.scoped_namespace(entity_type, entity_id);
+        for key in self
+            .key_repo
+            .list_by_entity_type_and_id(entity_type, entity_id)
+            .await?
+        {
+            let derivation_path = key.derivation_path()?;
+            if self
+                .private_key_repo
+                .load(&namespace, &derivation_path)?
+                .is_some()
+            {
+                self.private_key_repo.delete(&namespace, &derivation_path)?;
+            }
+        }
+
+        let root_path = DerivationPath::default();
+        if self
+            .private_key_repo
+            .load(&namespace, &root_path)?
+            .is_some()
+        {
+            self.private_key_repo.delete(&namespace, &root_path)?;
+        }
+        self.key_repo
+            .delete_by_entity_type_and_id(entity_type, entity_id)
+            .await
     }
 
     pub fn scoped_namespace(&self, entity_type: EntityType, entity_id: Id) -> String {

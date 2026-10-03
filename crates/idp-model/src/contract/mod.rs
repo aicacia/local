@@ -1,5 +1,6 @@
 mod application_registration;
 mod approve_for_user_request;
+mod approved_device_endpoints;
 mod authorization_code_grant_request;
 mod authorization_code_response;
 mod authorization_request;
@@ -13,6 +14,7 @@ mod code_challenge_method;
 mod device_approval_request;
 mod device_authorization;
 mod device_authorization_request;
+mod device_endpoint_identity;
 mod device_enrollment;
 mod device_enrollment_request;
 mod device_info;
@@ -25,7 +27,9 @@ mod error_response;
 
 mod grant_type;
 mod id_token_claims;
+
 mod introspection_request;
+mod introspection_response;
 mod is_allowed_for_user_request;
 mod is_allowed_for_user_response;
 mod jwk_private;
@@ -64,6 +68,7 @@ mod user_info;
 
 pub use application_registration::ApplicationRegistration;
 pub use approve_for_user_request::ApproveForUserRequest;
+pub use approved_device_endpoints::ApprovedDeviceEndpoints;
 pub use authorization_code_grant_request::AuthorizationCodeGrantRequest;
 pub use authorization_code_response::AuthorizationCodeResponse;
 pub use authorization_request::AuthorizationRequest;
@@ -77,6 +82,7 @@ pub use code_challenge_method::CodeChallengeMethod;
 pub use device_approval_request::DeviceApprovalRequest;
 pub use device_authorization::DeviceAuthorization;
 pub use device_authorization_request::DeviceAuthorizationRequest;
+pub use device_endpoint_identity::DeviceEndpointIdentity;
 pub use device_enrollment::DeviceEnrollment;
 pub use device_enrollment_request::DeviceEnrollmentRequest;
 pub use device_info::DeviceInfo;
@@ -92,7 +98,9 @@ pub use error_response::{ErrorResponse, ErrorResponseResult};
 
 pub use grant_type::GrantType;
 pub use id_token_claims::IdTokenClaims;
+
 pub use introspection_request::IntrospectionRequest;
+pub use introspection_response::IntrospectionResponse;
 pub use is_allowed_for_user_request::IsAllowedForUserRequest;
 pub use is_allowed_for_user_response::IsAllowedForUserResponse;
 pub use jwk_private::JwkPrivate;

@@ -783,47 +783,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "btree"
-version = "0.1.0"
-dependencies = [
- "async-lock",
- "async-stream",
- "futures",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "btree-automerge"
-version = "0.1.0"
-dependencies = [
- "async-lock",
- "async-stream",
- "automerge",
- "base64 0.21.7",
- "btree",
- "futures",
- "serde",
- "sha2 0.10.9",
- "uuid",
-]
-
-[[package]]
-name = "btree-redb"
-version = "0.1.0"
-dependencies = [
- "async-lock",
- "async-stream",
- "btree",
- "dashmap",
- "futures",
- "redb",
- "serde",
- "thiserror 2.0.20",
- "uuid",
- "value",
-]
-
-[[package]]
 name = "build-time"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1947,56 +1906,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
-name = "engine"
-version = "0.1.0"
-dependencies = [
- "async-lock",
- "async-stream",
- "btree",
- "futures",
- "postcard",
- "query",
- "schema",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.20",
- "uuid",
- "value",
-]
-
-[[package]]
-name = "engine-automerge"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "automerge",
- "btree",
- "btree-automerge",
- "engine",
- "futures",
- "postcard",
- "serde",
- "sync",
- "uuid",
- "value",
-]
-
-[[package]]
-name = "engine-redb"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "btree",
- "btree-redb",
- "engine",
- "futures",
- "redb",
- "uuid",
- "value",
-]
-
-[[package]]
 name = "enum-assoc"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2148,13 +2057,13 @@ dependencies = [
 name = "file-system"
 version = "0.1.0"
 dependencies = [
- "btree-redb",
  "bytes",
  "futures-core",
  "futures-util",
  "iroh",
- "kv",
- "kv-sync",
+ "ofdb-btree-redb",
+ "ofdb-kv-store",
+ "ofdb-kv-sync",
  "postcard",
  "redb",
  "serde",
@@ -3110,7 +3019,7 @@ dependencies = [
 name = "idp-db"
 version = "0.1.0"
 dependencies = [
- "ofdb",
+ "ofdb-sql",
 ]
 
 [[package]]
@@ -3126,7 +3035,7 @@ dependencies = [
  "include_dir",
  "key",
  "model",
- "ofdb",
+ "ofdb-sql",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -3144,11 +3053,11 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "clap",
+ "clap_complete",
  "cli",
  "config",
  "dotenvy",
  "env_logger",
- "file-system",
  "http",
  "idp-db",
  "idp-model",
@@ -3157,20 +3066,16 @@ dependencies = [
  "iroh-chain",
  "key",
  "keyring-core",
- "kv-sync",
  "log",
  "management-server",
  "management-service",
  "model",
- "ofdb",
+ "ofdb-sql",
+ "ofdb-sql-sync",
  "serde",
  "serde_json",
  "serde_qs",
  "sha2 0.10.9",
- "storage-model",
- "storage-server",
- "storage-service",
- "sync",
  "tokio",
  "tokio-util",
  "tower",
@@ -3733,28 +3638,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kv"
-version = "0.1.0"
-dependencies = [
- "automerge",
- "btree",
- "btree-automerge",
- "futures",
- "uuid",
-]
-
-[[package]]
-name = "kv-sync"
-version = "0.1.0"
-dependencies = [
- "btree",
- "btree-automerge",
- "kv",
- "postcard",
- "serde",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3849,7 +3732,7 @@ dependencies = [
  "management-server",
  "management-service",
  "model",
- "ofdb",
+ "ofdb-sql",
  "rcgen",
  "reqwest 0.12.28",
  "rustls",
@@ -3952,14 +3835,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3d25b0e0b648a86960ac23b7ad4abb9717601dec6f66c165f5b037f3f03065f"
 
 [[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "management-server"
 version = "0.1.0"
 dependencies = [
@@ -3979,7 +3854,7 @@ dependencies = [
  "log",
  "management-service",
  "model",
- "ofdb",
+ "ofdb-sql",
  "serde",
  "serde_json",
  "storage-model",
@@ -4003,11 +3878,11 @@ dependencies = [
  "idp-service",
  "iroh",
  "model",
+ "ofdb-sql-sync",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "storage-model",
- "sync",
  "thiserror 2.0.20",
  "tokio",
  "uuid",
@@ -4890,19 +4765,199 @@ dependencies = [
 ]
 
 [[package]]
-name = "ofdb"
+name = "ofdb-btree"
 version = "0.1.0"
 dependencies = [
- "engine",
- "engine-automerge",
- "engine-redb",
- "macros",
- "query",
- "schema",
- "sql-translator",
- "sync",
+ "async-lock",
+ "async-stream",
+ "futures",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "ofdb-btree-automerge"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "async-stream",
+ "automerge",
+ "base64 0.21.7",
+ "futures",
+ "ofdb-btree",
+ "serde",
+ "sha2 0.10.9",
  "uuid",
- "value",
+]
+
+[[package]]
+name = "ofdb-btree-redb"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "async-stream",
+ "dashmap",
+ "futures",
+ "ofdb-btree",
+ "ofdb-sql-value",
+ "redb",
+ "serde",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-kv-store"
+version = "0.1.0"
+dependencies = [
+ "automerge",
+ "futures",
+ "ofdb-btree",
+ "ofdb-btree-automerge",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-kv-sync"
+version = "0.1.0"
+dependencies = [
+ "ofdb-btree",
+ "ofdb-btree-automerge",
+ "ofdb-kv-store",
+ "postcard",
+ "serde",
+]
+
+[[package]]
+name = "ofdb-sql"
+version = "0.1.0"
+dependencies = [
+ "ofdb-sql-engine",
+ "ofdb-sql-engine-automerge",
+ "ofdb-sql-engine-redb",
+ "ofdb-sql-macros",
+ "ofdb-sql-query",
+ "ofdb-sql-schema",
+ "ofdb-sql-sync",
+ "ofdb-sql-translator",
+ "ofdb-sql-value",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-engine"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "async-stream",
+ "futures",
+ "ofdb-btree",
+ "ofdb-sql-query",
+ "ofdb-sql-schema",
+ "ofdb-sql-value",
+ "postcard",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-engine-automerge"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "automerge",
+ "futures",
+ "ofdb-btree",
+ "ofdb-btree-automerge",
+ "ofdb-sql-engine",
+ "ofdb-sql-sync",
+ "ofdb-sql-value",
+ "postcard",
+ "serde",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-engine-redb"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "futures",
+ "ofdb-btree",
+ "ofdb-btree-redb",
+ "ofdb-sql-engine",
+ "ofdb-sql-value",
+ "redb",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-crate 3.5.0",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "ofdb-sql-query"
+version = "0.1.0"
+dependencies = [
+ "ofdb-sql-schema",
+ "ofdb-sql-value",
+ "serde",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-schema"
+version = "0.1.0"
+dependencies = [
+ "ofdb-sql-value",
+ "serde",
+]
+
+[[package]]
+name = "ofdb-sql-sync"
+version = "0.1.0"
+dependencies = [
+ "iroh",
+ "ofdb-sql-engine",
+ "ofdb-sql-value",
+ "postcard",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-translator"
+version = "0.1.0"
+dependencies = [
+ "ofdb-sql-query",
+ "ofdb-sql-schema",
+ "ofdb-sql-value",
+ "serde_json",
+ "sqlparser",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "ofdb-sql-value"
+version = "0.1.0"
+dependencies = [
+ "postcard",
+ "redb",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -5404,18 +5459,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "query"
-version = "0.1.0"
-dependencies = [
- "schema",
- "serde",
- "thiserror 2.0.20",
- "uuid",
- "value",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -5982,15 +6025,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939"
 dependencies = [
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "schema"
-version = "0.1.0"
-dependencies = [
- "serde",
- "value",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -6631,19 +6665,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sql-translator"
-version = "0.1.0"
-dependencies = [
- "query",
- "schema",
- "serde_json",
- "sqlparser",
- "thiserror 2.0.20",
- "uuid",
- "value",
-]
-
-[[package]]
 name = "sqlparser"
 version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6682,9 +6703,15 @@ dependencies = [
  "env_logger",
  "file-system",
  "http",
+ "idp-model",
+ "iroh",
+ "iroh-chain",
  "key",
  "log",
  "model",
+ "ofdb-kv-sync",
+ "ofdb-sql",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "serde_qs",
@@ -6703,18 +6730,19 @@ dependencies = [
 name = "storage-service"
 version = "0.1.0"
 dependencies = [
- "btree-redb",
  "file-system",
  "idp-model",
- "kv",
- "kv-sync",
- "ofdb",
+ "ofdb-btree-redb",
+ "ofdb-kv-store",
+ "ofdb-kv-sync",
+ "ofdb-sql",
  "redb",
  "serde",
  "serde_json",
  "storage-model",
  "tokio",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -6815,20 +6843,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "sync"
-version = "0.1.0"
-dependencies = [
- "engine",
- "iroh",
- "postcard",
- "serde",
- "sha2 0.10.9",
- "thiserror 2.0.20",
- "uuid",
- "value",
 ]
 
 [[package]]
@@ -8038,18 +8052,6 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
-
-[[package]]
-name = "value"
-version = "0.1.0"
-dependencies = [
- "postcard",
- "redb",
- "serde",
- "serde_json",
- "uuid",
- "wasm-bindgen",
-]
 
 [[package]]
 name = "version-compare"

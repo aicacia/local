@@ -4,7 +4,7 @@ use axum::{
     http::HeaderMap,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use idp_model::contract::{ErrorResponse, OAuth2ClientAuth, TokenRequest};
+use idp_model::contract::{ErrorResponse, OAuth2ClientAuth, TokenEndpointAuthMethod, TokenRequest};
 use model::contract::TokenResponse;
 
 use crate::router::RouterState;
@@ -15,14 +15,24 @@ pub(crate) async fn token(
     State(state): State<RouterState>,
     Form(request): Form<TokenRequest>,
 ) -> Result<Json<TokenResponse>, ErrorResponse> {
-    let client_auth = parse_basic_client_auth(&headers)?;
+    let client_auth = parse_client_auth(&headers, &request)?;
     let response = state.oauth2_service.token(request, client_auth).await?;
     Ok(Json(response))
 }
 
-fn parse_basic_client_auth(headers: &HeaderMap) -> Result<Option<OAuth2ClientAuth>, ErrorResponse> {
+fn parse_client_auth(
+    headers: &HeaderMap,
+    request: &TokenRequest,
+) -> Result<Option<OAuth2ClientAuth>, ErrorResponse> {
     let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return Ok(None);
+        return Ok(match request {
+            TokenRequest::ClientCredentials(request) => Some(OAuth2ClientAuth {
+                client_id: request.client_id.clone(),
+                client_secret: Some(request.client_secret.clone()),
+                method: TokenEndpointAuthMethod::ClientSecretPost,
+            }),
+            _ => None,
+        });
     };
 
     let raw = value.to_str().map_err(|_| {
@@ -61,5 +71,6 @@ fn parse_basic_client_auth(headers: &HeaderMap) -> Result<Option<OAuth2ClientAut
     Ok(Some(OAuth2ClientAuth {
         client_id: client_id.to_string(),
         client_secret: client_secret.map(str::to_string),
+        method: TokenEndpointAuthMethod::ClientSecretBasic,
     }))
 }

@@ -31,6 +31,12 @@ pub trait KeyRepo {
         entity_id: Id,
     ) -> impl Future<Output = RepoResult<Option<Key>>>;
 
+    fn delete_by_entity_type_and_id(
+        &self,
+        entity_type: EntityType,
+        entity_id: Id,
+    ) -> impl Future<Output = RepoResult<()>>;
+
     fn create_key(
         &self,
         parent_id: Option<Id>,

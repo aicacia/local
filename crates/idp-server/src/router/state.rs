@@ -10,8 +10,7 @@ use idp_service::{
 };
 use iroh::{Endpoint, EndpointId, SecretKey};
 use management_service::{HostedControlPlane, replica::DbDeviceRepo};
-use ofdb::{AutomergeRowCodec, RedbKernel};
-use storage_service::{DatabaseRuntime, ScopedFileSystemRuntime};
+use ofdb_sql::{AutomergeRowCodec, RedbKernel};
 
 use super::PairingAcceptanceControllerSlot;
 use crate::bootstrap::BootstrapRegistry;
@@ -69,14 +68,13 @@ impl DeviceIdentity {
 pub struct RouterState {
     pub ui_base_uri: String,
     pub api_base_uri: String,
+    pub service_audience: String,
     pub engine: Arc<db::NativeEngine>,
     pub oauth2_service: Arc<NativeOAuth2Service>,
     pub devices: Arc<NativeDeviceRepo>,
     pub device_identity: Arc<DeviceIdentity>,
     pub pairing_acceptance: Arc<PairingAcceptanceControllerSlot>,
     pub hosted_control_plane: Option<Arc<HostedControlPlane>>,
-    pub storage_file_systems: Option<Arc<ScopedFileSystemRuntime<EndpointId>>>,
-    pub storage_databases: Option<Arc<DatabaseRuntime>>,
     pub bootstrap_grants: Arc<BootstrapRegistry>,
 }
 
@@ -89,36 +87,28 @@ impl RouterState {
         devices: Arc<NativeDeviceRepo>,
         device_identity: Arc<DeviceIdentity>,
     ) -> Self {
+        let api_base_uri = api_base_uri.into();
         Self {
             ui_base_uri: ui_base_uri.into(),
-            api_base_uri: api_base_uri.into(),
+            service_audience: api_base_uri.clone(),
+            api_base_uri,
             engine,
             oauth2_service,
             devices,
             device_identity,
             pairing_acceptance: Arc::new(PairingAcceptanceControllerSlot::new()),
             hosted_control_plane: None,
-            storage_file_systems: None,
-            storage_databases: None,
             bootstrap_grants: Arc::new(BootstrapRegistry::default()),
         }
     }
 
+    pub fn with_service_audience(mut self, audience: impl Into<String>) -> Self {
+        self.service_audience = audience.into();
+        self
+    }
+
     pub fn with_hosted_control_plane(mut self, control_plane: Arc<HostedControlPlane>) -> Self {
         self.hosted_control_plane = Some(control_plane);
-        self
-    }
-
-    pub fn with_storage_databases(mut self, databases: Arc<DatabaseRuntime>) -> Self {
-        self.storage_databases = Some(databases);
-        self
-    }
-
-    pub fn with_storage_file_systems(
-        mut self,
-        file_systems: Arc<ScopedFileSystemRuntime<EndpointId>>,
-    ) -> Self {
-        self.storage_file_systems = Some(file_systems);
         self
     }
 }

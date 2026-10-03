@@ -19,7 +19,8 @@ required-features = ["cli"]
 
 [features]
 default = ["cli", "completions", "swagger-ui"]
-cli = ["dep:tokio", "dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli"]
+cli = ["network", "dep:dotenvy", "dep:clap", "dep:cli"]
+network = ["dep:tokio", "dep:tokio-util"]
 completions = ["cli?/completions"]
 swagger-ui = ["utoipa-swagger-ui"]
 
@@ -37,9 +38,13 @@ cli = { path = "../cli", default-features = false, features = [
 
 # Internal
 api = { path = "../api", default-features = false, features = [] }
-file-system = { path = "../../../offs/crates/file-system", default-features = false, features = [] }
+file-system = { path = "../../../offs/crates/file-system", default-features = false, features = ["iroh"] }
+idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
 key = { path = "../key", default-features = false, features = ["std"] }
+ofdb-kv-sync = { package = "ofdb-kv-sync", path = "../../../ofdb/crates/kv-sync", default-features = false, features = [] }
 model = { path = "../model", default-features = false, features = ["std", "utoipa", "axum"] }
+ofdb-sql = { package = "ofdb-sql", path = "../../../ofdb/crates/sql", default-features = false, features = ["redb", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
 storage-service = { path = "../storage-service", default-features = false, features = [] }
 
@@ -73,14 +78,19 @@ tower-http = { version = "0.7", features = [
   "compression-gzip",
 ], default-features = false }
 http = { version = "1.4", default-features = false }
+iroh = { version = "1.1", default-features = false, features = ["tls-ring"] }
 utoipa = { version = "5.5", default-features = false, features = ["macros"] }
 utoipa-axum = { version = "0.2", default-features = false, features = [] }
 utoipa-swagger-ui = { version = "9.0", default-features = false, features = ["axum"], optional = true }
+
+# Iroh
+iroh-chain = { path = "../../../ofnet/crates/iroh-chain", default-features = false, features = [] }
 
 # Async
 tokio = { version = "1.52", default-features = false, features = [
   "macros",
   "rt-multi-thread",
+  "time",
 ], optional = true }
 tokio-util = { version = "0.7", default-features = false, features = [
 ], optional = true }

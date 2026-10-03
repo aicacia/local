@@ -11,12 +11,14 @@ use super::routes::device::{
 };
 use super::routes::device_self_revocation::{__path_revoke_self, revoke_self};
 use super::routes::devices::{
-    __path_enroll_device, __path_list_devices, __path_pairing_acceptance, __path_revoke_device,
+    __path_enroll_device, __path_list_approved_device_endpoints, __path_list_devices,
+    __path_lookup_device_endpoint, __path_pairing_acceptance, __path_revoke_device,
     __path_set_pairing_acceptance, __path_trusted_devices, __path_update_device, enroll_device,
-    list_devices, pairing_acceptance, revoke_device, set_pairing_acceptance, trusted_devices,
-    update_device,
+    list_approved_device_endpoints, list_devices, lookup_device_endpoint, pairing_acceptance,
+    revoke_device, set_pairing_acceptance, trusted_devices, update_device,
 };
 use super::routes::health::{__path_health, health};
+
 use super::routes::oauth2::approvals::{
     __path_approve_for_user, __path_is_allowed_for_user, approve_for_user, is_allowed_for_user,
 };
@@ -26,6 +28,7 @@ use super::routes::oauth2::auth::{
 use super::routes::oauth2::device::{
     __path_device_auth, __path_device_verify, device_auth, device_verify,
 };
+use super::routes::oauth2::introspect::{__path_introspect, introspect};
 use super::routes::oauth2::register::{
     __path_delete_register, __path_get_register, __path_put_register, __path_register,
     delete_register, get_register, put_register, register,
@@ -44,17 +47,13 @@ use super::routes::well_known::{
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        super::storage::create_database,
-        super::storage::list_databases,
-        super::storage::get_database,
-        super::storage::delete_database,
-        super::storage::create_file_system,
-        super::storage::list_file_systems,
-        super::storage::get_file_system,
-        super::storage::delete_file_system,
-        super::routes::setup::register_bootstrap
+        super::routes::oauth2::introspect::introspect,
+        super::routes::setup::register_bootstrap,
+
+        super::routes::devices::lookup_device_endpoint,
+        super::routes::devices::list_approved_device_endpoints,
+
     ),
-    components(schemas(super::storage::FileSystemResourceResponse)),
     info(title = "OAuth Server", version = env!("CARGO_PKG_VERSION")),
     modifiers(&SecurityAddon)
 )]
@@ -76,6 +75,8 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(pairing_acceptance))
             .routes(routes!(set_pairing_acceptance))
             .routes(routes!(list_devices))
+            .routes(routes!(lookup_device_endpoint))
+            .routes(routes!(list_approved_device_endpoints))
             .routes(routes!(update_device))
             .routes(routes!(revoke_device))
             .routes(routes!(authorize_json))
@@ -84,6 +85,7 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
             .routes(routes!(approve_for_user))
             .routes(routes!(device_auth))
             .routes(routes!(device_verify))
+            .routes(routes!(introspect))
             .routes(routes!(register))
             .routes(routes!(get_register))
             .routes(routes!(delete_register))
@@ -150,16 +152,18 @@ mod tests {
     use super::ApiDoc;
 
     #[test]
-    fn documents_storage_and_setup_routes() {
+    fn documents_setup_and_excludes_storage_routes() {
         let document = ApiDoc::openapi();
-        for path in [
-            "/storage/databases",
-            "/storage/databases/{database_id}",
-            "/storage/filesystems",
-            "/storage/filesystems/{filesystem_id}",
-            "/setup/bootstrap",
-        ] {
+        for path in ["/setup/bootstrap"] {
             assert!(document.paths.paths.contains_key(path), "missing {path}");
         }
+        assert!(
+            document
+                .paths
+                .paths
+                .keys()
+                .all(|path| !path.starts_with("/internal/") && !path.starts_with("/storage/")),
+            "IdP must not publish internal or Storage routes"
+        );
     }
 }

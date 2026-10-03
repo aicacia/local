@@ -54,8 +54,8 @@ management-service = { path = "../management-service", default-features = false,
 storage-model = { path = "../storage-model", default-features = false, features = [] }
 
 # Database
-ofdb = { package = "ofdb", path = "../../../ofdb", default-features = false, features = [
-  "automerge",
+ofdb-sql = { package = "ofdb-sql", path = "../../../ofdb/crates/sql", default-features = false, features = [
+
   "redb",
 ] }
 

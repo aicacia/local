@@ -22,7 +22,7 @@ use management_service::{
     DeviceRepo,
     replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo},
 };
-use ofdb::{IrohTransport, SessionConfig, SyncRole};
+use ofdb_sql::{IrohTransport, SessionConfig, SyncRole};
 
 #[derive(Clone)]
 pub struct SetupState {
@@ -212,7 +212,7 @@ async fn join_system(
         return Err(StatusCode::BAD_GATEWAY);
     }
     let mut transport = IrohTransport::new(send, recv);
-    ofdb::synchronize(
+    ofdb_sql::synchronize(
         &state.database,
         &mut transport,
         &SessionConfig::default(),

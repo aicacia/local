@@ -1,13 +1,20 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use idp_service::oauth2::{decode_jwt, verify_jwt};
 
 use idp_model::{
-    contract::{DeviceInfo, DeviceSelfRevocationRequest, DeviceState, Jwks, TrustedDevice},
+    contract::{
+        DeviceEndpointIdentity, DeviceInfo, DeviceSelfRevocationRequest, DeviceState,
+        IntrospectionRequest, IntrospectionResponse, Jwks, TrustedDevice,
+    },
     model::Id,
 };
 use model::contract::{
-    AuthorizationDetail, StandardClaims, StorageAuthorizationAction, TokenType, TokenUse,
+    AuthorizationDetail, StandardClaims, StorageAuthorizationAction, TokenResponse, TokenType,
+    TokenUse,
 };
 use reqwest::{Client, Url, redirect::Policy};
 use serde::Deserialize;
@@ -15,17 +22,27 @@ use storage_model::ResourceKind;
 
 #[derive(Clone)]
 pub struct HostedControlPlane {
-    base_url: Url,
+    idp_base_url: Url,
+    storage_base_url: Url,
     expected_issuer: String,
+    service_token_client: Option<Arc<ServiceTokenClient>>,
     client: Client,
 }
 
 impl HostedControlPlane {
     pub fn new(base_url: &str) -> Result<Self, String> {
-        Self::new_with_issuer(base_url, base_url.trim_end_matches('/'))
+        Self::new_with_services(base_url, base_url, base_url.trim_end_matches('/'))
     }
 
     pub fn new_with_issuer(base_url: &str, expected_issuer: &str) -> Result<Self, String> {
+        Self::new_with_services(base_url, base_url, expected_issuer)
+    }
+
+    pub fn new_with_services(
+        idp_base_url: &str,
+        storage_base_url: &str,
+        expected_issuer: &str,
+    ) -> Result<Self, String> {
         let issuer = Url::parse(expected_issuer)
             .map_err(|_| "issuer must be an HTTP URL without a query or fragment".to_owned())?;
         if !matches!(issuer.scheme(), "http" | "https")
@@ -37,27 +54,213 @@ impl HostedControlPlane {
         {
             return Err("issuer must be an HTTP URL without a query or fragment".to_owned());
         }
-        let mut base_url = Url::parse(base_url).map_err(|error| error.to_string())?;
-        if !matches!(base_url.scheme(), "http" | "https") || base_url.query().is_some() {
-            return Err("control plane URI must be an HTTP URL without a query".to_owned());
-        }
-        base_url.set_fragment(None);
-        if !base_url.path().ends_with('/') {
-            base_url.set_path(&format!("{}/", base_url.path()));
-        }
+        let idp_base_url = normalize_service_url(idp_base_url)?;
+        let storage_base_url = normalize_service_url(storage_base_url)?;
         Ok(Self {
-            base_url,
+            idp_base_url,
+            storage_base_url,
             expected_issuer: expected_issuer.to_owned(),
+            service_token_client: None,
             client: Client::builder()
+                .connect_timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(10))
                 .redirect(Policy::none())
                 .build()
                 .map_err(|error| error.to_string())?,
         })
     }
 
-    /// Returns the application ID from the authorized Storage GET only if it matches
-    /// the requested application. The caller must separately authorize Management
-    /// selection and device ownership before writing policy.
+    pub fn with_idp_service_client(
+        mut self,
+        client_id: impl Into<String>,
+        client_secret: impl Into<String>,
+        audience: impl Into<String>,
+    ) -> Result<Self, String> {
+        let client_id = client_id.into();
+        let client_secret = client_secret.into();
+        let audience = audience.into();
+        if client_id.trim().is_empty() || client_secret.is_empty() || audience.trim().is_empty() {
+            return Err("IdP service client ID, secret and audience are required".to_owned());
+        }
+        self.service_token_client = Some(Arc::new(ServiceTokenClient {
+            client_id,
+            client_secret,
+            audience,
+            cached: Mutex::new(None),
+        }));
+        Ok(self)
+    }
+
+    async fn idp_service_access_token(&self) -> Result<String, String> {
+        const TOKEN_SCOPE: &str = "idp.token.validate idp.device.lookup";
+        const RENEWAL_MARGIN: Duration = Duration::from_secs(15);
+
+        let token_client = self
+            .service_token_client
+            .as_ref()
+            .ok_or_else(|| "IdP service OAuth client is not configured".to_owned())?;
+        let cached_token = {
+            let cached = token_client
+                .cached
+                .lock()
+                .map_err(|_| "IdP service token cache is unavailable".to_owned())?;
+            cached
+                .as_ref()
+                .filter(|token| {
+                    token
+                        .valid_until
+                        .duration_since(SystemTime::now())
+                        .is_ok_and(|remaining| remaining > RENEWAL_MARGIN)
+                })
+                .map(|token| token.value.clone())
+        };
+        if let Some(token) = cached_token {
+            return Ok(token);
+        }
+
+        let form = [
+            ("grant_type".to_owned(), "client_credentials".to_owned()),
+            ("client_id".to_owned(), token_client.client_id.clone()),
+            (
+                "client_secret".to_owned(),
+                token_client.client_secret.clone(),
+            ),
+            ("scope".to_owned(), TOKEN_SCOPE.to_owned()),
+            ("audience".to_owned(), token_client.audience.clone()),
+        ];
+        let mut response = self
+            .client
+            .post(service_url(&self.idp_base_url, "oauth2/token")?)
+            .form(&form)
+            .send()
+            .await
+            .map_err(|_| "IdP token endpoint is unavailable".to_owned())?;
+        if !response.status().is_success() {
+            return Err("IdP rejected the Management service client".to_owned());
+        }
+        let body = read_limited_body(&mut response, "IdP token response").await?;
+        let token: TokenResponse =
+            serde_json::from_slice(&body).map_err(|_| "invalid IdP token response".to_owned())?;
+        if token.token_type != TokenType::Bearer
+            || token.issuer.as_deref() != Some(self.expected_issuer.as_str())
+            || !token.scope.as_deref().is_some_and(|scope| {
+                let granted = scope.split_ascii_whitespace().collect::<Vec<_>>();
+                TOKEN_SCOPE
+                    .split_ascii_whitespace()
+                    .all(|required| granted.contains(&required))
+            })
+        {
+            return Err("IdP returned an unauthorized service token".to_owned());
+        }
+        let expires_in = token
+            .expires_in
+            .ok_or_else(|| "IdP service token has no expiry".to_owned())?;
+        let valid_until = SystemTime::now()
+            .checked_add(Duration::from_secs(expires_in))
+            .ok_or_else(|| "IdP service token expiry is invalid".to_owned())?;
+        let value = token.access_token.0;
+        *token_client
+            .cached
+            .lock()
+            .map_err(|_| "IdP service token cache is unavailable".to_owned())? =
+            Some(CachedServiceToken {
+                value: value.clone(),
+                valid_until,
+            });
+        Ok(value)
+    }
+
+    /// Validates a user token through IdP's normal OAuth introspection API.
+    pub async fn validate_actor_token(
+        &self,
+        actor_token: &str,
+    ) -> Result<(StandardClaims, Id), String> {
+        let service_token = self.idp_service_access_token().await?;
+        let request = IntrospectionRequest {
+            token: actor_token.to_owned(),
+            token_type_hint: Some("access_token".to_owned()),
+        };
+        let mut response = self
+            .client
+            .post(service_url(&self.idp_base_url, "oauth2/introspect")?)
+            .bearer_auth(service_token)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|_| "IdP token validation is unavailable".to_owned())?;
+        if response.status().as_u16() == 401 {
+            return Err("actor token was rejected by IdP".to_owned());
+        }
+        if !response.status().is_success() {
+            return Err("IdP token validation is unavailable".to_owned());
+        }
+        const MAX_RESPONSE_SIZE: usize = 64 * 1024;
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| "invalid IdP token validation response".to_owned())?
+        {
+            if body.len() + chunk.len() > MAX_RESPONSE_SIZE {
+                return Err("IdP token validation response is too large".to_owned());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let response: IntrospectionResponse = serde_json::from_slice(&body)
+            .map_err(|_| "invalid IdP token validation response".to_owned())?;
+        let application_id = response
+            .application_id
+            .parse()
+            .map_err(|_| "invalid application ID in IdP response".to_owned())?;
+        Ok((response.claims, application_id))
+    }
+
+    pub async fn get_storage_endpoint_identity(
+        &self,
+        endpoint_id: &str,
+    ) -> Result<DeviceEndpointIdentity, String> {
+        let mut url = service_url(&self.idp_base_url, "devices/endpoints/")?;
+        url.path_segments_mut()
+            .map_err(|_| "invalid IdP endpoint URL".to_owned())?
+            .pop_if_empty()
+            .push(endpoint_id);
+        let service_token = self.idp_service_access_token().await?;
+        let mut response = self
+            .client
+            .get(url)
+            .bearer_auth(service_token)
+            .send()
+            .await
+            .map_err(|_| "IdP endpoint lookup is unavailable".to_owned())?;
+        if response.status().as_u16() == 401 || response.status().as_u16() == 403 {
+            return Err("IdP rejected Management device lookup permission".to_owned());
+        }
+        if response.status().as_u16() == 404 {
+            return Err("IdP identity was not found".to_owned());
+        }
+        if !response.status().is_success() {
+            return Err("IdP endpoint lookup is unavailable".to_owned());
+        }
+        const MAX_RESPONSE_SIZE: usize = 64 * 1024;
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| "invalid IdP endpoint response".to_owned())?
+        {
+            if body.len() + chunk.len() > MAX_RESPONSE_SIZE {
+                return Err("IdP endpoint response is too large".to_owned());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let identity: DeviceEndpointIdentity = serde_json::from_slice(&body)
+            .map_err(|_| "invalid IdP endpoint response".to_owned())?;
+        if identity.endpoint_id != endpoint_id {
+            return Err("IdP returned a mismatched endpoint identity".to_owned());
+        }
+        Ok(identity)
+    }
+
     pub async fn validate_storage_resource(
         &self,
         read_token: &str,
@@ -91,7 +294,7 @@ impl HostedControlPlane {
             ResourceKind::FileSystem => "filesystems",
         };
         let resource: StorageResourceDetail = self
-            .get(&format!("storage/{collection}/{id}"), read_token)
+            .get_storage(&format!("{collection}/{id}"), read_token)
             .await?;
         if resource.id != resource_id {
             return Err("storage resource ID mismatch".to_owned());
@@ -116,7 +319,7 @@ impl HostedControlPlane {
     }
 
     async fn lookup_approved_device(&self, read_token: &str, device_id: Id) -> Result<(), String> {
-        let devices: Vec<DeviceInfo> = self.get("devices", read_token).await?;
+        let devices: Vec<DeviceInfo> = self.get_idp("devices", read_token).await?;
         if devices
             .iter()
             .any(|device| device.id == device_id && device.state == DeviceState::Approved)
@@ -128,17 +331,17 @@ impl HostedControlPlane {
     }
 
     pub async fn trusted_devices(&self, token: &str) -> Result<Vec<TrustedDevice>, String> {
-        self.get("devices/trusted", token).await
+        self.get_idp("devices/trusted", token).await
     }
 
     pub async fn revoke_self(&self, request: DeviceSelfRevocationRequest) -> Result<(), String> {
-        self.post_empty("devices/revoke-self", &request).await
+        self.post_empty_idp("devices/revoke-self", &request).await
     }
 
     pub async fn verify_access_token(&self, token: &str) -> Result<StandardClaims, String> {
         let (header, _) =
             decode_jwt::<StandardClaims>(token).map_err(|_| "invalid token".to_owned())?;
-        let jwks: Jwks = self.get(".well-known/jwks.json", "").await?;
+        let jwks: Jwks = self.get_idp(".well-known/jwks.json", "").await?;
         let jwk = jwks
             .keys
             .iter()
@@ -172,11 +375,25 @@ impl HostedControlPlane {
         Ok(())
     }
 
-    async fn get<T>(&self, path: &str, token: &str) -> Result<T, String>
+    async fn get_idp<T>(&self, path: &str, token: &str) -> Result<T, String>
     where
         T: serde::de::DeserializeOwned,
     {
-        let mut request = self.client.get(self.url(path)?);
+        self.get_from(&self.idp_base_url, path, token).await
+    }
+
+    async fn get_storage<T>(&self, path: &str, token: &str) -> Result<T, String>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        self.get_from(&self.storage_base_url, path, token).await
+    }
+
+    async fn get_from<T>(&self, base_url: &Url, path: &str, token: &str) -> Result<T, String>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let mut request = self.client.get(service_url(base_url, path)?);
         if !token.is_empty() {
             request = request.bearer_auth(token);
         }
@@ -191,12 +408,12 @@ impl HostedControlPlane {
             .map_err(|error| error.to_string())
     }
 
-    async fn post_empty<B>(&self, path: &str, body: &B) -> Result<(), String>
+    async fn post_empty_idp<B>(&self, path: &str, body: &B) -> Result<(), String>
     where
         B: serde::Serialize + ?Sized,
     {
         self.client
-            .post(self.url(path)?)
+            .post(service_url(&self.idp_base_url, path)?)
             .json(body)
             .send()
             .await
@@ -205,10 +422,70 @@ impl HostedControlPlane {
             .map_err(|error| error.to_string())?;
         Ok(())
     }
+}
 
-    fn url(&self, path: &str) -> Result<Url, String> {
-        self.base_url.join(path).map_err(|error| error.to_string())
+fn normalize_service_url(value: &str) -> Result<Url, String> {
+    let mut url = Url::parse(value).map_err(|_| "invalid service URI".to_owned())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host().is_none()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || (url.scheme() == "http" && !is_loopback(&url))
+    {
+        return Err("service URI must use HTTPS except for loopback and must not contain credentials, a query, or a fragment".to_owned());
     }
+    if !url.path().ends_with('/') {
+        url.set_path(&format!("{}/", url.path()));
+    }
+    Ok(url)
+}
+
+fn is_loopback(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host.to_ascii_lowercase().ends_with(".localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn service_url(base_url: &Url, path: &str) -> Result<Url, String> {
+    base_url.join(path).map_err(|error| error.to_string())
+}
+
+struct ServiceTokenClient {
+    client_id: String,
+    client_secret: String,
+    audience: String,
+    cached: Mutex<Option<CachedServiceToken>>,
+}
+
+struct CachedServiceToken {
+    value: String,
+    valid_until: SystemTime,
+}
+
+async fn read_limited_body(
+    response: &mut reqwest::Response,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    const MAX_RESPONSE_SIZE: usize = 64 * 1024;
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| format!("invalid {label}"))?
+    {
+        if body.len() + chunk.len() > MAX_RESPONSE_SIZE {
+            return Err(format!("{label} is too large"));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 #[derive(Deserialize)]
@@ -250,12 +527,12 @@ mod tests {
     };
 
     use model::contract::{
-        AuthorizationDetail, StandardClaims, StorageAuthorizationAction,
+        AuthorizationDetail, PrincipalType, StandardClaims, StorageAuthorizationAction,
         StorageAuthorizationDetail, TokenType, TokenUse,
     };
     use storage_model::ResourceKind;
 
-    use super::{HostedControlPlane, validate_storage_read_claims};
+    use super::{HostedControlPlane, normalize_service_url, validate_storage_read_claims};
 
     const ID: &str = "00000000-0000-0000-0000-000000000001";
     const APP_ID: &str = "00000000-0000-0000-0000-000000000003";
@@ -271,6 +548,7 @@ mod tests {
             aud: "storage".into(),
             client_id: "verified-client".into(),
             sub: "owner".into(),
+            principal_type: PrincipalType::User,
             resource: Some("storage".into()),
             authorization_details: Some(vec![AuthorizationDetail::Storage(
                 StorageAuthorizationDetail {
@@ -319,6 +597,44 @@ mod tests {
         assert!(check(&invalid).is_err());
     }
 
+    #[tokio::test]
+    async fn introspection_rejection_is_not_treated_as_upstream_unavailable() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test HTTP server");
+        let address = listener.local_addr().expect("read test HTTP address");
+        let server = thread::spawn(move || {
+            let (mut token_stream, _) = listener.accept().expect("accept token request");
+            let mut token_request = [0; 4096];
+            token_stream
+                .read(&mut token_request)
+                .expect("read token request");
+            let token_response = r#"{"access_token":"management-token","token_type":"Bearer","expires_in":300,"scope":"idp.token.validate idp.device.lookup","iss":"https://issuer.example"}"#;
+            write!(token_stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{token_response}", token_response.len()).expect("write token response");
+
+            let (mut introspection_stream, _) =
+                listener.accept().expect("accept introspection request");
+            let mut introspection_request = [0; 4096];
+            introspection_stream
+                .read(&mut introspection_request)
+                .expect("read introspection request");
+            let error_response = r#"{"error":"invalid_token"}"#;
+            write!(introspection_stream, "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{error_response}", error_response.len()).expect("write rejection response");
+        });
+
+        let base_url = format!("http://{address}");
+        let control_plane =
+            HostedControlPlane::new_with_services(&base_url, &base_url, "https://issuer.example")
+                .expect("create hosted control plane")
+                .with_idp_service_client("management-client", "management-secret", "idp-audience")
+                .expect("configure IdP service client");
+
+        let error = control_plane
+            .validate_actor_token("revoked-or-invalid-token")
+            .await
+            .expect_err("IdP rejection must fail validation");
+        assert_eq!(error, "actor token was rejected by IdP");
+        server.join().expect("join test HTTP server");
+    }
+
     async fn lookup_with_response(
         kind: ResourceKind,
         status: &str,
@@ -350,6 +666,136 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn endpoint_identity_lookup_uses_management_oauth_client() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test HTTP server");
+        let address = listener.local_addr().expect("read test HTTP address");
+        let server = thread::spawn(move || {
+            let (mut token_stream, _) = listener.accept().expect("accept token request");
+            let mut token_request = [0; 4096];
+            let token_length = token_stream
+                .read(&mut token_request)
+                .expect("read token request");
+            let token_request =
+                String::from_utf8_lossy(&token_request[..token_length]).into_owned();
+            let token_body = serde_json::json!({
+                "access_token": "management-service-token",
+                "token_type": "Bearer",
+                "expires_in": 300,
+                "scope": "idp.token.validate idp.device.lookup",
+                "iss": "https://issuer.example"
+            })
+            .to_string();
+            write!(token_stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{token_body}", token_body.len()).expect("write token response");
+
+            let (mut lookup_stream, _) = listener.accept().expect("accept endpoint request");
+            let mut lookup_request = [0; 4096];
+            let lookup_length = lookup_stream
+                .read(&mut lookup_request)
+                .expect("read endpoint request");
+            let lookup_request =
+                String::from_utf8_lossy(&lookup_request[..lookup_length]).into_owned();
+            let body = format!(
+                r#"{{"deviceId":"{ID}","ownerSubject":"owner","endpointId":"endpoint-key"}}"#
+            );
+            write!(lookup_stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).expect("write lookup response");
+            (token_request, lookup_request)
+        });
+        let endpoint = format!("http://{address}");
+        let control_plane =
+            HostedControlPlane::new_with_services(&endpoint, &endpoint, "https://issuer.example")
+                .expect("create test control plane")
+                .with_idp_service_client("management-client", "management-secret", "idp-audience")
+                .expect("configure service OAuth client");
+        let identity = control_plane
+            .get_storage_endpoint_identity("endpoint-key")
+            .await
+            .expect("resolve approved endpoint identity");
+        assert_eq!(identity.device_id.to_string(), ID);
+        assert_eq!(identity.owner_subject, "owner");
+        let (token_request, lookup_request) = server.join().expect("join test HTTP server");
+        assert!(token_request.starts_with("POST /oauth2/token HTTP/1.1"));
+        assert!(token_request.contains("scope=idp.token.validate+idp.device.lookup"));
+        assert!(lookup_request.starts_with("GET /devices/endpoints/endpoint-key HTTP/1.1"));
+        assert!(
+            lookup_request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer management-service-token")
+        );
+        assert!(
+            !lookup_request
+                .to_ascii_lowercase()
+                .contains("x-internal-service")
+        );
+    }
+
+    #[tokio::test]
+    async fn actor_validation_uses_scoped_client_bearer_and_returns_verified_claims() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test HTTP server");
+        let address = listener.local_addr().expect("read test HTTP address");
+        let introspection_body =
+            serde_json::json!({ "claims": claims(), "applicationId": APP_ID }).to_string();
+        let server = thread::spawn(move || {
+            let (mut token_stream, _) = listener.accept().expect("accept token request");
+            let mut token_request = [0; 4096];
+            let token_length = token_stream
+                .read(&mut token_request)
+                .expect("read token request");
+            let token_request =
+                String::from_utf8_lossy(&token_request[..token_length]).into_owned();
+            let token_body = serde_json::json!({
+                "access_token": "service-token",
+                "token_type": "Bearer",
+                "expires_in": 300,
+                "scope": "idp.token.validate idp.device.lookup",
+                "iss": "https://issuer.example"
+            })
+            .to_string();
+            write!(token_stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{token_body}", token_body.len()).expect("write token response");
+
+            let (mut introspection_stream, _) =
+                listener.accept().expect("accept introspection request");
+            let mut introspection_request = [0; 4096];
+            let introspection_length = introspection_stream
+                .read(&mut introspection_request)
+                .expect("read introspection request");
+            let introspection_request =
+                String::from_utf8_lossy(&introspection_request[..introspection_length])
+                    .into_owned();
+            write!(introspection_stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{introspection_body}", introspection_body.len()).expect("write introspection response");
+            (token_request, introspection_request)
+        });
+        let endpoint = format!("http://{address}");
+        let control_plane =
+            HostedControlPlane::new_with_services(&endpoint, &endpoint, "https://issuer.example")
+                .expect("create test control plane")
+                .with_idp_service_client("management-client", "management-secret", "idp-audience")
+                .expect("configure service OAuth client");
+        let (validated, application_id) = control_plane
+            .validate_actor_token("actor-token")
+            .await
+            .expect("IdP validates actor token");
+        let (token_request, introspection_request) = server.join().expect("join test HTTP server");
+        assert_eq!(validated.client_id, "verified-client");
+        assert_eq!(application_id.to_string(), APP_ID);
+        assert!(token_request.starts_with("POST /oauth2/token HTTP/1.1"));
+        assert!(token_request.contains("grant_type=client_credentials"));
+        assert!(token_request.contains("scope=idp.token.validate+idp.device.lookup"));
+        assert!(token_request.contains("audience=idp-audience"));
+        assert!(introspection_request.starts_with("POST /oauth2/introspect HTTP/1.1"));
+        assert!(
+            introspection_request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer service-token")
+        );
+        assert!(introspection_request.contains("actor-token"));
+        assert!(
+            !introspection_request
+                .to_ascii_lowercase()
+                .contains("x-internal-service")
+        );
+    }
+
+    #[tokio::test]
     async fn lookup_uses_kind_specific_get_and_returns_application_id() {
         for (kind, path) in [
             (ResourceKind::Database, "databases"),
@@ -362,7 +808,7 @@ mod tests {
             )
             .await;
             assert_eq!(result, Ok(APP_ID.parse().expect("valid application ID")));
-            assert!(request.starts_with(&format!("GET /storage/{path}/{ID} HTTP/1.1")));
+            assert!(request.starts_with(&format!("GET /{path}/{ID} HTTP/1.1")));
             assert!(
                 request
                     .to_ascii_lowercase()
@@ -456,6 +902,50 @@ mod tests {
                 .lookup_approved_device("secret", ID.parse().expect("valid device ID"))
                 .await
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn service_urls_require_tls_except_for_loopback() {
+        for url in ["http://localhost/idp", "http://127.0.0.1:3000/idp"] {
+            assert!(normalize_service_url(url).is_ok());
+        }
+        assert!(normalize_service_url("https://idp.example/idp").is_ok());
+        for url in [
+            "http://idp.example",
+            "http://user:secret@localhost/idp",
+            "https://idp.example/idp?token=secret",
+            "https://idp.example/idp#fragment",
+            "ftp://idp.example/idp",
+        ] {
+            assert!(normalize_service_url(url).is_err(), "accepted {url}");
+        }
+    }
+
+    #[test]
+    fn idp_and_storage_service_urls_keep_independent_prefixes() {
+        let control_plane = HostedControlPlane::new_with_services(
+            "https://host.example/idp/",
+            "https://host.example/storage/",
+            "https://issuer.example",
+        )
+        .expect("create split control plane");
+
+        assert_eq!(
+            control_plane
+                .idp_base_url
+                .join("devices")
+                .expect("join IdP route")
+                .as_str(),
+            "https://host.example/idp/devices"
+        );
+        assert_eq!(
+            control_plane
+                .storage_base_url
+                .join("databases/00000000-0000-0000-0000-000000000001")
+                .expect("join Storage route")
+                .as_str(),
+            "https://host.example/storage/databases/00000000-0000-0000-0000-000000000001"
         );
     }
 

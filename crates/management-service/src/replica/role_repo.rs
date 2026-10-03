@@ -404,22 +404,13 @@ where
         Ok(permissions)
     }
 
-    async fn has_user_client_permission(
+    async fn has_user_application_permission(
         &self,
         user_id: Id,
-        application_uri: &str,
+        application_id: Id,
         permission_name: &str,
     ) -> ManagementResult<bool> {
-        let applications = self
-            .rows::<ApplicationRow>("applications", &["id", "uri"])
-            .await?;
-        let Some(application) = applications
-            .into_iter()
-            .find(|application| application.uri == application_uri)
-        else {
-            return Ok(false);
-        };
-        let permissions = self.list_user_permissions(application.id, user_id).await?;
+        let permissions = self.list_user_permissions(application_id, user_id).await?;
         Ok(permissions
             .iter()
             .any(|permission| permission_matches(&permission.name, permission_name)))
@@ -589,21 +580,6 @@ impl From<UserRoleRow> for Row {
             Value::Integer(row.created_at),
             Value::Integer(row.updated_at),
         ])
-    }
-}
-
-#[derive(Debug)]
-struct ApplicationRow {
-    id: Uuid,
-    uri: String,
-}
-
-impl FromRow for ApplicationRow {
-    fn from_row(row: &Row, columns: &[&str]) -> Result<Self, FromRowError> {
-        Ok(Self {
-            id: decode(row, columns, "id")?,
-            uri: decode(row, columns, "uri")?,
-        })
     }
 }
 

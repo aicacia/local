@@ -6,12 +6,31 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::RouterState;
 
 use super::openapi::{__path_openapi_json, openapi_json};
+use super::resources;
 use super::routes::health::{__path_health, health};
 use super::routes::version::{__path_version, version};
+use super::storage_socket::__path_upgrade_socket;
 
 #[derive(OpenApi)]
 #[openapi(
-    info(title = "OAuth Server", version = env!("CARGO_PKG_VERSION")),
+    paths(
+        resources::create_database,
+        resources::list_databases,
+        resources::get_database,
+        resources::delete_database,
+        resources::create_file_system,
+        resources::list_file_systems,
+        resources::get_file_system,
+        resources::delete_file_system,
+        upgrade_socket
+    ),
+    components(schemas(
+        resources::CreateResourceRequest,
+        resources::DatabaseDetailResponse,
+        resources::FileSystemResourceResponse,
+        resources::FileSystemDetailResponse
+    )),
+    info(title = "Storage Server", version = env!("CARGO_PKG_VERSION")),
     modifiers(&SecurityAddon)
 )]
 pub(crate) struct ApiDoc;
@@ -69,5 +88,26 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
         runtime_router.merge(openapi_json_routes)
     } else {
         runtime_router.nest(prefix, openapi_json_routes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use utoipa::OpenApi;
+
+    use super::ApiDoc;
+
+    #[test]
+    fn documents_storage_routes() {
+        let document = ApiDoc::openapi();
+        for path in [
+            "/storage/databases",
+            "/storage/databases/{database_id}",
+            "/storage/filesystems",
+            "/storage/filesystems/{filesystem_id}",
+            "/storage",
+        ] {
+            assert!(document.paths.paths.contains_key(path), "missing {path}");
+        }
     }
 }

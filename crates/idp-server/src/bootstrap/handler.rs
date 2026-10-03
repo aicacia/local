@@ -6,7 +6,7 @@ use iroh::{
     protocol::{AcceptError, ProtocolHandler},
 };
 use management_service::DeviceRepo;
-use ofdb::{IrohTransport, SessionConfig, SyncRole};
+use ofdb_sql::{IrohTransport, SessionConfig, SyncRole};
 
 use super::BootstrapRegistry;
 
@@ -93,7 +93,7 @@ impl BootstrapProtocolHandler {
             return Err(io::Error::other(error));
         }
         let mut transport = IrohTransport::new(send, recv);
-        let result = ofdb::synchronize(
+        let result = ofdb_sql::synchronize(
             &self.engine,
             &mut transport,
             &SessionConfig::default(),
@@ -138,7 +138,7 @@ mod tests {
     };
     use iroh_chain::{EndpointIdStore, Server};
     use management_service::{DeviceRepo, replica::DbDeviceRepo};
-    use ofdb::{IrohTransport, SessionConfig, SyncRole};
+    use ofdb_sql::{IrohTransport, SessionConfig, SyncRole};
 
     use super::{BOOTSTRAP_ALPN, BootstrapProtocolHandler};
     use crate::bootstrap::BootstrapRegistry;
@@ -289,7 +289,7 @@ mod tests {
                 .expect("read retry acknowledgement");
             assert_eq!(&response, b"OK");
             let mut transport = IrohTransport::new(send, recv);
-            ofdb::synchronize(
+            ofdb_sql::synchronize(
                 &destination,
                 &mut transport,
                 &SessionConfig::default(),

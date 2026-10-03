@@ -5,7 +5,7 @@ use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
 use idp_model::contract::{ErrorCode, ErrorResponse};
 use idp_model::{contract::EntityType, model::Id};
 use idp_service::oauth2::{Principal, decode_jwt, verify_jwt};
-use model::contract::{StandardClaims, TokenType, TokenUse};
+use model::contract::{PrincipalType, StandardClaims, TokenType, TokenUse};
 use serde::de::DeserializeOwned;
 
 use crate::RouterState;
@@ -52,6 +52,38 @@ pub async fn authorize_bearer(
     router_state: &RouterState,
     authorization_string: &str,
 ) -> Result<Authorization<StandardClaims>, ErrorResponse> {
+    authorize_bearer_with_principal(
+        router_state,
+        authorization_string,
+        Some(PrincipalType::User),
+    )
+    .await
+}
+
+pub(crate) async fn authorize_bearer_any_principal(
+    router_state: &RouterState,
+    authorization_string: &str,
+) -> Result<Authorization<StandardClaims>, ErrorResponse> {
+    authorize_bearer_with_principal(router_state, authorization_string, None).await
+}
+
+pub(crate) async fn authorize_bearer_client(
+    router_state: &RouterState,
+    authorization_string: &str,
+) -> Result<Authorization<StandardClaims>, ErrorResponse> {
+    authorize_bearer_with_principal(
+        router_state,
+        authorization_string,
+        Some(PrincipalType::Client),
+    )
+    .await
+}
+
+async fn authorize_bearer_with_principal(
+    router_state: &RouterState,
+    authorization_string: &str,
+    expected_principal: Option<PrincipalType>,
+) -> Result<Authorization<StandardClaims>, ErrorResponse> {
     let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
     let key_id = jwt_header
         .kid
@@ -72,12 +104,17 @@ pub async fn authorize_bearer(
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?
         .as_secs() as i64;
+    let claimed_entity_type = match claims.principal_type {
+        PrincipalType::User => EntityType::User,
+        PrincipalType::Client => EntityType::Client,
+    };
     if claims.r#type != TokenType::Bearer
         || claims.r#use != TokenUse::Access
         || claims.iss != router_state.oauth2_service.metadata().issuer
         || claims.exp <= now
         || claims.nbf > now
-        || principal.get_entity_type() != EntityType::User
+        || principal.get_entity_type() != claimed_entity_type
+        || expected_principal.is_some_and(|expected| expected != claims.principal_type)
         || claims.sub != principal.get_entity_id().to_string()
         || claims.aud.is_empty()
     {

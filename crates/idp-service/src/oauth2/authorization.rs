@@ -7,12 +7,20 @@ use alloc::{
 
 use idp_model::contract::{
     AuthorizationRequest, ClientType, CodeChallengeMethod, ErrorCode, ErrorResponse,
-    ErrorResponseResult, ResponseMode, ResponseType,
+    ErrorResponseResult, GrantType, ResponseMode, ResponseType,
 };
 use idp_model::model::Client;
 use model::contract::AuthorizationDetail;
 
 use super::scope::{parse_scopes, validate_scopes};
+
+pub(crate) fn validate_dynamic_client_grants(grant_types: &[GrantType]) -> ErrorResponseResult<()> {
+    if grant_types.contains(&GrantType::ClientCredentials) {
+        return Err(ErrorResponse::new(ErrorCode::UnauthorizedClient)
+            .with_description("client credentials clients require trusted owner provisioning"));
+    }
+    Ok(())
+}
 
 pub fn validate_authorization_request(
     request: &AuthorizationRequest,
@@ -126,6 +134,24 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn dynamic_registration_rejects_client_credentials_grant() {
+        assert!(validate_dynamic_client_grants(&[GrantType::AuthorizationCode]).is_ok());
+        assert_eq!(
+            validate_dynamic_client_grants(&[GrantType::ClientCredentials])
+                .expect_err("dynamic registration must not create service clients")
+                .error,
+            ErrorCode::UnauthorizedClient
+        );
+        assert!(
+            validate_dynamic_client_grants(&[
+                GrantType::AuthorizationCode,
+                GrantType::ClientCredentials,
+            ])
+            .is_err()
+        );
+    }
+
     fn sample_client() -> Client {
         Client {
             id: Id::nil(),
@@ -143,6 +169,7 @@ mod tests {
             allowed_grant_types: vec![GrantType::AuthorizationCode],
             response_types: vec![ResponseType::Code],
             allowed_scopes: vec!["openid".to_string()],
+            allowed_audiences: Vec::new(),
             logo_uri: None,
             contacts: Vec::new(),
             terms_of_service_uri: None,

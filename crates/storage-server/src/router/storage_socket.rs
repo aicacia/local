@@ -15,7 +15,14 @@ use storage_model::{StorageErrorCode, StorageRequest, StorageResponse, StorageSe
 pub struct StorageSocketAccess<S> {
     pub read: bool,
     pub write: bool,
+    pub expires_at: i64,
     pub session: S,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageSocketAuthorizationError {
+    InvalidToken,
+    ServiceUnavailable,
 }
 
 pub trait StorageSocketAuthorizer: Send + Sync + 'static {
@@ -25,11 +32,13 @@ pub trait StorageSocketAuthorizer: Send + Sync + 'static {
         &self,
         token: String,
         resource_id: String,
-    ) -> impl Future<Output = Result<StorageSocketAccess<Self::Session>, ()>> + Send;
+    ) -> impl Future<
+        Output = Result<StorageSocketAccess<Self::Session>, StorageSocketAuthorizationError>,
+    > + Send;
 }
 
 #[derive(serde::Deserialize)]
-struct StorageQuery {
+pub(super) struct StorageQuery {
     access_token: String,
     filesystem_id: String,
 }
@@ -43,7 +52,20 @@ where
         .with_state(authorizer)
 }
 
-async fn upgrade_socket<A>(
+#[utoipa::path(
+    get,
+    path = "/storage",
+    params(
+        ("access_token" = String, Query, description = "User access token"),
+        ("filesystem_id" = String, Query, description = "Filesystem resource ID")
+    ),
+    responses(
+        (status = 101, description = "WebSocket connection upgraded"),
+        (status = 401, description = "Invalid storage authorization"),
+        (status = 503, description = "IdP validation service unavailable")
+    )
+)]
+pub(super) async fn upgrade_socket<A>(
     upgrade: WebSocketUpgrade,
     Query(query): Query<StorageQuery>,
     State(authorizer): State<Arc<A>>,
@@ -51,20 +73,46 @@ async fn upgrade_socket<A>(
 where
     A: StorageSocketAuthorizer,
 {
-    let Ok(access) = authorizer
-        .authorize(query.access_token, query.filesystem_id)
+    let token = query.access_token;
+    let resource_id = query.filesystem_id;
+    let access = match authorizer
+        .authorize(token.clone(), resource_id.clone())
         .await
-    else {
-        return StatusCode::UNAUTHORIZED.into_response();
+    {
+        Ok(access) => access,
+        Err(StorageSocketAuthorizationError::InvalidToken) => {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+        Err(StorageSocketAuthorizationError::ServiceUnavailable) => {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
     };
-    upgrade.on_upgrade(move |socket| serve_socket(socket, access))
+    upgrade.on_upgrade(move |socket| serve_socket(socket, access, authorizer, token, resource_id))
 }
 
-async fn serve_socket<S>(mut socket: WebSocket, access: StorageSocketAccess<S>)
-where
-    S: StorageSession + 'static,
+async fn serve_socket<A>(
+    mut socket: WebSocket,
+    mut access: StorageSocketAccess<A::Session>,
+    authorizer: Arc<A>,
+    token: String,
+    resource_id: String,
+) where
+    A: StorageSocketAuthorizer,
 {
-    while let Some(Ok(Message::Text(message))) = socket.recv().await {
+    loop {
+        if unix_time_seconds() >= access.expires_at {
+            return;
+        }
+        let Some(Ok(Message::Text(message))) = socket.recv().await else {
+            return;
+        };
+        access = match authorizer
+            .authorize(token.clone(), resource_id.clone())
+            .await
+        {
+            Ok(access) if unix_time_seconds() < access.expires_at => access,
+            Ok(_) | Err(_) => return,
+        };
         let response = match serde_json::from_str::<StorageRequest>(&message) {
             Ok(request) if allows(&access, &request) => {
                 access.session.execute_session(request).await
@@ -93,6 +141,12 @@ fn allows<S>(access: &StorageSocketAccess<S>, request: &StorageRequest) -> bool 
         | StorageRequest::CreateDir { .. }
         | StorageRequest::Rename { .. } => access.write,
     }
+}
+
+fn unix_time_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs().min(i64::MAX as u64) as i64)
 }
 
 async fn send_response(socket: &mut WebSocket, response: StorageResponse) -> Result<(), ()> {
@@ -124,6 +178,7 @@ mod tests {
         let access = StorageSocketAccess {
             read: true,
             write: false,
+            expires_at: i64::MAX,
             session: Session,
         };
         assert!(allows(

@@ -9,11 +9,11 @@ repository.workspace = true
 
 [dependencies]
 # Internal
-btree-redb = { path = "../../../ofdb/crates/btree-redb", default-features = false, features = [] }
+ofdb-btree-redb = { package = "ofdb-btree-redb", path = "../../../ofdb/crates/btree-redb", default-features = false, features = [] }
 file-system = { path = "../../../offs/crates/file-system", default-features = false, features = [] }
-kv = { path = "../../../ofdb/crates/kv", default-features = false, features = [] }
-kv-sync = { path = "../../../ofdb/crates/kv-sync", default-features = false, features = [] }
-ofdb = { path = "../../../ofdb", default-features = false, features = ["automerge", "iroh", "redb", "sql", "sync"] }
+ofdb-kv-store = { package = "ofdb-kv-store", path = "../../../ofdb/crates/kv-store", default-features = false, features = [] }
+ofdb-kv-sync = { package = "ofdb-kv-sync", path = "../../../ofdb/crates/kv-sync", default-features = false, features = [] }
+ofdb-sql = { package = "ofdb-sql", path = "../../../ofdb/crates/sql", default-features = false, features = ["redb", "sql", "sync"] }
 redb = { version = "4.3", default-features = false, features = ["uuid"] }
 idp-model = { path = "../idp-model", default-features = false, features = ["std"] }
 storage-model = { path = "../storage-model", default-features = false, features = ["std"] }
@@ -27,6 +27,9 @@ utoipa = { version = "5.5", default-features = false, features = ["macros"] }
 
 # Async
 tokio = { version = "1.53", default-features = false, features = ["sync"] }
+
+# Utilities
+uuid = { version = "1.26", default-features = false, features = ["std", "v7"] }
 
 [dev-dependencies]
 # Async

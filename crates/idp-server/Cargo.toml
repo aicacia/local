@@ -20,7 +20,7 @@ required-features = ["cli"]
 [features]
 default = ["cli", "completions", "swagger-ui"]
 cli = ["dep:tokio-util", "dep:dotenvy", "dep:clap", "dep:cli"]
-completions = ["cli?/completions"]
+completions = ["cli?/completions", "dep:clap_complete"]
 swagger-ui = ["utoipa-swagger-ui"]
 
 [dependencies]
@@ -32,6 +32,7 @@ clap = { version = "4.6", default-features = false, features = [
   "derive",
   "help",
 ], optional = true }
+clap_complete = { version = "4.5", default-features = false, features = [], optional = true }
 cli = { path = "../cli", default-features = false, features = [
 ], optional = true }
 
@@ -42,7 +43,7 @@ db = { package = "idp-db", path = "../db", default-features = false, features = 
   "replica",
 ] }
 
-file-system = { path = "../../../offs/crates/file-system", default-features = false, features = ["iroh"] }
+
 model = { path = "../model", default-features = false, features = [
   "std",
   "utoipa",
@@ -57,19 +58,16 @@ idp-model = { path = "../idp-model", default-features = false, features = [
 idp-service = { path = "../idp-service", default-features = false, features = ["replica", "std"] }
 management-server = { path = "../management-server", default-features = false, features = [] }
 management-service = { path = "../management-service", default-features = false, features = ["replica", "std"] }
-storage-model = { path = "../storage-model", default-features = false, features = [] }
-storage-server = { path = "../storage-server", default-features = false, features = [] }
-storage-service = { path = "../storage-service", default-features = false, features = [] }
+
 iroh-chain = { path = "../../../ofnet/crates/iroh-chain", default-features = false, features = [] }
 
 # Iroh
 iroh = { version = "1.1", default-features = false, features = ["tls-ring"] }
 
 # Database
-kv-sync = { path = "../../../ofdb/crates/kv-sync", default-features = false, features = [] }
-ofdb = { package = "ofdb", path = "../../../ofdb", default-features = false, features = [
-  "automerge",
-  "iroh",
+
+ofdb-sql = { package = "ofdb-sql", path = "../../../ofdb/crates/sql", default-features = false, features = [
+
   "redb",
   "sync",
 ] }
@@ -122,7 +120,7 @@ env_logger = { version = "0.10", default-features = false, features = [] }
 
 [dev-dependencies]
 # Database
-ofdb-sync = { package = "sync", path = "../../../ofdb/crates/sync", default-features = false, features = [] }
+ofdb-sql-sync = { package = "ofdb-sql-sync", path = "../../../ofdb/crates/sql-sync", default-features = false, features = [] }
 
 # Keyring
 keyring-core = { version = "1.0", default-features = false, features = [] }

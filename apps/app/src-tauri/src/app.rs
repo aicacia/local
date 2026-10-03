@@ -94,13 +94,19 @@ pub fn init_router(
     });
     let idp_router = idp_server::openapi_router(router_state.as_ref().clone(), "/lidp");
     let management_service = Arc::new(ManagementService::new(
-        DbApplicationRepo::new(database.clone()),
         DbPermissionRepo::new(database.clone()),
         DbRoleRepo::new(database.clone()),
     ));
     let management_control_plane = Arc::new(
-        HostedControlPlane::new_with_issuer(&app_config.api_public_uri, &app_config.oauth2.issuer)
-            .map_err(io::Error::other)?,
+        HostedControlPlane::new_with_services(
+            &app_config.api_public_uri,
+            &format!(
+                "{}/storage/",
+                app_config.api_public_uri.trim_end_matches('/')
+            ),
+            &app_config.oauth2.issuer,
+        )
+        .map_err(io::Error::other)?,
     );
     let storage_audience = app_config
         .storage_audience
@@ -109,12 +115,10 @@ pub fn init_router(
     let management_state = management_server::RouterState::new(
         &app_config.api_public_uri,
         management_service,
-        oauth2_service,
         Arc::new(DbSelectionPolicyRepo::new(database.clone())),
         management_control_plane,
         storage_audience,
-    )
-    .with_devices(Arc::new(DbDeviceRepo::new(database.clone())));
+    );
     let management_router = management_server::openapi_router(management_state, "/idp-management");
 
     let storage_router = storage_router(router_state.as_ref().clone(), file_systems);

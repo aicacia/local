@@ -1,27 +1,23 @@
-use alloc::{string::String, vec::Vec};
+use alloc::vec::Vec;
 
-use idp_model::model::{Application, Permission, Role};
-use idp_service::repo::ApplicationRepo;
+use idp_model::model::{Permission, Role};
 
 use crate::{ManagementError, PermissionRepo, RoleRepo};
 
 pub const MANAGEMENT_APPLICATION_URI: &str = "idp-management";
 
-pub struct ManagementService<A, P, R> {
-    application_repo: A,
+pub struct ManagementService<P, R> {
     permission_repo: P,
     role_repo: R,
 }
 
-impl<A, P, R> ManagementService<A, P, R>
+impl<P, R> ManagementService<P, R>
 where
-    A: ApplicationRepo,
     P: PermissionRepo,
     R: RoleRepo,
 {
-    pub fn new(application_repo: A, permission_repo: P, role_repo: R) -> Self {
+    pub fn new(permission_repo: P, role_repo: R) -> Self {
         Self {
-            application_repo,
             permission_repo,
             role_repo,
         }
@@ -30,10 +26,11 @@ where
     pub async fn has_user_application_permission(
         &self,
         user_id: idp_model::model::Id,
+        application_id: idp_model::model::Id,
         permission_name: &str,
     ) -> Result<bool, ManagementError> {
         self.role_repo
-            .has_user_client_permission(user_id, MANAGEMENT_APPLICATION_URI, permission_name)
+            .has_user_application_permission(user_id, application_id, permission_name)
             .await
     }
 
@@ -192,68 +189,5 @@ where
         self.permission_repo
             .remove_permission_from_role(application_id, role_id, permission_id)
             .await
-    }
-
-    pub async fn list_applications(
-        &self,
-        offset: u32,
-        limit: u32,
-    ) -> Result<Vec<Application>, ManagementError> {
-        self.application_repo
-            .list_applications(offset, limit)
-            .await
-            .map_err(ManagementError::other)
-    }
-
-    pub async fn create_application(
-        &self,
-        name: String,
-        uri: String,
-        description: Option<String>,
-    ) -> Result<Application, ManagementError> {
-        self.application_repo
-            .create_application(name, uri, description)
-            .await
-            .map_err(ManagementError::other)
-    }
-
-    pub async fn find_application_by_id(
-        &self,
-        application_id: idp_model::model::Id,
-    ) -> Result<Option<Application>, ManagementError> {
-        self.application_repo
-            .find_by_id(application_id)
-            .await
-            .map_err(ManagementError::other)
-    }
-
-    pub async fn find_application_by_uri(
-        &self,
-        application_uri: &str,
-    ) -> Result<Option<Application>, ManagementError> {
-        self.application_repo
-            .find_by_uri(application_uri)
-            .await
-            .map_err(ManagementError::other)
-    }
-
-    pub async fn update_application(
-        &self,
-        application: Application,
-    ) -> Result<Application, ManagementError> {
-        self.application_repo
-            .update_application(application)
-            .await
-            .map_err(ManagementError::other)
-    }
-
-    pub async fn delete_application_by_id(
-        &self,
-        application_id: idp_model::model::Id,
-    ) -> Result<(), ManagementError> {
-        self.application_repo
-            .delete_application_by_id(application_id)
-            .await
-            .map_err(ManagementError::other)
     }
 }

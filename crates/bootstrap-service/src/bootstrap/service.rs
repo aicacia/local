@@ -297,6 +297,7 @@ where
                 ],
                 response_types: vec![ResponseType::Code],
                 allowed_scopes: expected_scopes,
+                allowed_audiences: Vec::new(),
                 logo_uri: None,
                 contacts: Vec::new(),
                 terms_of_service_uri: None,

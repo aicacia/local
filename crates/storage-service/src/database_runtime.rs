@@ -5,9 +5,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use btree_redb::{Bytes, RedbByteBTree, table_definition};
-use kv::KvStore;
-use ofdb::Database;
+use ofdb_btree_redb::{Bytes, RedbByteBTree, table_definition};
+use ofdb_kv_store::KvStore;
+use ofdb_sql::Database;
 use redb::Database as RedbDatabase;
 use storage_model::StorageNamespace;
 
@@ -180,7 +180,9 @@ impl DatabaseRuntime {
                 .commit()
                 .map_err(|error| io::Error::other(error.to_string()))?;
         }
-        let store = Arc::new(KvStore::new(RedbByteBTree::new(database, "kv")));
+        let store = Arc::new(KvStore::new(RedbByteBTree::new(database, "kv"), || {
+            uuid::Timestamp::now(uuid::NoContext)
+        }));
         open.insert(key, Arc::clone(&store));
         Ok(Some(store))
     }
@@ -247,7 +249,7 @@ fn database_path(
 mod tests {
     use std::fs;
 
-    use ofdb::SqlTranslator;
+    use ofdb_sql::SqlTranslator;
     use storage_model::StorageNamespace;
 
     use super::DatabaseRuntime;

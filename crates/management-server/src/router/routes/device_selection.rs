@@ -1,13 +1,15 @@
+use std::string::String;
+
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
 };
 use idp_model::{
-    contract::{DeviceState, ErrorCode, ErrorResponse},
+    contract::{ErrorCode, ErrorResponse},
     model::Id,
 };
-use management_service::{DeviceRepo, replica::SelectionPolicy};
+use management_service::replica::SelectionPolicy;
 use serde::Deserialize;
 use storage_model::ResourceKind;
 
@@ -16,8 +18,6 @@ use crate::router::{RouterState, middleware::ManagementAuthorization};
 use super::roles::require_application_permission;
 
 const SELECTION_PERMISSION: &str = "devices.select";
-const RESTRICT_PERMISSION: &str = "devices.restrict";
-const STORAGE_AUTHORIZATION: &str = "x-storage-authorization";
 
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -27,6 +27,7 @@ pub(crate) struct SelectionRequest {
     kind: SelectionKind,
     #[schema(value_type = String)]
     id: Id,
+    storage_access_token: String,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -52,16 +53,6 @@ impl SelectionKind {
     }
 }
 
-fn storage_token(headers: &HeaderMap) -> Result<&str, ErrorResponse> {
-    let value = headers
-        .get(STORAGE_AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|value| !value.is_empty() && !value.trim().contains(char::is_whitespace))
-        .ok_or_else(|| ErrorResponse::new(ErrorCode::NotAuthorized))?;
-    Ok(value)
-}
-
 #[utoipa::path(
     put,
     path = "/devices/{device_id}/selection",
@@ -74,7 +65,6 @@ pub(crate) async fn put_device_selection(
     State(state): State<RouterState>,
     Path(device_id): Path<Id>,
     authorization: ManagementAuthorization,
-    headers: HeaderMap,
     Json(body): Json<SelectionRequest>,
 ) -> Result<StatusCode, ErrorResponse> {
     require_application_permission(
@@ -83,18 +73,30 @@ pub(crate) async fn put_device_selection(
         SELECTION_PERMISSION,
     )
     .await?;
-    let owner = authorization.principal.get_entity_id().to_string();
-    let token = storage_token(&headers)?;
+    let owner = authorization.subject.to_string();
+    if body.storage_access_token.is_empty()
+        || body
+            .storage_access_token
+            .trim()
+            .contains(char::is_whitespace)
+    {
+        return Err(ErrorResponse::new(ErrorCode::NotAuthorized));
+    }
 
     state
         .control_plane
-        .validate_selection_device(token, &owner, &state.storage_audience, device_id)
+        .validate_selection_device(
+            &body.storage_access_token,
+            &owner,
+            &state.storage_audience,
+            device_id,
+        )
         .await
         .map_err(|_| ErrorResponse::new(ErrorCode::AccessDenied))?;
     state
         .control_plane
         .validate_storage_resource(
-            token,
+            &body.storage_access_token,
             &owner,
             &state.storage_audience,
             body.application_id,
@@ -148,7 +150,7 @@ pub(crate) async fn delete_device_selection(
         SELECTION_PERMISSION,
     )
     .await?;
-    let owner = authorization.principal.get_entity_id().to_string();
+    let owner = authorization.subject.to_string();
     if !state
         .selection_policies
         .deselect_owned(device_id, &owner)
@@ -183,7 +185,7 @@ pub(crate) async fn delete_device_resource_selection(
         SELECTION_PERMISSION,
     )
     .await?;
-    let owner = authorization.principal.get_entity_id().to_string();
+    let owner = authorization.subject.to_string();
     if !state
         .selection_policies
         .deselect_resource_owned(
@@ -201,95 +203,39 @@ pub(crate) async fn delete_device_resource_selection(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct RestrictionRequest {
-    admin_allowed: bool,
-}
-
-#[utoipa::path(
-    put,
-    path = "/devices/{device_id}/restriction",
-    params(("device_id" = String, Path, description = "Device ID")),
-    request_body = RestrictionRequest,
-    responses((status = 204, description = "Device restriction updated")),
-    security(("authorization" = []))
-)]
-pub(crate) async fn put_device_restriction(
-    State(state): State<RouterState>,
-    Path(device_id): Path<Id>,
-    authorization: ManagementAuthorization,
-    Json(body): Json<RestrictionRequest>,
-) -> Result<StatusCode, ErrorResponse> {
-    require_application_permission(
-        state.management_service.as_ref(),
-        &authorization,
-        RESTRICT_PERMISSION,
-    )
-    .await?;
-    let devices = state
-        .devices
-        .as_ref()
-        .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))?;
-    let device = devices
-        .list()
-        .await
-        .map_err(|_| ErrorResponse::new(ErrorCode::AccessDenied))?
-        .into_iter()
-        .find(|device| device.id == device_id && device.state == DeviceState::Approved)
-        .ok_or_else(|| ErrorResponse::new(ErrorCode::NotFound))?;
-    state
-        .selection_policies
-        .set_admin_allowed_prevalidated(device_id, &device.owner_subject, body.admin_allowed)
-        .await
-        .map_err(ErrorResponse::from)?
-        .then_some(StatusCode::NO_CONTENT)
-        .ok_or_else(|| ErrorResponse::new(ErrorCode::AccessDenied))
-}
-
 #[cfg(test)]
 mod tests {
-    use axum::http::{HeaderMap, HeaderValue};
-    use idp_model::contract::ErrorCode;
-
-    use super::{SelectionKind, SelectionRequest, storage_token};
+    use super::{SelectionKind, SelectionRequest};
 
     #[test]
     fn selection_request_accepts_only_supported_kinds() {
         let id = "00000000-0000-0000-0000-000000000001";
         for kind in ["database", "filesystem"] {
-            let body = format!(r#"{{"applicationId":"{id}","kind":"{kind}","id":"{id}"}}"#);
+            let body = format!(
+                r#"{{"applicationId":"{id}","kind":"{kind}","id":"{id}","storageAccessToken":"storage-token"}}"#
+            );
             let parsed: SelectionRequest = serde_json::from_str(&body).expect("supported kind");
             assert!(matches!(
                 parsed.kind,
                 SelectionKind::Database | SelectionKind::Filesystem
             ));
         }
-        let body = format!(r#"{{"applicationId":"{id}","kind":"unknown","id":"{id}"}}"#);
+        let body = format!(
+            r#"{{"applicationId":"{id}","kind":"unknown","id":"{id}","storageAccessToken":"storage-token"}}"#
+        );
         assert!(serde_json::from_str::<SelectionRequest>(&body).is_err());
     }
 
     #[test]
-    fn storage_header_requires_separate_bearer_token() {
-        let mut headers = HeaderMap::new();
-        assert_eq!(
-            storage_token(&headers).err().map(|error| error.error),
-            Some(ErrorCode::NotAuthorized)
+    fn selection_request_requires_storage_access_token_as_data() {
+        let id = "00000000-0000-0000-0000-000000000001";
+        let without_token = format!(r#"{{"applicationId":"{id}","kind":"database","id":"{id}"}}"#);
+        assert!(serde_json::from_str::<SelectionRequest>(&without_token).is_err());
+        let with_token = format!(
+            r#"{{"applicationId":"{id}","kind":"database","id":"{id}","storageAccessToken":"token"}}"#
         );
-        headers.insert(
-            "authorization",
-            HeaderValue::from_static("Bearer management"),
-        );
-        assert!(storage_token(&headers).is_err());
-        headers.insert(
-            "x-storage-authorization",
-            HeaderValue::from_static("Bearer storage"),
-        );
-        assert_eq!(storage_token(&headers).expect("storage token"), "storage");
-        headers.insert(
-            "x-storage-authorization",
-            HeaderValue::from_static("Bearer "),
-        );
-        assert!(storage_token(&headers).is_err());
+        let parsed: SelectionRequest =
+            serde_json::from_str(&with_token).expect("token is request data");
+        assert_eq!(parsed.storage_access_token, "token");
     }
 }

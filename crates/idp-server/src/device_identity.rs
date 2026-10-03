@@ -24,8 +24,18 @@ pub async fn open_with_allowlist(allowed: EndpointIdStore) -> io::Result<(Device
     let server = Server::bind_with_secret_key(presets::N0, secret_key.clone(), allowed)
         .await
         .map_err(io::Error::other)?;
-    let identity = DeviceIdentity::new(server.endpoint().clone(), secret_key);
+    let identity = identity_from_server(&server, secret_key)?;
     Ok((identity, server))
+}
+
+pub fn identity_from_server(server: &Server, secret_key: SecretKey) -> io::Result<DeviceIdentity> {
+    if server.endpoint().id() != secret_key.public() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Iroh server endpoint does not match its secret key",
+        ));
+    }
+    Ok(DeviceIdentity::new(server.endpoint().clone(), secret_key))
 }
 
 fn load_or_create_secret_key() -> io::Result<SecretKey> {
@@ -55,7 +65,22 @@ pub fn delete() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use iroh::SecretKey;
+    use iroh::{SecretKey, endpoint::presets};
+    use iroh_chain::{EndpointIdStore, Server};
+
+    use super::identity_from_server;
+
+    #[tokio::test]
+    async fn rejects_a_key_that_does_not_match_the_shared_endpoint() {
+        let server_key = SecretKey::generate();
+        let server =
+            Server::bind_with_secret_key(presets::N0, server_key, EndpointIdStore::default())
+                .await
+                .expect("bind test Iroh server");
+
+        assert!(identity_from_server(&server, SecretKey::generate()).is_err());
+        server.endpoint().close().await;
+    }
 
     #[test]
     fn restores_device_key_bytes() {

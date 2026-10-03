@@ -14,9 +14,9 @@ name = "db"
 
 [features]
 default = ["native", "replica"]
-native = ["dep:ofdb", "ofdb/automerge", "ofdb/redb"]
-replica = ["native", "ofdb/in-memory", "ofdb/macros"]
+native = ["dep:ofdb-sql", "ofdb-sql/redb"]
+replica = ["native", "ofdb-sql/in-memory", "ofdb-sql/macros"]
 
 [dependencies]
 # Database
-ofdb = { path = "../../../ofdb", default-features = false, features = ["sql"], optional = true }
+ofdb-sql = { package = "ofdb-sql", path = "../../../ofdb/crates/sql", default-features = false, features = ["sql"], optional = true }

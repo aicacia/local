@@ -225,7 +225,7 @@ fn resolution_insert(audit: &ResolutionAudit) -> String {
 mod tests {
     use db::{AutomergeRowCodec, Engine, InMemoryKernel};
     use futures::executor::block_on;
-    use ofdb::{apply_sync_state_batch_for, export_sync_state_for};
+    use ofdb_sql::{apply_sync_state_batch_for, export_sync_state_for};
 
     use super::{
         SecurityRow, SecurityTable, allows_authentication, allows_authorization,
@@ -247,6 +247,14 @@ mod tests {
             let engine = Engine::new(InMemoryKernel::new(), AutomergeRowCodec::new());
             up(&engine).await.unwrap();
             up(&engine).await.unwrap();
+
+            let clients_schema = engine.table_schema("clients").await.unwrap();
+            assert!(
+                clients_schema
+                    .columns
+                    .iter()
+                    .any(|column| column.name == "allowed_audiences")
+            );
 
             for table in [
                 "users",

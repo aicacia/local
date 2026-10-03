@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Timelike, Utc};
 use db::{
-    Engine, FromRow, FromRowError, Kernel, Query, QueryColumn, QueryExpr, QueryFrom, QueryInsert,
-    QuerySelect, Row, RowCodec, Statement, Uuid, Value,
+    Engine, FromRow, FromRowError, Kernel, Query, QueryColumn, QueryDelete, QueryExpr,
+    QueryExprValue, QueryFrom, QueryInsert, QuerySelect, Row, RowCodec, Statement, Uuid, Value,
 };
 use idp_model::{
     contract::EntityType,
@@ -147,6 +147,25 @@ where
             .filter(|key| key.parent_id.is_none())
             .max_by_key(|key| key.created_at);
         Ok(key)
+    }
+
+    async fn delete_by_entity_type_and_id(
+        &self,
+        entity_type: EntityType,
+        entity_id: Id,
+    ) -> RepoResult<()> {
+        self.engine
+            .execute(vec![Statement::Query(Query::Delete(QueryDelete {
+                from: from(),
+                predicate: Some(QueryExpr::And(
+                    Box::new(equals("entity_type", Value::Integer(entity_type as i64))),
+                    Box::new(equals("entity_id", Value::Uuid(entity_id))),
+                )),
+                returning: None,
+            }))])
+            .await
+            .map_err(db_error)?;
+        Ok(())
     }
 
     async fn create_key(
@@ -337,6 +356,13 @@ fn row_error(error: FromRowError) -> RepoError {
 
 fn column(column: &str) -> QueryColumn {
     QueryColumn::new(TABLE.into(), column.into())
+}
+
+fn equals(name: &str, value: Value) -> QueryExpr {
+    QueryExpr::Equals(
+        Box::new(QueryExpr::Value(QueryExprValue::Column(column(name)))),
+        Box::new(QueryExpr::Value(QueryExprValue::Value(value))),
+    )
 }
 
 fn from() -> QueryFrom {

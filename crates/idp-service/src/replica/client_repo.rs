@@ -20,7 +20,7 @@ use crate::{
 };
 
 const TABLE: &str = "clients";
-const COLUMNS: [&str; 24] = [
+const COLUMNS: [&str; 25] = [
     "id",
     "application_id",
     "client_id",
@@ -36,6 +36,7 @@ const COLUMNS: [&str; 24] = [
     "allowed_grant_types",
     "response_types",
     "allowed_scopes",
+    "allowed_audiences",
     "logo_uri",
     "contacts",
     "terms_of_service_uri",
@@ -174,6 +175,18 @@ where
     R: RowCodec<K::Transaction> + Send + Sync,
     P: PrivateKeyRepo + Send + Sync,
 {
+    async fn find_client_by_id(&self, id: Id) -> RepoResult<Option<Client>> {
+        let client = self
+            .clients(Some(equals("id", Value::Uuid(id))))
+            .await?
+            .into_iter()
+            .next();
+        if let Some(client) = client.as_ref() {
+            self.ensure_clear(client.id).await?;
+        }
+        Ok(client)
+    }
+
     async fn find_client_by_client_id(&self, client_id: &str) -> RepoResult<Option<Client>> {
         let client = self
             .clients(Some(equals("client_id", Value::Text(client_id.into()))))
@@ -244,6 +257,7 @@ where
             allowed_grant_types: registration.allowed_grant_types,
             response_types: registration.response_types,
             allowed_scopes: registration.allowed_scopes,
+            allowed_audiences: registration.allowed_audiences,
             logo_uri: registration.logo_uri,
             contacts: registration.contacts,
             terms_of_service_uri: registration.terms_of_service_uri,
@@ -350,6 +364,7 @@ struct ClientRow {
     allowed_grant_types: String,
     response_types: String,
     allowed_scopes: String,
+    allowed_audiences: String,
     logo_uri: Option<String>,
     contacts: String,
     terms_of_service_uri: Option<String>,
@@ -403,6 +418,10 @@ impl FromRow for ClientRow {
                 db::value(row, columns, "allowed_scopes")?,
                 "allowed_scopes",
             )?,
+            allowed_audiences: db::decode(
+                db::value(row, columns, "allowed_audiences")?,
+                "allowed_audiences",
+            )?,
             logo_uri: db::decode(db::value(row, columns, "logo_uri")?, "logo_uri")?,
             contacts: db::decode(db::value(row, columns, "contacts")?, "contacts")?,
             terms_of_service_uri: db::decode(
@@ -445,6 +464,7 @@ impl TryFrom<ClientRow> for Client {
             allowed_grant_types: json(&row.allowed_grant_types)?,
             response_types: json(&row.response_types)?,
             allowed_scopes: json(&row.allowed_scopes)?,
+            allowed_audiences: json(&row.allowed_audiences)?,
             logo_uri: row.logo_uri,
             contacts: json(&row.contacts)?,
             terms_of_service_uri: row.terms_of_service_uri,
@@ -478,6 +498,7 @@ impl From<&Client> for ClientRow {
             allowed_grant_types: json_string(&client.allowed_grant_types),
             response_types: json_string(&client.response_types),
             allowed_scopes: json_string(&client.allowed_scopes),
+            allowed_audiences: json_string(&client.allowed_audiences),
             logo_uri: client.logo_uri.clone(),
             contacts: json_string(&client.contacts),
             terms_of_service_uri: client.terms_of_service_uri.clone(),
@@ -517,6 +538,7 @@ impl ClientRow {
             assignment("allowed_grant_types", Value::Text(self.allowed_grant_types)),
             assignment("response_types", Value::Text(self.response_types)),
             assignment("allowed_scopes", Value::Text(self.allowed_scopes)),
+            assignment("allowed_audiences", Value::Text(self.allowed_audiences)),
             assignment("logo_uri", self.logo_uri.map_or(Value::Null, Value::Text)),
             assignment("contacts", Value::Text(self.contacts)),
             assignment(
@@ -563,6 +585,7 @@ impl From<ClientRow> for Row {
             Value::Text(row.allowed_grant_types),
             Value::Text(row.response_types),
             Value::Text(row.allowed_scopes),
+            Value::Text(row.allowed_audiences),
             row.logo_uri.map_or(Value::Null, Value::Text),
             Value::Text(row.contacts),
             row.terms_of_service_uri.map_or(Value::Null, Value::Text),
@@ -734,6 +757,7 @@ mod tests {
             allowed_grant_types: vec![GrantType::AuthorizationCode],
             response_types: vec![ResponseType::Code],
             allowed_scopes: vec!["openid".into()],
+            allowed_audiences: vec!["https://storage.example".into()],
             token_endpoint_auth_method: TokenEndpointAuthMethod::None,
             software_statement: None,
             software_id: None,
@@ -763,6 +787,10 @@ mod tests {
                 repo.find_client_by_client_id(&client.client_id)
                     .await
                     .unwrap(),
+                Some(client.clone())
+            );
+            assert_eq!(
+                repo.find_client_by_id(client.id).await.unwrap(),
                 Some(client.clone())
             );
             assert!(

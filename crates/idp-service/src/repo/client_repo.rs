@@ -1,10 +1,15 @@
 use alloc::vec::Vec;
 
-use idp_model::{contract::ClientRegistration, model::Client};
+use idp_model::{
+    contract::ClientRegistration,
+    model::{Client, Id},
+};
 
 use crate::repo::RepoResult;
 
 pub trait ClientRepo {
+    fn find_client_by_id(&self, id: Id) -> impl Future<Output = RepoResult<Option<Client>>>;
+
     fn find_client_by_client_id(
         &self,
         client_id: &str,

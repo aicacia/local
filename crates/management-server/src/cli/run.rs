@@ -12,18 +12,10 @@ use clap::Parser;
 use cli::{CliArgs, CliServerCommand, shutdown_signal};
 use db::open_native_engine;
 use env_logger::Env;
-use idp_service::{
-    PasswordConfig,
-    oauth2::OAuth2Service,
-    replica::{
-        DbApplicationRepo, DbClientRepo, DbKeyRepo, DbOAuth2AuthorizationCodeRepo,
-        DbOAuth2UserConsentRepo, DbUserRepo,
-    },
-    repo::{KeyService, PrivateKeyKeyringRepo},
-};
+
 use management_service::{
     HostedControlPlane, ManagementService,
-    replica::{DbPermissionRepo, DbRoleRepo, DbSelectionPolicyRepo},
+    replica::{DbPermissionRepo, DbRoleRepo, DbSelectionPolicyRepo, up},
 };
 use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
@@ -48,17 +40,48 @@ pub async fn run() -> io::Result<()> {
     });
 
     if app_config.idp_api_base.trim().is_empty()
+        || app_config.storage_api_base.trim().is_empty()
         || app_config.expected_issuer.trim().is_empty()
         || app_config.storage_audience.trim().is_empty()
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "idp_api_base, expected_issuer and storage_audience are required",
+            "idp_api_base, storage_api_base, expected_issuer and storage_audience are required",
         ));
     }
+
+    let idp_client_id = std::env::var("SERVER_IDP_OAUTH_CLIENT_ID").map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "SERVER_IDP_OAUTH_CLIENT_ID is required",
+        )
+    })?;
+    let idp_client_secret = std::env::var("SERVER_IDP_OAUTH_CLIENT_SECRET").map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "SERVER_IDP_OAUTH_CLIENT_SECRET is required",
+        )
+    })?;
+    let idp_service_audience = std::env::var("SERVER_IDP_SERVICE_AUDIENCE").map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "SERVER_IDP_SERVICE_AUDIENCE is required",
+        )
+    })?;
     let control_plane = Arc::new(
-        HostedControlPlane::new_with_issuer(&app_config.idp_api_base, &app_config.expected_issuer)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
+        HostedControlPlane::new_with_services(
+            &app_config.idp_api_base,
+            &app_config.storage_api_base,
+            &app_config.expected_issuer,
+        )
+        .and_then(|control_plane| {
+            control_plane.with_idp_service_client(
+                idp_client_id,
+                idp_client_secret,
+                idp_service_audience,
+            )
+        })
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
     );
 
     env_logger::Builder::from_env(Env::default().default_filter_or(&app_config.log_level)).init();
@@ -68,33 +91,15 @@ pub async fn run() -> io::Result<()> {
         open_native_engine(Path::new(&app_config.data_dir).join("management.redb"))
             .map_err(io::Error::other)?,
     );
-    idp_model::replica::up(&engine)
-        .await
-        .map_err(io::Error::other)?;
+    up(&engine).await.map_err(io::Error::other)?;
 
-    let key_service = Arc::new(KeyService::new(
-        DbKeyRepo::new(Arc::clone(&engine)),
-        PrivateKeyKeyringRepo::new(&app_config.oauth2.issuer),
-        &app_config.key_namespace,
-    ));
-    let oauth2_service = Arc::new(OAuth2Service::new(
-        DbApplicationRepo::new(Arc::clone(&engine)),
-        DbClientRepo::new(Arc::clone(&engine), Arc::clone(&key_service)),
-        DbOAuth2AuthorizationCodeRepo::new(Arc::clone(&engine)),
-        DbUserRepo::new(Arc::clone(&engine), PasswordConfig::default()),
-        DbOAuth2UserConsentRepo::new(Arc::clone(&engine)),
-        key_service,
-        app_config.oauth2.clone(),
-    ));
     let management_service = Arc::new(ManagementService::new(
-        DbApplicationRepo::new(Arc::clone(&engine)),
         DbPermissionRepo::new(Arc::clone(&engine)),
         DbRoleRepo::new(Arc::clone(&engine)),
     ));
     let router_state = RouterState::new(
         &app_config.api_public_uri,
         management_service,
-        oauth2_service,
         Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine))),
         control_plane,
         &app_config.storage_audience,

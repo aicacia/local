@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use ofdb::{AutomergeRowCodec, Engine, RedbKernel, redb};
+use ofdb_sql::{AutomergeRowCodec, Engine, RedbKernel, redb};
 
 pub type NativeEngine = Engine<RedbKernel, AutomergeRowCodec>;
 

@@ -61,7 +61,7 @@ wasm-bindgen = { version = "0.2", default-features = false, features = [
 
 [dev-dependencies]
 # Database sync tests
-ofdb = { path = "../../../ofdb", default-features = false, features = ["automerge", "in-memory", "sync"] }
+ofdb-sql = { package = "ofdb-sql", path = "../../../ofdb/crates/sql", default-features = false, features = ["in-memory", "sync"] }
 
 # Async
 futures = { version = "0.3", default-features = false, features = ["executor"] }

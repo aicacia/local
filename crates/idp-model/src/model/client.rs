@@ -46,6 +46,9 @@ pub struct Client {
     #[serde(with = "model::json_vec")]
     pub allowed_scopes: Vec<String>,
 
+    #[serde(with = "model::json_vec")]
+    pub allowed_audiences: Vec<String>,
+
     pub logo_uri: Option<String>,
 
     #[serde(with = "model::json_vec")]
@@ -89,6 +92,7 @@ impl From<Client> for ClientRegistration {
             allowed_grant_types: val.allowed_grant_types,
             response_types: val.response_types,
             allowed_scopes: val.allowed_scopes,
+            allowed_audiences: val.allowed_audiences,
             logo_uri: val.logo_uri,
             contacts: val.contacts,
             terms_of_service_uri: val.terms_of_service_uri,

@@ -9,14 +9,14 @@ use alloc::{
 };
 
 use model::contract::{
-    AccessToken, AuthorizationDetail, IdToken, RefreshToken, StandardClaims, TokenResponse,
-    TokenType, TokenUse,
+    AccessToken, AuthorizationDetail, IdToken, PrincipalType, RefreshToken, StandardClaims,
+    TokenResponse, TokenType, TokenUse,
 };
 #[cfg(feature = "std")]
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
-use idp_model::model::{Client, Id, Key};
+use idp_model::model::{Application, Client, Id, Key};
 use idp_model::{
     contract::{
         ApproveForUserRequest, AuthorizationCodeGrantRequest, AuthorizationCodeResponse,
@@ -25,13 +25,14 @@ use idp_model::{
         EntityType, ErrorCode, ErrorResponse, ErrorResponseResult, GrantType, IdTokenClaims,
         IsAllowedForUserRequest, IsAllowedForUserResponse, JwkPrivate, JwkPublic, Jwks,
         OAuth2ClientAuth, PasswordGrantRequest, RefreshTokenGrantRequest, RevocationRequest,
-        SubjectTokenType, TokenExchangeGrantRequest, TokenRequest, UserInfo,
+        SubjectTokenType, TokenEndpointAuthMethod, TokenExchangeGrantRequest, TokenRequest,
+        UserInfo,
     },
     model::User,
 };
 
 use crate::{
-    oauth2::{Principal, UserPrincipal, decode_jwt, encode_jwt, verify_jwt},
+    oauth2::{ClientPrincipal, Principal, UserPrincipal, decode_jwt, encode_jwt, verify_jwt},
     repo::{
         ApplicationRepo, ClientRepo, KeyRepo, KeyService, OAuth2AuthorizationCodeRepo,
         OAuth2UserConsentRepo, UserRepo,
@@ -42,7 +43,8 @@ use crate::{
 use super::{
     OAuth2Config, intersect_scopes, parse_scopes, resolve_redirect_uri,
     validate_authorization_code_grant, validate_authorization_details,
-    validate_authorization_request, validate_scopes, verify_code_challenge,
+    validate_authorization_request, validate_dynamic_client_grants, validate_scopes,
+    verify_code_challenge,
 };
 
 pub struct OAuth2Service<A, C, AC, U, G, K, P> {
@@ -109,6 +111,7 @@ where
         &self,
         request: ClientRegistration,
     ) -> ErrorResponseResult<ClientRegistration> {
+        validate_dynamic_client_grants(&request.allowed_grant_types)?;
         let client = ClientRegistration {
             client_id: Some(
                 request
@@ -144,6 +147,54 @@ where
         Ok(client.into())
     }
 
+    pub async fn list_applications(
+        &self,
+        offset: u32,
+        limit: u32,
+    ) -> ErrorResponseResult<Vec<Application>> {
+        self.application_repo
+            .list_applications(offset, limit.min(100))
+            .await
+            .map_err(ErrorResponse::from)
+    }
+
+    pub async fn get_application(&self, id: Id) -> ErrorResponseResult<Application> {
+        self.application_repo
+            .find_by_id(id)
+            .await
+            .map_err(ErrorResponse::from)?
+            .ok_or_else(|| ErrorResponse::new(ErrorCode::NotFound))
+    }
+
+    pub async fn create_application(
+        &self,
+        name: String,
+        uri: String,
+        description: Option<String>,
+    ) -> ErrorResponseResult<Application> {
+        self.application_repo
+            .create_application(name, uri, description)
+            .await
+            .map_err(ErrorResponse::from)
+    }
+
+    pub async fn update_application(
+        &self,
+        application: Application,
+    ) -> ErrorResponseResult<Application> {
+        self.application_repo
+            .update_application(application)
+            .await
+            .map_err(ErrorResponse::from)
+    }
+
+    pub async fn delete_application(&self, id: Id) -> ErrorResponseResult<()> {
+        self.application_repo
+            .delete_application_by_id(id)
+            .await
+            .map_err(ErrorResponse::from)
+    }
+
     pub async fn application_id_for_client(&self, client_id: &str) -> ErrorResponseResult<Id> {
         self.client_repo
             .find_client_by_client_id(client_id)
@@ -172,6 +223,7 @@ where
         client_id: &str,
         request: ClientRegistration,
     ) -> ErrorResponseResult<ClientRegistration> {
+        validate_dynamic_client_grants(&request.allowed_grant_types)?;
         let existing = self
             .client_repo
             .find_client_by_client_id(client_id)
@@ -201,6 +253,7 @@ where
             allowed_grant_types: request.allowed_grant_types,
             response_types: request.response_types,
             allowed_scopes: request.allowed_scopes,
+            allowed_audiences: request.allowed_audiences,
             logo_uri: request.logo_uri,
             contacts: request.contacts,
             terms_of_service_uri: request.terms_of_service_uri,
@@ -582,25 +635,77 @@ where
                 ErrorResponse::new(ErrorCode::InvalidClient).with_description("client not found")
             })?;
         self.validate_grant_type(&client, GrantType::ClientCredentials)?;
+        if client.client_type != ClientType::Confidential {
+            return Err(ErrorResponse::new(ErrorCode::UnauthorizedClient)
+                .with_description("client credentials requires a confidential client"));
+        }
+        if client
+            .client_secret_expires_at
+            .is_some_and(|expires_at| expires_at.timestamp() > 0 && expires_at <= Utc::now())
+        {
+            return Err(ErrorResponse::new(ErrorCode::InvalidClient)
+                .with_description("client credentials have expired"));
+        }
         self.authenticate_client_for_token_endpoint(&client, Some(auth))?;
+        if request.client_id != auth.client_id {
+            return Err(ErrorResponse::new(ErrorCode::InvalidClient)
+                .with_description("client_id does not match authenticated client"));
+        }
+
+        let audience = request.audience.as_deref().ok_or_else(|| {
+            ErrorResponse::new(ErrorCode::InvalidRequest)
+                .with_description("an audience is required for client credentials")
+        })?;
+        if !client
+            .allowed_audiences
+            .iter()
+            .any(|allowed| allowed == audience)
+        {
+            return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
+                .with_description("client is not authorized for the requested audience"));
+        }
+
+        if request
+            .resource
+            .as_deref()
+            .is_some_and(|resource| resource != audience)
+        {
+            return Err(ErrorResponse::new(ErrorCode::InvalidRequest)
+                .with_description("resource must match the approved audience"));
+        }
 
         let requested_scopes = request
             .scope
             .as_deref()
             .map(parse_scopes)
             .unwrap_or_default();
-        let _scopes = intersect_scopes(&requested_scopes, &client.allowed_scopes);
+        if requested_scopes.is_empty() {
+            return Err(ErrorResponse::new(ErrorCode::InvalidScope)
+                .with_description("at least one scope is required for client credentials"));
+        }
+        validate_scopes(&requested_scopes, &client.allowed_scopes)?;
 
-        // we need a service account principal for the client credentials grant, but we don't have that implemented yet, so we'll just return an error for now
-        // self.issue_tokens_for_client(
-        //     &client,
-        //     &principal,
-        //     &scopes,
-        //     request.resource.as_deref(),
-        // )
-        // .await
-        Err(ErrorResponse::new(ErrorCode::UnsupportedGrantType)
-            .with_description("client credentials grant is not implemented"))
+        let key = self
+            .key_service
+            .key_repo()
+            .find_active_entity_root_key(EntityType::Client, client.id)
+            .await?
+            .ok_or_else(|| {
+                ErrorResponse::new(ErrorCode::InvalidClient)
+                    .with_description("active client signing key not found")
+            })?;
+        let principal = self.find_principal(key.id).await?.ok_or_else(|| {
+            ErrorResponse::new(ErrorCode::InvalidClient)
+                .with_description("client principal is inactive")
+        })?;
+        self.issue_client_credentials_access_token(
+            &client,
+            principal.as_ref(),
+            &requested_scopes,
+            audience,
+            request.resource.as_deref(),
+        )
+        .await
     }
 
     async fn refresh_token(
@@ -803,6 +908,16 @@ where
                     return Err(ErrorResponse::new(ErrorCode::InvalidClient)
                         .with_description("client_id does not match token subject"));
                 }
+                if auth.method != client.token_endpoint_auth_method
+                    || !matches!(
+                        auth.method,
+                        TokenEndpointAuthMethod::ClientSecretBasic
+                            | TokenEndpointAuthMethod::ClientSecretPost
+                    )
+                {
+                    return Err(ErrorResponse::new(ErrorCode::InvalidClient)
+                        .with_description("unsupported client authentication method"));
+                }
 
                 if auth.client_secret.as_deref() != Some(client.client_secret.as_str()) {
                     return Err(ErrorResponse::new(ErrorCode::InvalidClient)
@@ -957,6 +1072,11 @@ where
         authorization_details: Option<&[AuthorizationDetail]>,
         audience: Option<&str>,
     ) -> ErrorResponseResult<TokenResponse> {
+        if principal.get_entity_type() != EntityType::User {
+            return Err(ErrorResponse::new(ErrorCode::AccessDenied)
+                .with_description("this grant cannot issue user tokens to a client principal"));
+        }
+
         let now = Utc::now();
         let signing_jwk = self.load_signing_jwk(principal.get_key()).await?;
         let scope = if scopes.is_empty() {
@@ -975,6 +1095,10 @@ where
             aud: audience.unwrap_or(&client.client_id).to_string(),
             client_id: client.client_id.clone(),
             sub: principal.get_entity_id().to_string(),
+            principal_type: match principal.get_entity_type() {
+                EntityType::User => PrincipalType::User,
+                EntityType::Client => PrincipalType::Client,
+            },
             scope: scopes.to_vec(),
             resource: resource.map(str::to_string),
             authorization_details: authorization_details
@@ -1012,13 +1136,59 @@ where
         let refresh_token_value = encode_jwt(&signing_jwk, &refresh_claims)?;
 
         Ok(TokenResponse {
-            id_token: IdToken(id_token_value),
+            id_token: Some(IdToken(id_token_value)),
             access_token: AccessToken(access_token_value),
             token_type: TokenType::Bearer,
             expires_in: Some(self.oauth_config.token_ttl_secs),
             refresh_token_expires_in: Some(self.oauth_config.refresh_token_ttl_secs),
             refresh_token: Some(RefreshToken(refresh_token_value)),
             scope,
+            issuer: Some(self.oauth_config.issuer.clone()),
+        })
+    }
+
+    async fn issue_client_credentials_access_token(
+        &self,
+        client: &Client,
+        principal: &dyn Principal,
+        scopes: &[String],
+        audience: &str,
+        resource: Option<&str>,
+    ) -> ErrorResponseResult<TokenResponse> {
+        if principal.get_entity_type() != EntityType::Client
+            || principal.get_entity_id() != client.id
+        {
+            return Err(ErrorResponse::new(ErrorCode::InvalidClient)
+                .with_description("client signing principal does not match the client"));
+        }
+
+        let now = Utc::now();
+        let signing_jwk = self.load_signing_jwk(principal.get_key()).await?;
+        let claims = StandardClaims {
+            r#type: TokenType::Bearer,
+            r#use: TokenUse::Access,
+            exp: (now + Duration::seconds(self.oauth_config.token_ttl_secs as i64)).timestamp(),
+            iat: now.timestamp(),
+            nbf: now.timestamp(),
+            iss: self.oauth_config.issuer.clone(),
+            aud: audience.to_string(),
+            client_id: client.client_id.clone(),
+            sub: client.id.to_string(),
+            principal_type: PrincipalType::Client,
+            scope: scopes.to_vec(),
+            resource: resource.map(str::to_string),
+            authorization_details: None,
+        };
+        let access_token = AccessToken(encode_jwt(&signing_jwk, &claims)?);
+
+        Ok(TokenResponse {
+            id_token: None,
+            access_token,
+            token_type: TokenType::Bearer,
+            expires_in: Some(self.oauth_config.token_ttl_secs),
+            refresh_token: None,
+            refresh_token_expires_in: None,
+            scope: Some(scopes.join(" ")),
             issuer: Some(self.oauth_config.issuer.clone()),
         })
     }
@@ -1279,24 +1449,29 @@ where
             return Ok(None);
         }
 
-        let principal =
-            match key.entity_type {
-                EntityType::User => {
-                    let user =
-                        if let Some(user) = self.user_repo.find_user_by_id(key.entity_id).await? {
-                            user
-                        } else {
-                            return Ok(None);
-                        };
+        let principal = match key.entity_type {
+            EntityType::User => {
+                let user = if let Some(user) = self.user_repo.find_user_by_id(key.entity_id).await?
+                {
+                    user
+                } else {
+                    return Ok(None);
+                };
 
-                    Box::new(UserPrincipal { user, key }) as Box<dyn Principal>
-                }
-                _ => {
-                    return Err(ErrorResponse::new(ErrorCode::ServerError).with_description(
-                        format!("unsupported principal entity type: {}", key.entity_type),
-                    ));
-                }
-            };
+                Box::new(UserPrincipal { user, key }) as Box<dyn Principal>
+            }
+            EntityType::Client => {
+                let client = if let Some(client) =
+                    self.client_repo.find_client_by_id(key.entity_id).await?
+                {
+                    client
+                } else {
+                    return Ok(None);
+                };
+
+                Box::new(ClientPrincipal { client, key }) as Box<dyn Principal>
+            }
+        };
 
         Ok(Some(principal))
     }

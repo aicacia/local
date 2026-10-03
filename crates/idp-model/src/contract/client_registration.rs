@@ -79,6 +79,9 @@ pub struct ClientRegistration {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_scopes: Vec<String>,
 
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_audiences: Vec<String>,
+
     /// Requested authentication method for the token endpoint
     /// (e.g., `client_secret_basic`, `client_secret_post`, `private_key_jwt`).
     pub token_endpoint_auth_method: TokenEndpointAuthMethod,

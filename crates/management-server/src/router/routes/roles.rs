@@ -281,7 +281,11 @@ pub(crate) async fn require_application_permission(
     permission: &str,
 ) -> Result<(), ErrorResponse> {
     let has_permission = management_service
-        .has_user_application_permission(authorization.principal.get_entity_id(), permission)
+        .has_user_application_permission(
+            authorization.subject,
+            authorization.application_id,
+            permission,
+        )
         .await
         .map_err(ErrorResponse::from)?;
 

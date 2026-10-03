@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS clients (
     allowed_grant_types TEXT,
     response_types TEXT,
     allowed_scopes TEXT,
+    allowed_audiences TEXT,
     logo_uri TEXT,
     contacts TEXT,
     terms_of_service_uri TEXT,

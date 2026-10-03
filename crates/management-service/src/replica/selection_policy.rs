@@ -915,6 +915,16 @@ mod tests {
             .expect("approve peer")
             .expect("pending peer exists");
         assert!(admitted().await.expect("matching peers admitted"));
+        assert!(
+            policies
+                .selected_resources_for_device(remote.id)
+                .await
+                .expect("list selected resources")
+                .iter()
+                .any(|resource| {
+                    resource.kind == "database" && resource.resource_id == resource_id
+                })
+        );
         let filesystem_id = db::Uuid::now_v7();
         for device in [&local, &remote] {
             policies
@@ -983,6 +993,13 @@ mod tests {
             .deselect_owned(remote.id, "owner")
             .await
             .expect("deselect peer");
+        assert!(
+            policies
+                .selected_resources_for_device(remote.id)
+                .await
+                .expect("list after deselection")
+                .is_empty()
+        );
         assert!(!admitted().await.expect("deselected peer denied"));
         policies
             .set_prevalidated(selected(remote.id))
@@ -992,6 +1009,16 @@ mod tests {
             .set_admin_allowed_prevalidated(remote.id, "owner", false)
             .await
             .expect("restrict peer");
+        assert!(
+            policies
+                .selected_resources_for_device(remote.id)
+                .await
+                .expect("list restricted device selections")
+                .iter()
+                .any(|resource| {
+                    resource.kind == "database" && resource.resource_id == resource_id
+                })
+        );
         assert!(!admitted().await.expect("restricted peer denied"));
         policies
             .set_admin_allowed_prevalidated(remote.id, "owner", true)

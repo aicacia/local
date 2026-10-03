@@ -6,32 +6,23 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::RouterState;
 
 use super::openapi::{__path_openapi_json, openapi_json};
-use super::routes::applications::{
-    __path_create_application, __path_delete_application, __path_get_application,
-    __path_list_applications, __path_update_application, create_application, delete_application,
-    get_application, list_applications, update_application,
-};
-use super::routes::clients::{
-    __path_create_client, __path_delete_client, __path_get_client, __path_list_clients,
-    __path_update_client, create_client, delete_client, get_client, list_clients, update_client,
-};
-use super::routes::consents::{
-    __path_list_user_consents, __path_revoke_user_consent, list_user_consents, revoke_user_consent,
-};
+
 use super::routes::device_selection::{
     __path_delete_device_resource_selection, __path_delete_device_selection,
-    __path_put_device_restriction, __path_put_device_selection, delete_device_resource_selection,
-    delete_device_selection, put_device_restriction, put_device_selection,
+    __path_put_device_selection, delete_device_resource_selection, delete_device_selection,
+    put_device_selection,
 };
 use super::routes::health::{__path_health, health};
-use super::routes::keys::{
-    __path_get_key_jwk, __path_list_client_keys, get_key_jwk, list_client_keys,
-};
+
 use super::routes::permissions::{
     __path_assign_permission_to_role, __path_create_permission, __path_delete_permission,
     __path_list_permissions, __path_list_role_permissions, __path_revoke_permission_from_role,
     assign_permission_to_role, create_permission, delete_permission, list_permissions,
     list_role_permissions, revoke_permission_from_role,
+};
+use super::routes::replication::{
+    __path_replication_admission, __path_selected_resources, replication_admission,
+    selected_resources,
 };
 use super::routes::roles::{
     __path_assign_role_to_user, __path_create_role, __path_delete_role, __path_list_roles,
@@ -39,14 +30,17 @@ use super::routes::roles::{
     delete_role, list_roles, list_user_roles, revoke_role_from_user,
 };
 use super::routes::users::{
-    __path_get_user, __path_list_user_roles_across_applications, __path_list_users, get_user,
-    list_user_roles_across_applications, list_users,
+    __path_list_user_roles_across_applications, list_user_roles_across_applications,
 };
 use super::routes::version::{__path_version, version};
 
 #[derive(OpenApi)]
 #[openapi(
     info(title = "LIDP Management API", version = env!("CARGO_PKG_VERSION")),
+    paths(
+        super::routes::replication::selected_resources,
+        super::routes::replication::replication_admission
+    ),
     modifiers(&SecurityAddon)
 )]
 pub(crate) struct ApiDoc;
@@ -59,27 +53,12 @@ pub fn openapi_router(router_state: RouterState, prefix: &str) -> OpenApiRouter 
         OpenApiRouter::new()
             .routes(routes!(health))
             .routes(routes!(version))
-            .routes(routes!(list_applications))
-            .routes(routes!(create_application))
-            .routes(routes!(get_application))
-            .routes(routes!(update_application))
-            .routes(routes!(delete_application))
-            .routes(routes!(list_clients))
-            .routes(routes!(create_client))
-            .routes(routes!(get_client))
-            .routes(routes!(update_client))
-            .routes(routes!(delete_client))
-            .routes(routes!(list_client_keys))
-            .routes(routes!(get_key_jwk))
-            .routes(routes!(list_users))
-            .routes(routes!(get_user))
             .routes(routes!(list_user_roles_across_applications))
-            .routes(routes!(list_user_consents))
-            .routes(routes!(revoke_user_consent))
             .routes(routes!(put_device_selection))
-            .routes(routes!(put_device_restriction))
             .routes(routes!(delete_device_selection))
             .routes(routes!(delete_device_resource_selection))
+            .routes(routes!(selected_resources))
+            .routes(routes!(replication_admission))
             .routes(routes!(list_roles))
             .routes(routes!(create_role))
             .routes(routes!(delete_role))

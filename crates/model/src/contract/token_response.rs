@@ -18,7 +18,8 @@ use crate::contract::{AccessToken, IdToken, RefreshToken, TokenType};
     tsify(into_wasm_abi, from_wasm_abi)
 )]
 pub struct TokenResponse {
-    pub id_token: IdToken,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<IdToken>,
     /// The access token issued by the authorization server.
     pub access_token: AccessToken,
     /// The type of the token issued.

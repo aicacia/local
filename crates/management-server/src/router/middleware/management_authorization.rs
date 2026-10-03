@@ -1,22 +1,26 @@
 use axum::extract::{FromRef, FromRequestParts};
 use http::{HeaderValue, header::AUTHORIZATION, request::Parts};
-use idp_model::contract::{EntityType, ErrorCode, ErrorResponse};
-use idp_service::oauth2::{Principal, decode_jwt, verify_jwt};
-use model::contract::{StandardClaims, TokenType, TokenUse};
-
-use management_service::MANAGEMENT_APPLICATION_URI;
+use idp_model::{
+    contract::{ErrorCode, ErrorResponse},
+    model::Id,
+};
+use model::contract::StandardClaims;
 
 use crate::RouterState;
 
 pub const AUTHORIZATION_BEARER_PREFIX: &str = "Bearer ";
 
 pub struct ManagementAuthorization {
-    pub principal: Box<dyn Principal>,
+    pub subject: Id,
+    pub(crate) application_id: Id,
 }
 
 impl ManagementAuthorization {
-    pub fn new(principal: Box<dyn Principal>) -> Self {
-        Self { principal }
+    pub fn new(subject: Id, application_id: Id) -> Self {
+        Self {
+            subject,
+            application_id,
+        }
     }
 }
 
@@ -30,41 +34,26 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         if let Some(authorization_header_value) = parts.headers.get(AUTHORIZATION) {
             let authorization_string = authorization_from_header(authorization_header_value)?;
-            let (jwt_header, _) = decode_jwt::<StandardClaims>(authorization_string)?;
-            let key_id = jwt_header
-                .kid
-                .parse::<idp_model::model::Id>()
-                .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?;
             let router_state = RouterState::from_ref(state);
-            let principal = router_state
-                .oauth2_service
-                .find_principal(key_id)
-                .await?
-                .ok_or_else(|| {
-                    ErrorResponse::new(ErrorCode::NotAuthorized)
-                        .with_description("principal not found for key id")
+            let (claims, application_id) = router_state
+                .control_plane
+                .validate_actor_token(authorization_string)
+                .await
+                .map_err(|error| {
+                    if error == "actor token was rejected by IdP" {
+                        ErrorResponse::new(ErrorCode::NotAuthorized)
+                    } else {
+                        ErrorResponse::new(ErrorCode::TemporarilyUnavailable)
+                    }
                 })?;
-            let jwk = router_state.oauth2_service.find_public_jwk(key_id).await?;
-            let (_, claims) = verify_jwt::<StandardClaims>(&jwk, authorization_string)?;
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?
-                .as_secs() as i64;
-            if claims.r#type != TokenType::Bearer
-                || claims.r#use != TokenUse::Access
-                || claims.iss != router_state.oauth2_service.metadata().issuer
-                || claims.exp <= now
-                || claims.nbf > now
-                || claims.iat > now
-                || claims.sub != principal.get_entity_id().to_string()
-                || principal.get_entity_type() != EntityType::User
-                || !management_audience(&claims)
-            {
-                return Err(ErrorResponse::new(ErrorCode::NotAuthorized)
-                    .with_description("invalid bearer token claims"));
+            if !management_audience(&claims) {
+                return Err(ErrorResponse::new(ErrorCode::NotAuthorized));
             }
-
-            return Ok(Self::new(principal));
+            let subject = claims
+                .sub
+                .parse::<Id>()
+                .map_err(|_| ErrorResponse::new(ErrorCode::NotAuthorized))?;
+            return Ok(Self::new(subject, application_id));
         }
 
         Err(ErrorResponse::new(ErrorCode::NotAuthorized)
@@ -73,35 +62,8 @@ where
 }
 
 fn management_audience(claims: &StandardClaims) -> bool {
-    claims.aud == MANAGEMENT_APPLICATION_URI
-}
-
-#[cfg(test)]
-mod tests {
-    use model::contract::{StandardClaims, TokenType, TokenUse};
-
-    use super::management_audience;
-
-    #[test]
-    fn storage_audience_does_not_authorize_management() {
-        let mut claims = StandardClaims {
-            r#type: TokenType::Bearer,
-            r#use: TokenUse::Access,
-            exp: i64::MAX,
-            iat: 0,
-            nbf: 0,
-            iss: "issuer".into(),
-            aud: "storage".into(),
-            client_id: "client".into(),
-            sub: "owner".into(),
-            resource: Some("storage".into()),
-            authorization_details: None,
-            scope: vec!["storage".into()],
-        };
-        assert!(!management_audience(&claims));
-        claims.aud = management_service::MANAGEMENT_APPLICATION_URI.into();
-        assert!(management_audience(&claims));
-    }
+    claims.principal_type == model::contract::PrincipalType::User
+        && claims.aud == management_service::MANAGEMENT_APPLICATION_URI
 }
 
 fn authorization_from_header(
@@ -137,5 +99,36 @@ fn authorization_from_header(
             Err(ErrorResponse::new(ErrorCode::NotAuthorized)
                 .with_description("invalid authorization header cannot be parsed as string"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use model::contract::{PrincipalType, StandardClaims, TokenType, TokenUse};
+
+    use super::management_audience;
+
+    #[test]
+    fn only_user_principals_with_management_audience_are_accepted() {
+        let mut claims = StandardClaims {
+            r#type: TokenType::Bearer,
+            r#use: TokenUse::Access,
+            exp: i64::MAX,
+            iat: 0,
+            nbf: 0,
+            iss: "issuer".into(),
+            aud: "storage".into(),
+            client_id: "client".into(),
+            sub: "owner".into(),
+            principal_type: PrincipalType::User,
+            resource: Some("storage".into()),
+            authorization_details: None,
+            scope: vec!["storage".into()],
+        };
+        assert!(!management_audience(&claims));
+        claims.aud = management_service::MANAGEMENT_APPLICATION_URI.into();
+        assert!(management_audience(&claims));
+        claims.principal_type = PrincipalType::Client;
+        assert!(!management_audience(&claims));
     }
 }

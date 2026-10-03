@@ -1,14 +1,18 @@
 use std::{
     io,
     net::{IpAddr, SocketAddr},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
     time::Duration,
 };
 
 use api::serve;
+#[cfg(feature = "completions")]
+use clap::CommandFactory;
 use clap::Parser;
-use cli::{CliArgs, CliServerCommand, shutdown_signal};
+#[cfg(feature = "completions")]
+use cli::Shell;
+use cli::{CliArgs, shutdown_signal};
 use db::open_native_engine;
 use env_logger::Env;
 use idp_model::contract::DeviceState;
@@ -28,23 +32,69 @@ use management_service::{
     DeviceRepo, HostedControlPlane, ManagementService,
     replica::{DbDeviceRepo, DbPermissionRepo, DbRoleRepo, DbSelectionPolicyRepo},
 };
-use storage_service::{DatabaseRuntime, ScopedFileSystemRuntime};
+
 use tokio::{select, spawn, time::sleep};
 use tokio_util::sync::CancellationToken;
 use tower_http::{compression::CompressionLayer, cors::CorsLayer, trace::TraceLayer};
 
-use crate::{
-    AppConfig, RouterState, TimedPairingAcceptanceController, router::openapi_router,
-    storage_router,
-};
+use crate::{AppConfig, RouterState, TimedPairingAcceptanceController, router::openapi_router};
+
+#[derive(clap::Parser, Debug)]
+enum IdpCommand {
+    Serve {
+        #[arg(long, short = 'p')]
+        port: Option<u16>,
+        #[arg(long, short = 'h')]
+        host: Option<IpAddr>,
+    },
+    #[cfg(feature = "completions")]
+    Completions { shell: Shell },
+    #[command(
+        about = "Provision an OAuth service client locally. Stop IdP before running; this command does not enforce shutdown."
+    )]
+    ProvisionServiceClient {
+        #[arg(long)]
+        application_uri: String,
+        #[arg(long)]
+        client_name: String,
+        #[arg(long = "audience", required = true)]
+        audiences: Vec<String>,
+        #[arg(long = "scope", required = true)]
+        scopes: Vec<String>,
+        #[arg(long)]
+        credentials_file: std::path::PathBuf,
+    },
+}
 
 pub async fn run() -> io::Result<()> {
+    let args = CliArgs::<IdpCommand>::parse();
+    if let Some(IdpCommand::ProvisionServiceClient {
+        application_uri,
+        client_name,
+        audiences,
+        scopes,
+        credentials_file,
+    }) = args.command.as_ref()
+    {
+        let _ = dotenvy::dotenv();
+        let app_config = AppConfig::try_from(Path::new(&args.config))
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+        return crate::cli::provision_service_client(
+            &app_config,
+            application_uri,
+            client_name,
+            audiences.clone(),
+            scopes.clone(),
+            credentials_file,
+        )
+        .await;
+    }
+
     match dotenvy::dotenv() {
         Ok(_) => {}
         Err(error) => eprintln!("failed to load .env file: {error}"),
     }
 
-    let args = CliArgs::parse();
     let cancellation_token = CancellationToken::new();
     let app_config = Arc::new(match AppConfig::try_from(Path::new(&args.config)) {
         Ok(app_config) => app_config,
@@ -101,8 +151,15 @@ pub async fn run() -> io::Result<()> {
         .map_err(io::Error::other)?
         .map(Arc::new);
     let management_control_plane = Arc::new(
-        HostedControlPlane::new_with_issuer(&app_config.api_public_uri, &app_config.oauth2.issuer)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
+        HostedControlPlane::new_with_services(
+            &app_config.api_public_uri,
+            &format!(
+                "{}/storage/",
+                app_config.api_public_uri.trim_end_matches('/')
+            ),
+            &app_config.oauth2.issuer,
+        )
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
     );
     let storage_audience = app_config
         .storage_audience
@@ -117,16 +174,24 @@ pub async fn run() -> io::Result<()> {
     let management_state = ManagementRouterState::new(
         &app_config.api_public_uri,
         Arc::new(ManagementService::new(
-            DbApplicationRepo::new(Arc::clone(&engine)),
             DbPermissionRepo::new(Arc::clone(&engine)),
             DbRoleRepo::new(Arc::clone(&engine)),
         )),
-        Arc::clone(&oauth2_service),
         Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine))),
         management_control_plane,
         storage_audience,
-    )
-    .with_devices(Arc::clone(&devices));
+    );
+
+    let service_audience = app_config
+        .service_audience
+        .as_deref()
+        .unwrap_or(&app_config.api_public_uri);
+    if service_audience.trim().is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "service_audience must not be empty",
+        ));
+    }
     let router_state = RouterState::new(
         &app_config.ui_public_uri,
         &app_config.api_public_uri,
@@ -134,24 +199,13 @@ pub async fn run() -> io::Result<()> {
         Arc::clone(&oauth2_service),
         Arc::clone(&devices),
         Arc::clone(&device_identity),
-    );
+    )
+    .with_service_audience(service_audience);
     let router_state = match &control_plane {
         Some(control_plane) => router_state.with_hosted_control_plane(Arc::clone(control_plane)),
         None => router_state,
     };
 
-    let storage_root = PathBuf::from(&args.config)
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_path_buf();
-    let databases = Arc::new(DatabaseRuntime::new(storage_root.clone()).map_err(io::Error::other)?);
-    let file_systems = Arc::new(
-        ScopedFileSystemRuntime::new(storage_root, device_identity.endpoint_id())
-            .map_err(io::Error::other)?,
-    );
-    let router_state = router_state
-        .with_storage_databases(Arc::clone(&databases))
-        .with_storage_file_systems(Arc::clone(&file_systems));
     router_state
         .bootstrap_grants
         .set_admission_server(manager.clone(), crate::bootstrap::BOOTSTRAP_ALPN);
@@ -178,58 +232,22 @@ pub async fn run() -> io::Result<()> {
             Duration::from_secs(app_config.pairing.accepting_timeout_seconds),
         )))
         .map_err(io::Error::other)?;
-    let policies = Arc::new(DbSelectionPolicyRepo::new(Arc::clone(&engine)));
-    let database_protocol = crate::database_protocol::DatabaseProtocolHandler::new(
-        Arc::clone(&device_identity),
-        Arc::clone(&devices),
-        Arc::clone(&policies),
-        databases,
-    );
-    let storage_protocol = crate::storage_protocol::StorageProtocolHandler::new(
-        Arc::clone(&device_identity),
-        Arc::clone(&devices),
-        Arc::clone(&policies),
-        Arc::clone(&file_systems),
-    );
+
     let bootstrap_protocol = crate::bootstrap::BootstrapProtocolHandler::new(
         Arc::clone(&engine),
         Arc::clone(&router_state.bootstrap_grants),
         Arc::clone(&router_state.devices),
     );
-    let data_protocol = crate::data_protocol::DataProtocolHandler::new(
-        database_protocol.clone(),
-        storage_protocol.clone(),
-    );
     let _iroh_router = manager.router_with_protocol(
-        data_protocol,
+        crate::unavailable_data_protocol::UnavailableDataProtocol,
         crate::bootstrap::BOOTSTRAP_ALPN,
         bootstrap_protocol,
     );
-    let filesystem_sync_manager = manager.clone();
-    let filesystem_protocol = storage_protocol.clone();
-    let filesystem_sync = spawn(async move {
-        loop {
-            filesystem_protocol
-                .synchronize_selected_peers(&filesystem_sync_manager)
-                .await;
-            sleep(Duration::from_secs(10)).await;
-        }
-    });
-    let sync_manager = manager.clone();
-    let database_sync = spawn(async move {
-        loop {
-            database_protocol
-                .synchronize_selected_peers(&sync_manager)
-                .await;
-            sleep(Duration::from_secs(10)).await;
-        }
-    });
     log::info!("Iroh endpoint: {:?}", device_identity.endpoint().addr());
 
-    let router = openapi_router(router_state.clone(), app_config.server.prefix())
+    let router = openapi_router(router_state, app_config.server.prefix())
         .split_for_parts()
         .0
-        .merge(storage_router(router_state, file_systems))
         .merge(
             management_router(management_state, "/management")
                 .split_for_parts()
@@ -247,17 +265,27 @@ pub async fn run() -> io::Result<()> {
     };
     let command_handle = match args.command {
         #[cfg(feature = "completions")]
-        Some(CliServerCommand::Completions { shell }) => {
-            spawn(async move { cli::run_completions(shell).await })
+        Some(IdpCommand::Completions { shell }) => spawn(async move {
+            clap_complete::generate(
+                shell,
+                &mut IdpCommand::command(),
+                env!("CARGO_PKG_NAME"),
+                &mut std::io::stdout(),
+            );
+            Ok(())
+        }),
+        Some(IdpCommand::Serve { host, port }) => run_serve(host, port),
+        Some(IdpCommand::ProvisionServiceClient { .. }) => {
+            return Err(io::Error::other(
+                "service-client provisioning did not complete before server startup",
+            ));
         }
-        Some(CliServerCommand::Serve { serve }) => run_serve(serve.host, serve.port),
         None => run_serve(None, None),
     };
 
     shutdown_signal(cancellation_token).await;
     peer_refresh.abort();
-    filesystem_sync.abort();
-    database_sync.abort();
+
     let mut command_handle = command_handle;
     select! {
         result = &mut command_handle => match result {

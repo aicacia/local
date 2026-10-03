@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use api::ServerConfig;
-use idp_service::oauth2::OAuth2Config;
+
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -9,11 +9,11 @@ use serde::Deserialize;
 pub struct AppConfig {
     pub server: ServerConfig,
     pub data_dir: String,
-    pub oauth2: OAuth2Config,
-    pub key_namespace: String,
+
     pub log_level: String,
     pub api_public_uri: String,
     pub idp_api_base: String,
+    pub storage_api_base: String,
     pub expected_issuer: String,
     pub storage_audience: String,
 }
@@ -23,11 +23,11 @@ impl Default for AppConfig {
         Self {
             server: ServerConfig::default(),
             data_dir: "data".to_string(),
-            oauth2: OAuth2Config::default(),
-            key_namespace: "idp-management".to_string(),
+
             log_level: "DEBUG".to_string(),
             api_public_uri: "https://management-api.localhost:1355".to_string(),
             idp_api_base: String::new(),
+            storage_api_base: String::new(),
             expected_issuer: String::new(),
             storage_audience: String::new(),
         }
